@@ -11,6 +11,7 @@ from .context import ProjectContext
 from .ledger import Ledger
 from .model import Evidence, Finding, Rule, Verdict
 from .registry import Registry
+from .task import TaskRecord, TransitionDecision, evaluate_transition
 from .verdict import evaluate_all
 
 
@@ -52,3 +53,17 @@ def run_audit(
             ledger.append_finding(f)
 
     return AuditReport(rules=rules, evidence=evidence, findings=findings, verdicts=verdicts)
+
+
+def run_task_verify(root: Path, sensors: list, detectors: list, task: TaskRecord) -> TransitionDecision:
+    """完成门编排：独立审计 → 规则判定 → 纯函数迁移决策。不信任务自报。"""
+    report = run_audit(root, sensors, detectors, persist=True)
+    ledger = Ledger(Path(root) / ".sopcontrol" / "evidence" / "ledger.jsonl")
+    tampered = ledger.path.exists() and not ledger.verify()
+    verdicts = {v.rule_id: v.status for v in report.verdicts}
+    return evaluate_transition(
+        task, "verify",
+        rule_verdicts=verdicts,
+        known_rule_ids={r.rule_id for r in report.rules},
+        ledger_tampered=tampered,
+    )

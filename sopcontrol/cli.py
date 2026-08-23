@@ -10,10 +10,13 @@ import json
 import sys
 from pathlib import Path
 
-from .audit import run_audit
+import yaml
+
+from .audit import run_audit, run_task_verify
 from .ledger import Ledger
 from .model import Modality, RiskLevel, Rule, RuleStatus, SourceRef
 from .registry import Registry, RegistryError
+from .task import Contract, TaskRecord, TaskStore, evaluate_transition, normalize_relpath
 from .verdict import evaluate_rule
 
 
@@ -308,6 +311,145 @@ def cmd_doctor(args) -> int:
     return 0
 
 
+def _task_decide(root: Path, task_id: str, action: str, args=None, changed_paths=None):
+    """task 子命令共用骨架：载入 → 纯函数判定 → 应用 → 打印。返回退出码。"""
+    from plugins import DETECTORS, SENSORS
+
+    store = TaskStore(root)
+    task = store.load(task_id)
+    known = {r.rule_id for r in Registry(root / ".sopcontrol" / "rules" / "registry.yaml").load()}
+    if action == "verify":
+        decision = run_task_verify(root, SENSORS, DETECTORS, task)
+    else:
+        decision = evaluate_transition(
+            task, action, changed_paths=changed_paths, known_rule_ids=known
+        )
+    task = store.apply(task, decision, action, changed_paths=changed_paths)
+    mark = "迁移" if decision.allowed and decision.to_status else "拒绝"
+    print(f"{mark}: {task_id} {task.status.value} (r{task.revision})")
+    print(f"  理由: {decision.reason}")
+    print(f"  下一步: {decision.next_action}")
+    return 0
+
+
+def cmd_task(args) -> int:
+    root = _project(args.path)
+    store = TaskStore(root)
+    sub = args.sub
+
+    if sub == "open":
+        for p in args.allow:
+            try:
+                normalize_relpath(p)
+            except ValueError as exc:
+                print(f"错误: {exc}", file=sys.stderr)
+                return 2
+        task_id = store.next_task_id()
+        task = TaskRecord(
+            task_id=task_id,
+            contract=Contract(
+                objective=args.objective,
+                allowed_writes=list(args.allow),
+                required_rules=list(args.require_rule or []),
+                max_repairs=args.max_repairs,
+            ),
+        )
+        store.save(task)
+        print(f"已创建任务 {task_id} [contract_proposed]：{args.objective}")
+        print(f"  写入范围: {', '.join(args.allow)}")
+        print(f"  完成定义: 规则 {', '.join(args.require_rule or [])} 全部判定 pass")
+        print("  下一步: sopctl task accept " + task_id)
+        return 0
+
+    if sub == "list":
+        tasks = store.list_all()
+        if not tasks:
+            print("无任务")
+            return 0
+        print(f"{'TASK':12} {'状态':22} {'r':3} {'修复':4} 目标")
+        for t in tasks:
+            print(f"{t.task_id:12} {t.status.value:22} {t.revision:3} {t.repair_count:4} {t.contract.objective[:40]}")
+        return 0
+
+    if sub == "show":
+        task = store.load(args.task_id)
+        c = task.contract
+        print(f"任务 {task.task_id} — {c.objective}")
+        print(f"  状态: {task.status.value}  revision: r{task.revision}  修复轮数: {task.repair_count}/{c.max_repairs}")
+        print(f"  写入范围: {', '.join(c.allowed_writes)}")
+        print(f"  完成定义: {', '.join(c.required_rules)} 全部 pass")
+        if task.changed_paths:
+            print(f"  已提交改动: {', '.join(task.changed_paths)}")
+        for env in task.history[-5:]:
+            to = env.to_status.value if env.to_status else "（拒绝）"
+            print(f"  [{env.at:%m-%d %H:%M}] {env.action}: {env.from_status.value} → {to} — {env.reason[:60]}")
+        return 0
+
+    if sub == "accept":
+        return _task_decide(root, args.task_id, "accept")
+    if sub == "submit":
+        return _task_decide(root, args.task_id, "submit", changed_paths=list(args.changed or []))
+    if sub == "verify":
+        return _task_decide(root, args.task_id, "verify")
+    if sub == "deliver":
+        return _task_decide(root, args.task_id, "deliver")
+    return 2
+
+
+NEGATIVE_KEYWORDS = ("不得", "禁止", "must not", "mustn't", "never ")
+
+
+def _suggest_modality(statement: str) -> str:
+    low = statement.lower()
+    return "MUST_NOT" if any(k in low for k in NEGATIVE_KEYWORDS) else "MUST"
+
+
+def cmd_intake(args) -> int:
+    """意图编译器 v0（确定性种子）：文档 MUST 句 → CandidateRule（observed，不写终态）。"""
+    from plugins import DETECTORS, SENSORS
+
+    root = _project(args.path)
+    report = run_audit(root, SENSORS, DETECTORS, persist=False)
+    registry_path = root / ".sopcontrol" / "rules" / "registry.yaml"
+    known = {r.rule_id for r in Registry(registry_path).load()}
+    known_statements = {r.statement for r in Registry(registry_path).load()}
+
+    candidates_path = root / ".sopcontrol" / "rules" / "candidates.yaml"
+    existing = []
+    if candidates_path.exists():
+        existing = yaml.safe_load(candidates_path.read_text(encoding="utf-8")) or []
+
+    seq = len(existing) + 1
+    new = []
+    for ev in report.evidence:
+        if ev.kind != "doc_scan.must_statement":
+            continue
+        statement = str(ev.observed).strip().lstrip("- ").rstrip("。.")
+        if any(c.get("statement") == statement for c in existing) or statement in known_statements:
+            continue
+        new.append({
+            "candidate_id": f"CAND-{seq:03d}",
+            "statement": statement,
+            "suggested_modality": _suggest_modality(statement),
+            "source": {"type": "document", "ref": ev.subject},
+            "status": "observed",
+            "note": "由 doc_scan 提取；晋升需显式 sopctl rule add（Candidate 不写终态）",
+        })
+        seq += 1
+
+    if not new:
+        print("没有新的候选规则（文档 MUST 句已全部登记或在候选中）")
+        return 0
+    candidates_path.write_text(
+        yaml.safe_dump(existing + new, allow_unicode=True, sort_keys=False), encoding="utf-8"
+    )
+    print(f"提取 {len(new)} 条候选规则 → {candidates_path}（status=observed，未进注册表）")
+    for c in new:
+        print(f"  {c['candidate_id']}: {c['statement'][:50]}  ← {c['source']['ref']}")
+    print("晋升方式: sopctl rule add --statement '...'（人工确认后进入 registry）")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="sopctl",
@@ -369,6 +511,35 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("self-test", help="穿透演习：通过真实命令路径验证 gate 真实阻断已知违规")
     p.set_defaults(func=cmd_self_test)
+
+    task = sub.add_parser("task", help="任务状态机：契约 → 受控执行 → 完成门 → 交付")
+    task_sub = task.add_subparsers(dest="sub", required=True)
+    p = task_sub.add_parser("open", help="创建任务契约（contract_proposed）")
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--objective", required=True, help="任务目标")
+    p.add_argument("--allow", action="append", required=True, help="允许写入的路径前缀，可重复")
+    p.add_argument("--require-rule", action="append", help="完成定义：这些规则必须全部判定 pass")
+    p.add_argument("--max-repairs", type=int, default=2, help="修复预算（默认2轮，超出熔断）")
+    p.set_defaults(func=cmd_task)
+    def _task_cmd(name: str, help_text: str, *, task_id: bool = False, changed: bool = False):
+        p = task_sub.add_parser(name, help=help_text)
+        if task_id:
+            p.add_argument("task_id")
+        if changed:
+            p.add_argument("--changed", action="append", help="本次改动路径，可重复")
+        p.add_argument("path", nargs="?", default=".")
+        p.set_defaults(func=cmd_task)
+
+    _task_cmd("accept", "接受契约 → executing", task_id=True)
+    _task_cmd("submit", "提交改动路径 → verification_pending（范围检查）", task_id=True, changed=True)
+    _task_cmd("verify", "完成门：独立审计 → verified/repair/blocked/failed", task_id=True)
+    _task_cmd("deliver", "交付（仅 verified 可交付）", task_id=True)
+    _task_cmd("show", "查看任务状态与 envelope 历史", task_id=True)
+    _task_cmd("list", "列出任务")
+
+    p = sub.add_parser("intake", help="意图编译器 v0：文档 MUST 句 → CandidateRule（observed，不写终态）")
+    p.add_argument("path", nargs="?", default=".")
+    p.set_defaults(func=cmd_intake)
 
     p = sub.add_parser("explain", help="解释某条规则的判定：谁消费、证据是什么、为什么")
     p.add_argument("rule_id")

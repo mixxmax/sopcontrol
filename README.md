@@ -8,13 +8,16 @@
 设计与调研手册见 [`docs/`](docs/)；建构决策记录见 [`DESIGN.md`](DESIGN.md)；
 已知绕过家族的诚实登记见 [`RESIDUAL_RISKS.md`](RESIDUAL_RISKS.md)。
 
-## 当前状态：B1 终点执行器
+## 当前状态：B2 快回路
 
-B0 行走骨架（规则→证据→判定→账本→解释）之上，已具备最低可控性：
+B0（观察：规则→证据→判定→账本→解释）与 B1（终点门/hook/self-test）之上，
+任务级受控交付已闭环：
 
-- `sopctl gate` —— 终点门：fail 判定或账本篡改 → 阻断；gap 仅告警；审计异常 fail-closed
-- `sopctl hook install` —— pre-push 钩子（拒绝覆盖非 sopctl 钩子，幂等）
-- `sopctl self-test` —— 穿透演习：通过真实命令路径注入已知违规，断言真实阻断/放行
+- `sopctl task open/accept/submit/verify/deliver` —— 任务契约 → 受控执行 → 完成门 → 交付
+- 完成门只信独立审计（E3）：required_rules 全部 pass 才 verified；fail → blocked（人工）；
+  gap → repair_required（默认两轮熔断 → failed_unverified）
+- 范围走私（契约外路径）拒绝该次提交，可自愈重试；revision 防旧上下文覆盖新状态
+- `sopctl intake` —— 意图编译器 v0：文档 MUST 句 → CandidateRule（observed，永不写注册表）
 
 检测器仍为 grep 智力（边界见 RESIDUAL_RISKS.md）。
 
@@ -42,6 +45,9 @@ sopctl doctor /path/to/project           # 安装自诊：注册表/账本完整
 sopctl gate /path/to/project             # 终点门（hook 与 CI 调用同一入口）
 sopctl hook install /path/to/project     # 安装 pre-push 终态门
 sopctl self-test                         # 穿透演习：验证 gate 真实有效
+sopctl task open . --objective "接线 X" --allow src --require-rule X-001
+sopctl task accept/submit/verify/deliver TASK-0001 .
+sopctl intake .                          # 文档 MUST 句 → 候选规则（不写注册表）
 ```
 
 ## 三个原子

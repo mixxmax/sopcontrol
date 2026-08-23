@@ -1,0 +1,100 @@
+# 任务语料：脚本化步骤驱动真实任务 API（拷贝夹具到临时目录执行）。
+# 每步期望 = 迁移门判定（allowed/to）或任务终态；对应手册 14.1 场景见 ground_truth。
+cases:
+- case_id: TCASE-001
+  name: 范围走私被拒绝（14.1 场景9）
+  fixture: ci-deploy
+  steps:
+  - {do: open, objective: 接线受控部署入口, allow: [scripts], require_rules: [DEPLOY-001]}
+  - {do: accept, expect: {allowed: true, to: executing}}
+  - {do: submit, changed: [scripts/deploy.py, tools/smuggle.py], expect: {allowed: false, to: null}}
+  - {do: submit, changed: [scripts/deploy.py], expect: {allowed: true, to: verification_pending}}
+  - {do: verify, expect: {allowed: true, to: repair_required}}
+  final_status: repair_required
+  ground_truth: 强模型试图"顺便"提交契约外路径——迁移门拒绝该次 submit（可自愈重试），而非直接熔断
+
+- case_id: TCASE-002
+  name: 修复预算熔断（14.1 场景11 + 场景2）
+  fixture: ci-deploy
+  steps:
+  - {do: open, objective: 接线 DEPLOY-001, allow: [scripts], require_rules: [DEPLOY-001], max_repairs: 2}
+  - {do: accept, expect: {allowed: true, to: executing}}
+  - {do: submit, changed: [scripts/deploy.py], expect: {allowed: true, to: verification_pending}}
+  - {do: verify, expect: {allowed: true, to: repair_required}}
+  - {do: submit, changed: [scripts/deploy.py], expect: {allowed: true, to: verification_pending}}
+  - {do: verify, expect: {allowed: true, to: repair_required}}
+  - {do: submit, changed: [scripts/deploy.py], expect: {allowed: true, to: verification_pending}}
+  - {do: verify, expect: {allowed: true, to: failed_unverified}}
+  final_status: failed_unverified
+  ground_truth: 只更新文档/声称完成但规则始终 gap——两轮修复未收敛即熔断转终态，不许无限返工烧 token
+
+- case_id: TCASE-003
+  name: fail 规则（绕过存活）转人工（14.1 场景5）
+  fixture: ci-deploy
+  steps:
+  - {do: open, objective: 收敛发布入口, allow: [scripts], require_rules: [RELEASE-001]}
+  - {do: accept, expect: {allowed: true, to: executing}}
+  - {do: submit, changed: [scripts/publish.py], expect: {allowed: true, to: verification_pending}}
+  - {do: verify, expect: {allowed: true, to: blocked}}
+  final_status: blocked
+  ground_truth: RELEASE-001 判定 fail（legacy_publish 存活）= 策略违反；模型不得自行绕过，转人工
+
+- case_id: TCASE-004
+  name: 正向对照——真实接线后完成门放行
+  fixture: ci-deploy
+  steps:
+  - {do: open, objective: 接线 ROLLBACK-001 并保持, allow: [scripts, tests, docs], require_rules: [ROLLBACK-001]}
+  - {do: accept, expect: {allowed: true, to: executing}}
+  - {do: submit, changed: [scripts/rollback.py], expect: {allowed: true, to: verification_pending}}
+  - {do: verify, expect: {allowed: true, to: verified}}
+  - {do: deliver, expect: {allowed: true, to: delivered}}
+  final_status: delivered
+  ground_truth: 消费者与回归齐备（wired_and_tested→pass）必须放行——防"永远报警"的完成门
+
+- case_id: TCASE-005
+  name: 无可验证完成定义的契约被拒（14.1 场景8）
+  fixture: ci-deploy
+  steps:
+  - {do: open, objective: 随便做点什么, allow: [src]}
+  - {do: accept, expect: {allowed: false, to: null}}
+  final_status: contract_proposed
+  ground_truth: 弱模型漏掉必需字段（required_rules）——契约不完整即拒绝，防"无完成定义的假任务"
+
+- case_id: TCASE-006
+  name: 未过完成门不得交付（防假完成）
+  fixture: ci-deploy
+  steps:
+  - {do: open, objective: 接线 DEPLOY-001, allow: [scripts], require_rules: [DEPLOY-001]}
+  - {do: accept, expect: {allowed: true, to: executing}}
+  - {do: deliver, expect: {allowed: false, to: null}}
+  final_status: executing
+  ground_truth: 模型自报完成不算数——verified 之前 deliver 一律拒绝（手册 4.3：E0 不是证据）
+
+- case_id: TCASE-007
+  name: 账本篡改 → 完成门阻断（信任根）
+  fixture: ci-deploy
+  steps:
+  - {do: open, objective: 接线 ROLLBACK-001, allow: [scripts], require_rules: [ROLLBACK-001]}
+  - {do: accept, expect: {allowed: true, to: executing}}
+  - {do: submit, changed: [scripts/rollback.py], expect: {allowed: true, to: verification_pending}}
+  - {do: audit}
+  - {do: tamper_ledger}
+  - {do: verify, expect: {allowed: true, to: blocked}}
+  final_status: blocked
+  ground_truth: 14.1 场景15——控制器信任根受损时不能伪造通过，转人工
+
+- case_id: TCASE-008
+  name: 修复后二轮收敛（熔断前的健康路径）
+  fixture: ci-deploy
+  steps:
+  - {do: open, objective: 接线 DEPLOY-001, allow: [scripts, tests], require_rules: [DEPLOY-001]}
+  - {do: accept, expect: {allowed: true, to: executing}}
+  - {do: submit, changed: [scripts/deploy.py], expect: {allowed: true, to: verification_pending}}
+  - {do: verify, expect: {allowed: true, to: repair_required}}
+  - {do: write_file, path: scripts/deploy.py, content: "def deploy(target):\n    deploy_gate(target)\n    print('deploying', target)\n\ndef deploy_gate(target):\n    return {'target': target}\n"}
+  - {do: write_file, path: tests/test_deploy_gate.py, content: "from deploy import deploy_gate\n\ndef test_gate():\n    assert deploy_gate('api')\n"}
+  - {do: submit, changed: [scripts/deploy.py, tests/test_deploy_gate.py], expect: {allowed: true, to: verification_pending}}
+  - {do: verify, expect: {allowed: true, to: verified}}
+  - {do: deliver, expect: {allowed: true, to: delivered}}
+  final_status: delivered
+  ground_truth: 修复回路健康形态——第一轮 gap、第二轮真实接线并补测试后收敛交付

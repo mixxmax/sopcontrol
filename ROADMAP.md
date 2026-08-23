@@ -31,13 +31,15 @@
 - [x] RESIDUAL_RISKS 登记 R6（hook 可被 `--no-verify` 绕过；CI 为后盾）
 - 验收：`pytest` 全绿；`sopctl self-test` 通过；临时仓库 hook 实测阻断
 
-### B2 快回路（下一步）
-- [ ] TaskContract / PolicyEnvelope 最小 schema（扩展三原子，不另起炉灶）
-- [ ] INTAKE→…→DELIVERED 状态机 + 合法迁移表（复用 registry 的迁移模式）
-- [ ] `sopctl task start/advance`：每步 envelope 校验（allowed_writes / required_evidence）
-- [ ] 手册 14.1 场景 1–9 语料化（每场景至少一条用例，进入 cases.yaml）
-- [ ] 意图编译器最小版：对话/文档 → CandidateRule（模型插件位，产 Candidate 不写终态）
-- 细化前先在 DESIGN.md 补一段 B2 决策
+### B2 快回路 — 完成（2026-08-23 深夜）
+- [x] TaskContract / PolicyEnvelope 最小 schema（DESIGN.md §10：不新增第四种真相）
+- [x] INTAKE→…→DELIVERED 状态机 + 合法迁移表（task.py；blocked/failed_unverified 终态）
+- [x] `sopctl task open/accept/submit/verify/deliver/show/list`：范围走私拒绝、完成门只信 E3 审计、修复熔断（默认两轮）、revision 防旧覆盖
+- [x] 任务语料 `corpus/task_cases.yaml`（8 用例）：14.1 场景 2/5/8/9/11/15 + 两个正向对照；场景 1/6/7 依赖 harness/模型层，归 B4
+- [x] 意图编译器 v0：`sopctl intake` 文档 MUST 句 → CandidateRule（observed，永不写注册表；强度建议区分必须/不得）
+- [x] 宪法测试补：迁移门纯度（炸 open）、拒绝可解释、路径规范化拒绝 `..`/绝对路径
+- 验收：47 测试全绿；CLI 全生命周期实测（契约→执行→gap 修复轮→接线→verified→delivered）
+- 实测捕获的真 bug 两枚：完成门曾按全项目口径连坐无关规则 fail；CLI open 误引用 args.changed（API 层测试测不到的接线 bug）
 
 ### B3 有界修复
 - [ ] gap contract → 最小影响范围 → 隔离 worktree → 独立验证
@@ -49,7 +51,7 @@
 
 ## 状态（每次运行后更新）
 
-- 2026-08-23 深夜（自主模式启动）：B0 完成；B1 完成（gate/hook/self-test/doctor 扩展/R6 登记），33 测试全绿；两笔里程碑提交。下一步：B2 首项（TaskContract/PolicyEnvelope schema）。
+- 2026-08-23 深夜（会话内连续自驱，定时任务已按用户要求删除）：B2 完成。47 测试全绿，三笔里程碑提交。下一步：B3 有界修复首项（gap contract → 重复指纹熔断已就位，Finding.fingerprint 可直接用）。
 
 ## Blockers
 

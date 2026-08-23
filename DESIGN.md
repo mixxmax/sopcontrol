@@ -88,3 +88,31 @@ Evidence/Finding 的 id 由内容 hash 生成，排除时间字段。效果：�
 模式库对准控制平面自身就是治理幻觉探针：一个没有真实运行时读取的 policy、一个
 从没被触发过的 gate、一条没有挑衅测试的规则，状态都只能是 documented。B1 起，
 `sopctl self-test` 将成为第一条把控制器自身当审计对象的用例。
+
+## 10. B2 决策：任务状态机与完成门（2026-08-23 补）
+
+**不新增第四种真相。** TaskContract / Envelope 是三原子的组合：契约引用 Rule，
+完成判定消费 Verdict，每步迁移写 Envelope 记录（可回放）。无独立数据库——任务
+就是 `.sopcontrol/tasks/TASK-xxxx.yaml`，revision 字段防旧上下文覆盖新状态（手册 5.5）。
+
+**状态机刻意收窄**（相对手册 5.7）：`contract_proposed → executing →
+verification_pending → verified | repair_required | blocked | failed_unverified；
+verified → delivered`。INTAKE 并入 open（创建即带完整契约字段），PLAN_VALIDATED
+与 DELIVERY_PREVIEW 留到有真实 plan/副作用时再加——先闭环后带宽。`blocked` 与
+`failed_unverified` 为终态：前者需人工，后者是修复预算耗尽（默认两轮，手册 10.5）。
+
+**完成判定复用吸收等级**：任务的 required_rules 全部 `pass` 才可 verified——
+"声称接线了规则 X"由审计器独立证实（E3），不信自报。有 `fail`（绕过存活）→
+blocked（策略违反，模型不可自行绕过）；有 `gap` → repair_required（可修）。
+
+**范围走私不进 blocked**：submit 的 changed 超出 allowed_writes → 拒绝该次
+submit、留在 executing，自行改路径可重试（可自愈）；blocked 留给策略违反与
+信任根问题。路径先规范化，绝对路径与 `..` 直接拒绝。
+
+**任务语料**：`corpus/task_cases.yaml` 以脚本化步骤驱动真实 API（拷贝夹具到
+临时目录后执行），覆盖手册 14.1 中当前层能诚实覆盖的场景（2/5/8/9/11 + 正向
+对照 + 篡改）；场景 1/6/7 依赖 harness 与模型层，登记到 B4，不造假覆盖。
+
+**意图编译器 v0 = 确定性种子**：`sopctl intake` 从 doc_scan 证据生成
+CandidateRule（status=observed，落 candidates.yaml），晋升必须显式
+`rule add`——LLM 分类器是未来的插件位，产 Candidate、永不写终态（手册 5.2）。
