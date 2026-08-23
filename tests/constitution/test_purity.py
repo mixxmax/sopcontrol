@@ -16,18 +16,25 @@ def make_rule_and_evidence():
     )
     evidence = [
         Evidence(
+            kind="ast_scan.references",
+            subject="src/app.py",
+            observed=["pure_marker", "other"],
+            observer="ast_scan",
+            input_hash="abc123",
+        ),
+        Evidence(
+            kind="ast_scan.references",
+            subject="tests/test_app.py",
+            observed=["pure_marker"],
+            observer="ast_scan",
+            input_hash="def456",
+        ),
+        Evidence(
             kind="code_scan.identifiers",
             subject="src/app.py",
             observed=["pure_marker", "other"],
             observer="code_scan",
             input_hash="abc123",
-        ),
-        Evidence(
-            kind="code_scan.identifiers",
-            subject="tests/test_app.py",
-            observed=["pure_marker"],
-            observer="code_scan",
-            input_hash="def456",
         ),
     ]
     return rule, evidence

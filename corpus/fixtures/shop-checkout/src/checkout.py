@@ -1,5 +1,7 @@
 """退款域（电商领域夹具：三种吸收状态的正反向对照）。"""
 
+# future: risk_review 集成预留（注释里的词不构成真实消费者）
+
 refund_state = {}
 ledger_status = {}
 

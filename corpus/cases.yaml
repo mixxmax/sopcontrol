@@ -22,7 +22,8 @@ cases:
   expected_verdict: {status: gap, absorption: documented}
   expected_findings:
   - {pattern_id: documented_rule_no_consumer, severity: gap}
-  ground_truth: 手册 1.2 症状3 的电商域变体——规则只存在于文档
+  - {pattern_id: comment_only_reference, severity: gap}
+  ground_truth: 手册 1.2 症状3 的电商域变体——规则只存在于文档；注释里"预留"提及也不算消费者
 
 - case_id: CASE-004
   fixture: shop-checkout
@@ -118,3 +119,12 @@ cases:
   expected_findings:
   - {pattern_id: state_in_parallel_files, severity: gap}
   ground_truth: state_in_parallel_files 第二领域验证（CI 域）
+
+- case_id: CASE-016
+  fixture: ci-deploy
+  rule_id: DEPLOY-004
+  expected_verdict: {status: gap, absorption: documented}
+  expected_findings:
+  - {pattern_id: documented_rule_no_consumer, severity: gap}
+  - {pattern_id: comment_only_reference, severity: gap}
+  ground_truth: 首夜真实教训的模式化——标记只出现在 TODO 注释里，grep 命中但 AST 证明无真实引用

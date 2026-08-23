@@ -7,7 +7,6 @@ from __future__ import annotations
 from sopcontrol.context import is_test_path
 from sopcontrol.model import Absorption, Evidence, Finding, Modality, Rule, RuleStatus
 from sopcontrol.verdict import HARD_MODALITIES, consumer_evidence, legacy_evidence
-
 GOVERNANCE_ACTIVE = {
     RuleStatus.accepted,
     RuleStatus.compiled,
@@ -22,6 +21,9 @@ class NoConsumerDetector:
     def detect(self, rules: list[Rule], evidence: list[Evidence]) -> list[Finding]:
         findings: list[Finding] = []
         id_evidence = [e for e in evidence if e.kind == "code_scan.identifiers"]
+        ast_by_subject = {
+            e.subject: e for e in evidence if e.kind == "ast_scan.references"
+        }
         for rule in rules:
             if rule.status not in GOVERNANCE_ACTIVE or rule.modality not in HARD_MODALITIES:
                 continue
@@ -38,7 +40,7 @@ class NoConsumerDetector:
                     )
                 )
                 continue
-            prod, test = consumer_evidence(rule, id_evidence)
+            prod, test = consumer_evidence(rule, evidence)
             markers = ", ".join(rule.consumer_markers)
             if not prod and not test:
                 findings.append(
@@ -72,8 +74,31 @@ class NoConsumerDetector:
                         evidence_ids=[e.evidence_id for e in prod],
                     )
                 )
+            # 注释/字符串里的标记不算消费者：grep 命中但 AST 未命中的 .py 文件
+            for grep_ev in id_evidence:
+                if not grep_ev.subject.endswith(".py"):
+                    continue
+                if not any(m in (grep_ev.observed or []) for m in rule.consumer_markers):
+                    continue
+                ast_ev = ast_by_subject.get(grep_ev.subject)
+                ast_names = ast_ev.observed if ast_ev else []
+                ghost = [m for m in rule.consumer_markers if m in (grep_ev.observed or []) and m not in (ast_names or [])]
+                if ghost:
+                    findings.append(
+                        Finding(
+                            pattern_id="comment_only_reference",
+                            rule_id=rule.rule_id,
+                            summary=(
+                                f"标记 [{', '.join(ghost)}] 在 {grep_ev.subject} 只出现于注释/字符串，"
+                                f"不构成真实代码引用（首夜真实教训的模式化）"
+                            ),
+                            severity="gap",
+                            detector=self.detector_id,
+                            evidence_ids=[grep_ev.evidence_id],
+                        )
+                    )
             if rule.legacy_markers:
-                legacy = legacy_evidence(rule, id_evidence)
+                legacy = legacy_evidence(rule, evidence)
                 if legacy:
                     legacy_names = ", ".join(rule.legacy_markers)
                     findings.append(

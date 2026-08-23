@@ -24,15 +24,21 @@ GOVERNANCE_ACTIVE = {
 HARD_MODALITIES = {Modality.MUST, Modality.MUST_NOT}
 
 
+def marker_hit(ev: Evidence, markers: list[str]) -> bool:
+    """标记命中判定：.py 以 AST 引用为准（注释不算）；其他表面用 grep 标识符。"""
+    if ev.kind == "ast_scan.references":
+        return any(m in (ev.observed or []) for m in markers)
+    if ev.kind == "code_scan.identifiers" and not ev.subject.endswith(".py"):
+        return any(m in (ev.observed or []) for m in markers)
+    return False
+
+
 def consumer_evidence(rule: Rule, evidence: list[Evidence]) -> tuple[list[Evidence], list[Evidence]]:
     """返回 (生产路径消费者证据, 测试路径消费者证据)。"""
     prod, test = [], []
     for ev in evidence:
-        if ev.kind != "code_scan.identifiers":
-            continue
-        if not any(m in (ev.observed or []) for m in rule.consumer_markers):
-            continue
-        (test if is_test_path(ev.subject) else prod).append(ev)
+        if marker_hit(ev, rule.consumer_markers):
+            (test if is_test_path(ev.subject) else prod).append(ev)
     return prod, test
 
 
@@ -42,9 +48,7 @@ def legacy_evidence(rule: Rule, evidence: list[Evidence]) -> list[Evidence]:
         return []
     hits = []
     for ev in evidence:
-        if ev.kind != "code_scan.identifiers":
-            continue
-        if any(m in (ev.observed or []) for m in rule.legacy_markers) and not is_test_path(ev.subject):
+        if marker_hit(ev, rule.legacy_markers) and not is_test_path(ev.subject):
             hits.append(ev)
     return hits
 

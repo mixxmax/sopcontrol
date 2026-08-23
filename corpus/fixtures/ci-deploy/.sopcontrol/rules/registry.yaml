@@ -61,3 +61,15 @@ rules:
     ref: docs/runbook.md
   state_markers:
   - deploy_state
+- rule_id: DEPLOY-004
+  statement: 部署缓存必须经 cache_gate 预热
+  modality: MUST
+  status: accepted
+  scope: ci.deploy
+  owner: platform
+  risk: medium
+  source:
+    type: document
+    ref: docs/runbook.md
+  consumer_markers:
+  - cache_gate

@@ -8,16 +8,14 @@ from __future__ import annotations
 
 from sopcontrol.context import is_test_path
 from sopcontrol.model import Evidence, Finding, Rule
-from sopcontrol.verdict import HARD_MODALITIES
+from sopcontrol.verdict import HARD_MODALITIES, marker_hit
 
 
 def _occurrences(rule: Rule, evidence: list[Evidence]) -> tuple[list[str], list[str]]:
-    """返回 (出现该状态标记的生产文件, 测试文件)。"""
+    """返回 (出现该状态标记的生产文件, 测试文件)；.py 以 AST 引用为准。"""
     prod, test = [], []
     for ev in evidence:
-        if ev.kind != "code_scan.identifiers":
-            continue
-        if any(m in (ev.observed or []) for m in rule.state_markers):
+        if marker_hit(ev, rule.state_markers):
             (test if is_test_path(ev.subject) else prod).append(ev.subject)
     return prod, test
 
