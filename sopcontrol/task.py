@@ -75,6 +75,41 @@ class TaskRecord(BaseModel):
     history: list[EnvelopeRecord] = Field(default_factory=list)
 
 
+LEGAL_ACTIONS: dict[TaskStatus, list[str]] = {
+    TaskStatus.contract_proposed: ["accept（契约完整时）"],
+    TaskStatus.executing: ["submit --changed <paths>"],
+    TaskStatus.verification_pending: ["verify"],
+    TaskStatus.repair_required: ["submit --changed <paths>（最小修复后重新提交）"],
+    TaskStatus.verified: ["deliver"],
+    TaskStatus.blocked: ["（终态）人工裁决后另开任务"],
+    TaskStatus.failed_unverified: ["（终态）人工分析后另开任务"],
+    TaskStatus.delivered: ["（终态）无"],
+}
+
+
+def takeover_pack(
+    task: TaskRecord,
+    rule_verdicts: dict,
+    open_findings: list[str],
+) -> dict:
+    """接管包（手册 8.3）：新模型只收最小信息，不重读历史、不重新解释已接受契约。"""
+    required = task.contract.required_rules
+    return {
+        "task_id": task.task_id,
+        "status": task.status.value,
+        "revision": task.revision,
+        "repair_budget": f"{task.repair_count}/{task.contract.max_repairs}",
+        "objective": task.contract.objective,
+        "allowed_writes": task.contract.allowed_writes,
+        "completion_definition": f"规则 {', '.join(required)} 全部判定 pass",
+        "changed_paths": task.changed_paths,
+        "rule_verdicts": {r: rule_verdicts.get(r) for r in required},
+        "open_findings": open_findings,
+        "next_legal_actions": LEGAL_ACTIONS[task.status],
+        "note": "接管者不得重新解释已接受的契约或扩大写入范围；只按 next_legal_actions 推进",
+    }
+
+
 class TransitionDecision(BaseModel):
     allowed: bool
     to_status: Optional[TaskStatus]

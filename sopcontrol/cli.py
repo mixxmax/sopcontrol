@@ -17,7 +17,14 @@ from .ledger import Ledger
 from .model import Modality, RiskLevel, Rule, RuleStatus, SourceRef
 from .registry import Registry, RegistryError
 from .repair import RepairError, list_repairs, open_repair
-from .task import Contract, TaskRecord, TaskStore, evaluate_transition, normalize_relpath
+from .task import (
+    Contract,
+    TaskRecord,
+    TaskStore,
+    evaluate_transition,
+    normalize_relpath,
+    takeover_pack,
+)
 from .verdict import evaluate_rule
 
 
@@ -386,6 +393,20 @@ def cmd_task(args) -> int:
             print(f"  [{env.at:%m-%d %H:%M}] {env.action}: {env.from_status.value} → {to} — {env.reason[:60]}")
         return 0
 
+    if sub == "takeover":
+        from plugins import DETECTORS, SENSORS
+
+        task = store.load(args.task_id)
+        report = run_audit(root, SENSORS, DETECTORS, persist=False)  # 接管是只读动作
+        verdicts = {v.rule_id: v.status for v in report.verdicts}
+        findings = [
+            f"{f.pattern_id}({f.severity})" for f in report.findings
+            if f.rule_id in task.contract.required_rules
+        ]
+        pack = takeover_pack(task, verdicts, findings)
+        print(yaml.safe_dump(pack, allow_unicode=True, sort_keys=False).strip())
+        return 0
+
     if sub == "accept":
         return _task_decide(root, args.task_id, "accept")
     if sub == "submit":
@@ -564,6 +585,7 @@ def build_parser() -> argparse.ArgumentParser:
     _task_cmd("verify", "完成门：独立审计 → verified/repair/blocked/failed", task_id=True)
     _task_cmd("deliver", "交付（仅 verified 可交付）", task_id=True)
     _task_cmd("show", "查看任务状态与 envelope 历史", task_id=True)
+    _task_cmd("takeover", "接管包：新模型/新会话的最小接手信息（只读）", task_id=True)
     _task_cmd("list", "列出任务")
 
     p = sub.add_parser("intake", help="意图编译器 v0：文档 MUST 句 → CandidateRule（observed，不写终态）")
