@@ -68,12 +68,12 @@
 
 ## 状态（每次运行后更新）
 
-- 2026-08-24（连续自驱第五轮）：①ast_scan 传感器 + comment_only_reference 模式（R1 反向家族根治，
-  首夜翻车场景重放通过）；②`sopctl harness-eval`：穿透演习成为可重复仪器，opencode 与 codex
-  双双真实通过并归档 eval_history。过程中三个真实发现：$PWD 定位（subprocess cwd 不更新 PWD，
-  opencode 会读错项目）、绝对路径触发 harness 自身权限询问、管道被后台进程挂住（改文件重定向）。
-  82 测试全绿，十二笔提交。剩余：场景 7 行为级语料（takeover 防重蹈）、场景 1（对话意图层）、
-  检测语义扩展到非 Python 表面。
+- 2026-08-24（连续自驱第五轮）：①ast_scan + comment_only_reference（R1 反向根治）；②harness-eval
+  可重复演习仪器（opencode/codex 双通过并归档）；③场景7 演习建成：确定性层完整（投影携带任务状态
+  + 文件哈希硬断言 + 超时不算通过），行为级当前结果=失败-超时：opencode 非交互模式下模型读 AGENTS.md
+  后尝试 bash 查询任务状态被权限询问挡住 → 重试循环。真实发现：接管的薄弱环节是 harness 非交互
+  权限 UX，非我们的机制。改进方向：投影内嵌任务状态全文（模型只需 Read，无需 bash）。
+  82 测试全绿，十三笔提交。剩余：场景7 改进后复测、场景 1（对话意图层）、非 Python 表面。
 
 ## Blockers
 

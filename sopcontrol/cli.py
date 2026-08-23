@@ -827,7 +827,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_harness_profile)
 
     p = sub.add_parser("harness-eval", help="对真实 harness 执行穿透演习并记录画像（消耗模型 token）")
-    p.add_argument("harness", choices=["opencode", "codex"])
+    p.add_argument("harness", choices=["opencode", "codex", "scenario7"])
     p.add_argument("path", nargs="?", default=".")
     p.set_defaults(func=cmd_harness_eval)
 

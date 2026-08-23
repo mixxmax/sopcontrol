@@ -17,7 +17,7 @@ _ACTIVE = {RuleStatus.accepted, RuleStatus.compiled, RuleStatus.activated, RuleS
 _HARD = {"MUST", "MUST_NOT"}
 
 
-def render_projection(rules: list[Rule]) -> str:
+def render_projection(rules: list[Rule], tasks: list | None = None) -> str:
     lines = [
         SECTION_START,
         "# SOP Control 规则投影（自动生成，勿手改）",
@@ -37,6 +37,14 @@ def render_projection(rules: list[Rule]) -> str:
                 bits.append(f"（旧入口不得存活: {', '.join(r.legacy_markers)}）")
             lines.append("- " + " ".join(bits))
         lines.append("")
+    if tasks:
+        lines.append("## 任务状态（换会话/换模型先看这里——已交付任务不得重复执行副作用）")
+        for t in tasks:
+            lines.append(
+                f"- {t.task_id} [{t.status.value}] {t.contract.objective[:50]}"
+                + ("——已完成并经完成门验证，勿重做" if t.status.value == "delivered" else "")
+            )
+        lines.append("")
     lines += [
         "## 硬约束",
         "- 不得直接读写或修改 `.sopcontrol/` 内任何文件；一切经 `sopctl` 子命令。",
@@ -50,7 +58,14 @@ def render_projection(rules: list[Rule]) -> str:
 def write_projection(root: Path) -> Path:
     """把投影合并进 AGENTS.md：只替换自身带标记小节，保留其余内容。"""
     rules = Registry(Path(root) / ".sopcontrol" / "rules" / "registry.yaml").load()
-    section = render_projection(rules)
+    from .task import TaskStore
+
+    tasks = None
+    try:
+        tasks = TaskStore(root).list_all()
+    except Exception:
+        tasks = None
+    section = render_projection(rules, tasks)
 
     agents = Path(root) / "AGENTS.md"
     if agents.exists():
