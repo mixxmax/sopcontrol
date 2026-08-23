@@ -1,0 +1,31 @@
+rules:
+- rule_id: PUSH-001
+  statement: 新岗位入表必须先预览后确认，确认后才能写表
+  modality: MUST
+  status: accepted
+  scope: tracker.push
+  owner: product
+  risk: medium
+  source:
+    type: document
+    ref: docs/tracker-sop.md
+  consumer_markers:
+  - require_preview
+  tags:
+  - jobflow-historical
+- rule_id: PUSH-002
+  statement: 岗位入表必须经统一 gateway 入口，旧直写路径不得存活
+  modality: MUST
+  status: accepted
+  scope: tracker.push
+  owner: product
+  risk: high
+  source:
+    type: document
+    ref: docs/tracker-sop.md
+  consumer_markers:
+  - workflow_gateway
+  legacy_markers:
+  - direct_write
+  tags:
+  - jobflow-historical

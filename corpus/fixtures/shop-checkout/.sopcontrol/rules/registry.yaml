@@ -1,0 +1,47 @@
+rules:
+- rule_id: REFUND-001
+  statement: 退款必须先调用 confirm_refund 获得用户确认
+  modality: MUST
+  status: accepted
+  scope: checkout.refund
+  owner: product
+  risk: high
+  source:
+    type: document
+    ref: docs/sop.md
+  consumer_markers:
+  - confirm_refund
+- rule_id: REFUND-002
+  statement: 大额退款必须携带 risk_review 审核结果
+  modality: MUST
+  status: accepted
+  scope: checkout.refund
+  owner: product
+  risk: high
+  source:
+    type: document
+    ref: docs/sop.md
+  consumer_markers:
+  - risk_review
+- rule_id: REFUND-003
+  statement: 退款异常必须当日上报值班负责人
+  modality: MUST
+  status: accepted
+  scope: checkout.refund
+  owner: product
+  risk: medium
+  source:
+    type: document
+    ref: docs/sop.md
+- rule_id: REFUND-004
+  statement: 退款流水必须写入 audit_log
+  modality: MUST
+  status: accepted
+  scope: checkout.refund
+  owner: product
+  risk: medium
+  source:
+    type: document
+    ref: docs/sop.md
+  consumer_markers:
+  - audit_log

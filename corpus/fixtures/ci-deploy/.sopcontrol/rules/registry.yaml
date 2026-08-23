@@ -1,0 +1,51 @@
+rules:
+- rule_id: DEPLOY-001
+  statement: 部署必须通过 deploy_gate 入口执行
+  modality: MUST
+  status: accepted
+  scope: ci.deploy
+  owner: platform
+  risk: critical
+  source:
+    type: document
+    ref: docs/runbook.md
+  consumer_markers:
+  - deploy_gate
+- rule_id: ROLLBACK-001
+  statement: 回滚必须经过 rollback_guard 校验
+  modality: MUST
+  status: accepted
+  scope: ci.rollback
+  owner: platform
+  risk: high
+  source:
+    type: document
+    ref: docs/runbook.md
+  consumer_markers:
+  - rollback_guard
+- rule_id: DEPLOY-002
+  statement: 发布产物必须携带 release_guard 签名
+  modality: MUST
+  status: accepted
+  scope: ci.release
+  owner: platform
+  risk: high
+  source:
+    type: document
+    ref: docs/runbook.md
+  consumer_markers:
+  - release_guard
+- rule_id: RELEASE-001
+  statement: 产物发布必须经统一管线，遗留直推脚本不得存活
+  modality: MUST
+  status: accepted
+  scope: ci.release
+  owner: platform
+  risk: critical
+  source:
+    type: document
+    ref: docs/runbook.md
+  consumer_markers:
+  - publish_pipeline
+  legacy_markers:
+  - legacy_publish

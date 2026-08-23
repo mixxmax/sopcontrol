@@ -1,0 +1,80 @@
+# 语料用例：模式 × 夹具 × 期望判定。tests/corpus/test_cases.py 逐条断言。
+# expected_verdict.absorption 为空的用例表示"未判定"（unknown）。
+cases:
+- case_id: CASE-001
+  fixture: jobflow-preview
+  rule_id: PUSH-001
+  expected_verdict: {status: gap, absorption: documented}
+  expected_findings:
+  - {pattern_id: documented_rule_no_consumer, severity: gap}
+  ground_truth: 手册 1.2 症状3——"必须先预览再确认"写入文档后仍被绕过；JobsFlow 历史真实断口，蒸馏为最小现场
+
+- case_id: CASE-002
+  fixture: shop-checkout
+  rule_id: REFUND-001
+  expected_verdict: {status: pass, absorption: wired_and_tested}
+  expected_findings: []
+  ground_truth: 正向对照——消费者与回归齐备时不得误报（防"永远报警"检测器）
+
+- case_id: CASE-003
+  fixture: shop-checkout
+  rule_id: REFUND-002
+  expected_verdict: {status: gap, absorption: documented}
+  expected_findings:
+  - {pattern_id: documented_rule_no_consumer, severity: gap}
+  ground_truth: 手册 1.2 症状3 的电商域变体——规则只存在于文档
+
+- case_id: CASE-004
+  fixture: shop-checkout
+  rule_id: REFUND-003
+  expected_verdict: {status: unknown, absorption: null}
+  expected_findings:
+  - {pattern_id: consumer_markers_undefined, severity: info}
+  ground_truth: 无法判定时必须说"无法判定"，不得猜测（fail-closed 的对照面）
+
+- case_id: CASE-005
+  fixture: shop-checkout
+  rule_id: REFUND-004
+  expected_verdict: {status: gap, absorption: wired}
+  expected_findings:
+  - {pattern_id: documented_rule_untested, severity: gap}
+  ground_truth: 手册 1.2 症状9——"测试通过"不代表链路被回归保护
+
+- case_id: CASE-006
+  fixture: ci-deploy
+  rule_id: DEPLOY-001
+  expected_verdict: {status: gap, absorption: documented}
+  expected_findings:
+  - {pattern_id: documented_rule_no_consumer, severity: gap}
+  ground_truth: 第三领域验证——模式跨域成立
+
+- case_id: CASE-007
+  fixture: ci-deploy
+  rule_id: ROLLBACK-001
+  expected_verdict: {status: pass, absorption: wired_and_tested}
+  expected_findings: []
+  ground_truth: 正向对照（CI 域）
+
+- case_id: CASE-008
+  fixture: ci-deploy
+  rule_id: DEPLOY-002
+  expected_verdict: {status: gap, absorption: documented}
+  expected_findings:
+  - {pattern_id: test_helper_only, severity: gap}
+  ground_truth: 手册 1.2 症状4 / 14.1 场景4——测试 helper 造出生产不存在的前置资源
+
+- case_id: CASE-009
+  fixture: jobflow-preview
+  rule_id: PUSH-002
+  expected_verdict: {status: fail, absorption: wired_and_tested}
+  expected_findings:
+  - {pattern_id: legacy_entry_alive, severity: gap}
+  ground_truth: 手册 1.2 症状3 / 5.8——文档说 gateway 强制，但旧直写脚本仍可直接产生副作用；新链合格 + 旧链存活 = 判定 fail
+
+- case_id: CASE-010
+  fixture: ci-deploy
+  rule_id: RELEASE-001
+  expected_verdict: {status: fail, absorption: wired_and_tested}
+  expected_findings:
+  - {pattern_id: legacy_entry_alive, severity: gap}
+  ground_truth: legacy_entry_alive 的第二领域验证（CI 域）

@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.DS_Store
+.venv/
+.pytest_cache/
+dist/
+build/
+*.egg-info/
+.sopcontrol-local/
+corpus/fixtures/**/.sopcontrol/evidence/

@@ -1,0 +1,7 @@
+"""插件登记处。骨架期显式注册；外部插件目录加载是后续插卡点，不是现在的需求。"""
+from plugins.detectors.no_consumer import NoConsumerDetector
+from plugins.sensors.code_scan import CodeScanSensor
+from plugins.sensors.doc_scan import DocScanSensor
+
+SENSORS = [CodeScanSensor(), DocScanSensor()]
+DETECTORS = [NoConsumerDetector()]

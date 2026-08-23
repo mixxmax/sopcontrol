@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sopcontrol"
+version = "0.0.1"
+description = "SOP Control: intent-rule-delivery compiler and control plane for coding agents"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pydantic>=2.5",
+    "PyYAML>=6",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[project.scripts]
+sopctl = "sopcontrol.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["sopcontrol*", "plugins*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

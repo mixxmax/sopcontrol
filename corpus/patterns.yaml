@@ -1,0 +1,46 @@
+# 模式库：通用断口模式（产品中立），夹具只是各模式在不同领域的实例。
+# 双域验证规则：一个模式至少在两个不相关领域夹具上命中，才能进入 proven-on-multi-domains。
+patterns:
+- pattern_id: documented_rule_no_consumer
+  statement: 已接受的 MUST/MUST_NOT 规则在生产与测试路径均无声明消费者
+  detection: rule.consumer_markers × code_scan.identifiers（全项目）
+  fixtures:
+  - jobflow-preview/PUSH-001
+  - shop-checkout/REFUND-002
+  - ci-deploy/DEPLOY-001
+  domains: [job-search, e-commerce, ci-deploy]
+  status: proven-on-3-domains
+
+- pattern_id: test_helper_only
+  statement: 消费者标记仅存在于测试路径（测试 helper 自造了生产不存在的前置）
+  detection: rule.consumer_markers × code_scan.identifiers（仅测试路径命中）
+  fixtures:
+  - ci-deploy/DEPLOY-002
+  domains: [ci-deploy]
+  status: proven-on-1-domain
+
+- pattern_id: documented_rule_untested
+  statement: 生产消费者已接线，但测试路径无回归证据
+  detection: rule.consumer_markers × code_scan.identifiers（生产命中、测试未命中）
+  fixtures:
+  - shop-checkout/REFUND-004
+  domains: [e-commerce]
+  status: proven-on-1-domain
+
+- pattern_id: legacy_entry_alive
+  statement: 受控入口已接线，但声明为 legacy 的旧入口符号仍在生产路径存活（可绕过）
+  detection: rule.legacy_markers × code_scan.identifiers（非测试路径命中）
+  fixtures:
+  - jobflow-preview/PUSH-002
+  - ci-deploy/RELEASE-001
+  domains: [job-search, ci-deploy]
+  status: proven-on-2-domains
+
+- pattern_id: consumer_markers_undefined
+  statement: 已接受的硬规则未声明什么算消费者，无法判定吸收
+  detection: rule.consumer_markers 为空
+  fixtures:
+  - shop-checkout/REFUND-003
+  domains: [e-commerce]
+  status: proven-on-1-domain
+  severity: info
