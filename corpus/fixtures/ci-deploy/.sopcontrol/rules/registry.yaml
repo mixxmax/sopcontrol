@@ -49,3 +49,15 @@ rules:
   - publish_pipeline
   legacy_markers:
   - legacy_publish
+- rule_id: DEPLOY-003
+  statement: 部署状态必须单一真源，不得双处维护
+  modality: MUST
+  status: accepted
+  scope: ci.state
+  owner: platform
+  risk: medium
+  source:
+    type: document
+    ref: docs/runbook.md
+  state_markers:
+  - deploy_state

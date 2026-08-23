@@ -8,10 +8,19 @@
 设计与调研手册见 [`docs/`](docs/)；建构决策记录见 [`DESIGN.md`](DESIGN.md)；
 已知绕过家族的诚实登记见 [`RESIDUAL_RISKS.md`](RESIDUAL_RISKS.md)。
 
-## 当前状态：B3 有界修复（框架）
+## 当前状态：B4 harness 适配 + B5 模式库扩展
 
-B0（观察：规则→证据→判定→账本→解释）、B1（终点门/hook/self-test）与 B2（任务级
-受控交付）之上，有界修复框架已就位：
+- **Claude Code 适配**：`sopctl hook claude` 安装 PreToolUse 钩子（项目级、合并式、幂等）；
+  `sopctl harness-check` 按 Claude 协议输出 allow/deny/ask 决策。策略：控制器文件禁止普通
+  写入口触碰（信任根）、`--no-verify` 一律拒绝、`git push` 走终点门三态（fail→deny、
+  gap→ask、clean→allow）、门上下文缺失 fail-closed。协议字段已对照官方文档核实。
+- **检测模式库（8 模式）**：新增 `write_only_state`（只写不读代理，info）、
+  `state_in_parallel_files`（双处维护真源不明，gap）、`state_marker_absent`（声明状态不存在，
+  info），各配跨领域夹具与语料用例。
+- **自应用闭环**：本次模式库扩展本身经任务机交付（契约→submit 范围检查→完成门独立
+  审计 SELF-001/002→delivered），TASK-0001 存于本仓库 `.sopcontrol/`。
+
+B0–B3 能力见 git 历史；检测器仍为 grep 智力（边界见 RESIDUAL_RISKS.md）。
 
 - `sopctl task open/accept/submit/verify/deliver` —— 任务契约 → 受控执行 → 完成门 → 交付
 - 完成门只信独立审计（E3）：required_rules 全部 pass 才 verified；fail → blocked（人工）；
@@ -50,6 +59,8 @@ sopctl self-test                         # 穿透演习：验证 gate 真实有�
 sopctl task open . --objective "接线 X" --allow src --require-rule X-001
 sopctl task accept/submit/verify/deliver TASK-0001 .
 sopctl intake .                          # 文档 MUST 句 → 候选规则（不写注册表）
+sopctl hook claude .                     # 安装 Claude Code PreToolUse 钩子
+echo '{"tool_name":"Bash","tool_input":{"command":"git push"}}' | sopctl harness-check .
 ```
 
 ## 三个原子

@@ -25,6 +25,8 @@ class NoConsumerDetector:
         for rule in rules:
             if rule.status not in GOVERNANCE_ACTIVE or rule.modality not in HARD_MODALITIES:
                 continue
+            if not rule.consumer_markers and rule.state_markers:
+                continue  # 状态类规则由 state_health 检测器评估
             if not rule.consumer_markers:
                 findings.append(
                     Finding(

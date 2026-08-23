@@ -1,0 +1,37 @@
+rules:
+- rule_id: SELF-001
+  statement: 检测模式 write_only_state 必须在生产代码接线并具备回归测试
+  modality: MUST
+  status: accepted
+  scope: project
+  owner: user
+  risk: medium
+  source:
+    type: constitution
+    ref: ROADMAP.md
+    observed_at: null
+  consumer_markers:
+  - write_only_state
+  legacy_markers: []
+  supersedes: []
+  tags: []
+  created_at: '2026-08-23T15:52:09.408604Z'
+  accepted_at: null
+- rule_id: SELF-002
+  statement: 检测模式 state_in_parallel_files 必须在生产代码接线并具备回归测试
+  modality: MUST
+  status: accepted
+  scope: project
+  owner: user
+  risk: medium
+  source:
+    type: constitution
+    ref: ROADMAP.md
+    observed_at: null
+  consumer_markers:
+  - state_in_parallel_files
+  legacy_markers: []
+  supersedes: []
+  tags: []
+  created_at: '2026-08-23T15:52:09.826104Z'
+  accepted_at: null

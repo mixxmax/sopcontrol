@@ -36,6 +36,36 @@ patterns:
   domains: [job-search, ci-deploy]
   status: proven-on-2-domains
 
+- pattern_id: write_only_state
+  statement: 状态标记仅出现在单一生产文件，无其他消费者读取迹象（只写不读的代理）
+  detection: rule.state_markers × code_scan.identifiers（单生产文件且无测试）
+  fixtures:
+  - shop-checkout/REFUND-005
+  - jobflow-preview/PUSH-003
+  domains: [e-commerce, job-search]
+  status: proven-on-2-domains
+  severity: info
+  note: grep 级代理——单文件出现不排除同文件内读写；语义成熟后升级 severity 并接入 verdict
+
+- pattern_id: state_in_parallel_files
+  statement: 同一状态标记并行出现在多个生产文件，双处维护真源不明
+  detection: rule.state_markers × code_scan.identifiers（≥2 生产文件）
+  fixtures:
+  - shop-checkout/REFUND-006
+  - ci-deploy/DEPLOY-003
+  domains: [e-commerce, ci-deploy]
+  status: proven-on-2-domains
+  severity: gap
+
+- pattern_id: state_marker_absent
+  statement: 声明的状态标记在代码中完全不存在
+  detection: rule.state_markers × code_scan.identifiers（零命中）
+  fixtures:
+  - shop-checkout/REFUND-007
+  domains: [e-commerce]
+  status: proven-on-1-domain
+  severity: info
+
 - pattern_id: consumer_markers_undefined
   statement: 已接受的硬规则未声明什么算消费者，无法判定吸收
   detection: rule.consumer_markers 为空

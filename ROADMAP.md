@@ -48,21 +48,31 @@
 - [x] 测试 5 项（契约生成/重复拒绝/熔断/已达标/未知 finding 可行动报错）；CLI 实测全链路
 - [ ] git worktree 隔离 —— 暂缓：隔离为"自动修复者"而设，其尚不存在；待模型插件位接入时一并实现（DESIGN 决策，非遗忘）
 
-### B4 校准与投影 — 已完成确定性切片（2026-08-23 深夜）
-- [x] 接管包：`sopctl task takeover`——契约/状态/revision/修复预算/规则判定/开放断口/唯一合法下一步，
-      只读、YAML 输出（手册 8.3：接管者不重读历史、不重解释已接受契约）
-- [ ] capability handshake（需真实模型/harness 在环，无法离线诚实验证——B4 主体）
-- [ ] Rulesync 式平台投影、跨 harness adapter（B4 主体）
-- 说明：B4 的主体需要活的模型与 harness 才能诚实测试；离线可做的确定性部分已做（接管包）。
+### B4 校准与投影 — Claude Code 适配完成（2026-08-24 凌晨）
+- [x] harness 适配：`sopctl harness-check`（决策纯函数，Claude PreToolUse 协议，字段对照官方文档核实）
+- [x] `sopctl hook claude` 安装器（项目级 settings.json，合并不覆盖、幂等）
+- [x] 策略：控制器文件信任根保护 / --no-verify 拒绝 / git push 终点门三态 / 门上下文缺失 fail-closed
+- [x] 接管包：`sopctl task takeover`（手册 8.3，只读）
+- [x] 沙箱 gate 预检通过（fail 态正确识别）
+- [ ] **真实 Claude 进程穿透演习**：被 claude API key 401 阻断（见 Blockers）；适配器与协议契约由 62+ 测试覆盖
+- [ ] codex / opencode 适配、capability handshake 合成评测、Rulesync 式平台投影
+
+### B5 模式库扩展 — 完成（2026-08-24 凌晨，经任务机自应用交付）
+- [x] `write_only_state`（只写不读代理，info；shop + jobflow 双域）
+- [x] `state_in_parallel_files`（双处维护，gap；shop + ci 双域）
+- [x] `state_marker_absent`（声明状态不存在，info）
+- [x] Rule.state_markers 字段；verdict 对状态类规则显式"不适用吸收等级"（不猜）
+- [x] TASK-0001 全流程：契约→范围检查→完成门独立审计 SELF-001/002→delivered（自应用首次真实闭环）
 
 ## 状态（每次运行后更新）
 
-- 2026-08-23 深夜（会话内连续自驱）：B2、B3、B4 确定性切片（接管包）完成。54 测试全绿，
-  五笔里程碑提交（B0/B1/B2/B3/B4切片）。控制器闭环已齐：观察→终点门→任务受控交付→有界修复→接管。
-  剩余：B4 主体（capability handshake / 平台投影——需真实模型与 harness 在环）、worktree 隔离
-  （待自动修复者存在）、更多检测模式与 14.1 剩余场景（1/6/7 需要 harness 层）。
-  推进方式已按用户要求改为会话内连续自驱（定时任务已删除）。
+- 2026-08-24 凌晨（会话内连续自驱第二轮）：B4 Claude Code 适配 + B5 模式库扩展完成。
+  71 测试全绿。模式库 8 模式、语料 15 断口用例 + 8 任务用例。自应用首次真实闭环：
+  模式库扩展经任务机契约与完成门交付（TASK-0001 delivered）。下一步候选：
+  修复 claude key 后重跑真实穿透演习；codex/opencode 适配；检测语义升级（调用图）。
 
 ## Blockers
 
-- （无）
+- **claude API key 401**：真实 Claude 进程穿透演习被用户环境认证失败阻断。
+  适配器/安装器/协议契约已完成并有测试覆盖；key 修复后在沙箱仓库重跑两条演习
+  （改控制器文件、`git push --no-verify`）即可闭环。

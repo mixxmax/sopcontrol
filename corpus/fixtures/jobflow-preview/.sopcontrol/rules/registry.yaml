@@ -29,3 +29,15 @@ rules:
   - direct_write
   tags:
   - jobflow-historical
+- rule_id: PUSH-003
+  statement: 预览快照必须作为可消费状态维护
+  modality: MUST
+  status: accepted
+  scope: tracker.state
+  owner: product
+  risk: medium
+  source:
+    type: document
+    ref: docs/tracker-sop.md
+  state_markers:
+  - preview_state

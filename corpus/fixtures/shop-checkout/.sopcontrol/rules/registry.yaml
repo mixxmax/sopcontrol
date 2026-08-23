@@ -45,3 +45,39 @@ rules:
     ref: docs/sop.md
   consumer_markers:
   - audit_log
+- rule_id: REFUND-005
+  statement: 退款状态必须以唯一状态源维护
+  modality: MUST
+  status: accepted
+  scope: checkout.state
+  owner: product
+  risk: medium
+  source:
+    type: document
+    ref: docs/sop.md
+  state_markers:
+  - refund_state
+- rule_id: REFUND-006
+  statement: 对账状态必须单一真源，不得双处维护
+  modality: MUST
+  status: accepted
+  scope: checkout.state
+  owner: product
+  risk: medium
+  source:
+    type: document
+    ref: docs/sop.md
+  state_markers:
+  - ledger_status
+- rule_id: REFUND-007
+  statement: 每日摘要必须落盘归档
+  modality: MUST
+  status: accepted
+  scope: checkout.report
+  owner: product
+  risk: low
+  source:
+    type: document
+    ref: docs/sop.md
+  state_markers:
+  - daily_digest

@@ -92,6 +92,7 @@ class Rule(BaseModel):
     source: SourceRef
     consumer_markers: list[str] = Field(default_factory=list)
     legacy_markers: list[str] = Field(default_factory=list)  # 受控入口之外的旧路径符号；存活即可绕过
+    state_markers: list[str] = Field(default_factory=list)   # 状态/字段符号；由 state_health 模式评估
     supersedes: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=utcnow)

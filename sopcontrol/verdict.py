@@ -91,6 +91,16 @@ def evaluate_rule(rule: Rule, evidence: list[Evidence], findings: list[Finding])
 
 
 def _absorption_verdict(rule: Rule, prod: list[Evidence], test: list[Evidence], fids: list[str]) -> Verdict:
+    if rule.state_markers and not rule.consumer_markers:
+        return Verdict(
+            rule_id=rule.rule_id,
+            status="unknown",
+            absorption=None,
+            reason="状态类规则：吸收等级不适用，由 state_health 模式评估（write_only/parallel/absent）",
+            next_action="关注 audit 输出中的 state_health findings",
+            finding_ids=fids,
+        )
+
     if not rule.consumer_markers:
         return Verdict(
             rule_id=rule.rule_id,

@@ -1,0 +1,64 @@
+task_id: TASK-0001
+contract:
+  objective: 扩展检测模式库：两个状态健康模式（接线+跨域语料+回归测试）
+  allowed_writes:
+  - sopcontrol
+  - plugins
+  - corpus
+  - tests
+  required_rules:
+  - SELF-001
+  - SELF-002
+  max_repairs: 2
+  repairs_fingerprint: null
+status: delivered
+repair_count: 0
+changed_paths:
+- sopcontrol/model.py
+- sopcontrol/verdict.py
+- plugins/__init__.py
+- plugins/detectors/state_health.py
+- plugins/detectors/no_consumer.py
+- corpus/cases.yaml
+- corpus/patterns.yaml
+- corpus/fixtures/shop-checkout/src/checkout.py
+- corpus/fixtures/shop-checkout/src/reporting.py
+- corpus/fixtures/ci-deploy/scripts/deploy.py
+- corpus/fixtures/ci-deploy/scripts/rollback.py
+- tests/patterns/test_state_patterns.py
+revision: 5
+created_at: '2026-08-23T15:52:10.237194Z'
+updated_at: '2026-08-23T15:55:19.368617Z'
+history:
+- at: '2026-08-23T15:52:10.784504Z'
+  action: accept
+  from_status: contract_proposed
+  to_status: executing
+  allowed: true
+  reason: 契约完整：目标、写入范围与可验证完成定义齐备
+  detail:
+    next_action: 执行变更后 task submit 提交改动路径
+- at: '2026-08-23T15:55:16.936712Z'
+  action: submit
+  from_status: executing
+  to_status: verification_pending
+  allowed: true
+  reason: 改动 12 个路径，全部在写入范围内
+  detail:
+    next_action: 运行 task verify 由控制器独立审计
+- at: '2026-08-23T15:55:18.670869Z'
+  action: verify
+  from_status: verification_pending
+  to_status: verified
+  allowed: true
+  reason: 完成门通过：全部必需规则 [SELF-001, SELF-002] 判定 pass（E3 独立审计）
+  detail:
+    next_action: task deliver 交付
+- at: '2026-08-23T15:55:19.359251Z'
+  action: deliver
+  from_status: verified
+  to_status: delivered
+  allowed: true
+  reason: 完成门已独立验证，允许交付
+  detail:
+    next_action: 无

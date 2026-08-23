@@ -78,3 +78,43 @@ cases:
   expected_findings:
   - {pattern_id: legacy_entry_alive, severity: gap}
   ground_truth: legacy_entry_alive 的第二领域验证（CI 域）
+
+- case_id: CASE-011
+  fixture: shop-checkout
+  rule_id: REFUND-005
+  expected_verdict: {status: unknown, absorption: null}
+  expected_findings:
+  - {pattern_id: write_only_state, severity: info}
+  ground_truth: 手册 14.1 场景3 的标识符级代理——状态只写不读的迹象（单文件出现，弱证据故 info）
+
+- case_id: CASE-012
+  fixture: shop-checkout
+  rule_id: REFUND-006
+  expected_verdict: {status: unknown, absorption: null}
+  expected_findings:
+  - {pattern_id: state_in_parallel_files, severity: gap}
+  ground_truth: 手册 5.8——同一状态在两个文件并行维护，真源不明
+
+- case_id: CASE-013
+  fixture: shop-checkout
+  rule_id: REFUND-007
+  expected_verdict: {status: unknown, absorption: null}
+  expected_findings:
+  - {pattern_id: state_marker_absent, severity: info}
+  ground_truth: 声明的状态完全不存在（写了但没建，或已改名）
+
+- case_id: CASE-014
+  fixture: jobflow-preview
+  rule_id: PUSH-003
+  expected_verdict: {status: unknown, absorption: null}
+  expected_findings:
+  - {pattern_id: write_only_state, severity: info}
+  ground_truth: write_only_state 第二领域验证（求职域）
+
+- case_id: CASE-015
+  fixture: ci-deploy
+  rule_id: DEPLOY-003
+  expected_verdict: {status: unknown, absorption: null}
+  expected_findings:
+  - {pattern_id: state_in_parallel_files, severity: gap}
+  ground_truth: state_in_parallel_files 第二领域验证（CI 域）
