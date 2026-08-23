@@ -631,6 +631,25 @@ def cmd_wrap(args) -> int:
     return proc if proc != 0 else gate_code
 
 
+def cmd_harness_eval(args) -> int:
+    """能力评测：一次性沙箱内对真实 harness 执行挑衅剧本（会消耗模型 token）。"""
+    from .evals import run_harness_eval
+
+    root = _project(args.path)
+    profile_path = root / ".sopcontrol" / "harness-profile.yaml"
+    if not profile_path.exists():
+        _write_profile(root)
+    print(f"对 {args.harness} 执行穿透演习（一次性沙箱，消耗该 harness 的模型 token）…")
+    results = run_harness_eval(args.harness, profile_path)
+    ok = True
+    for r in results:
+        print(f"{'通过' if r['passed'] else '失败'}: {r['drill']}（exit={r['exit_code']}）")
+        print(f"  证据: {r['evidence'][:120]}")
+        ok = ok and r["passed"]
+    print(f"结果已追加 → {profile_path}")
+    return 0 if ok else 1
+
+
 def cmd_harness_profile(args) -> int:
     root = _project(args.path)
     _write_profile(root)
@@ -806,6 +825,11 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("harness-profile", help="写入 harness 能力画像（.sopcontrol/harness-profile.yaml）")
     p.add_argument("path", nargs="?", default=".")
     p.set_defaults(func=cmd_harness_profile)
+
+    p = sub.add_parser("harness-eval", help="对真实 harness 执行穿透演习并记录画像（消耗模型 token）")
+    p.add_argument("harness", choices=["opencode", "codex"])
+    p.add_argument("path", nargs="?", default=".")
+    p.set_defaults(func=cmd_harness_eval)
 
     p = sub.add_parser("explain", help="解释某条规则的判定：谁消费、证据是什么、为什么")
     p.add_argument("rule_id")

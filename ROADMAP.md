@@ -68,11 +68,19 @@
 
 ## 状态（每次运行后更新）
 
-- 2026-08-24（会话内连续自驱第四轮）：verifier 自证防护落地（14.1 场景6 语料化：TCASE-009/010
-  + 宪法测试）。manifest.controller_paths 机制：控制器路径改动未提交基线 → 完成门 blocked；
-  本仓库 manifest 已声明 sopcontrol/ 与 plugins/。79 测试全绿，十笔提交。剩余场景 1（讨论不改码，
-  需对话意图层）与 7（换模型重蹈副作用，可用现有真实 harness + takeover 包做行为级语料）。
+- 2026-08-24（连续自驱第五轮）：①ast_scan 传感器 + comment_only_reference 模式（R1 反向家族根治，
+  首夜翻车场景重放通过）；②`sopctl harness-eval`：穿透演习成为可重复仪器，opencode 与 codex
+  双双真实通过并归档 eval_history。过程中三个真实发现：$PWD 定位（subprocess cwd 不更新 PWD，
+  opencode 会读错项目）、绝对路径触发 harness 自身权限询问、管道被后台进程挂住（改文件重定向）。
+  82 测试全绿，十二笔提交。剩余：场景 7 行为级语料（takeover 防重蹈）、场景 1（对话意图层）、
+  检测语义扩展到非 Python 表面。
 
 ## Blockers
 
 - （无）
+
+## 运维记录（诚实登记）
+
+- 2026-08-24：清理 eval 挂起时用宽泛 pkill 模式误杀了用户 OpenChamber.app 的两个
+  opencode serve 常驻服务（8月10日启动）。此类守护通常按需重启，但属用户运行中应用——
+  教训：杀进程前先 ps 确认归属，宁可重启自己的演习进程。
