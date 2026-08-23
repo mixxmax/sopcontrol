@@ -16,6 +16,7 @@ from .audit import run_audit, run_task_verify
 from .ledger import Ledger
 from .model import Modality, RiskLevel, Rule, RuleStatus, SourceRef
 from .registry import Registry, RegistryError
+from .repair import RepairError, list_repairs, open_repair
 from .task import Contract, TaskRecord, TaskStore, evaluate_transition, normalize_relpath
 from .verdict import evaluate_rule
 
@@ -404,6 +405,34 @@ def _suggest_modality(statement: str) -> str:
     return "MUST_NOT" if any(k in low for k in NEGATIVE_KEYWORDS) else "MUST"
 
 
+def cmd_repair(args) -> int:
+    from plugins import DETECTORS, SENSORS
+
+    root = _project(args.path)
+    if args.sub == "open":
+        try:
+            task = open_repair(root, args.finding_id, list(args.allow), SENSORS, DETECTORS)
+        except RepairError as exc:
+            print(f"错误: {exc}", file=sys.stderr)
+            return 2
+        print(f"已开修复任务 {task.task_id} [contract_proposed]：{task.contract.objective[:60]}")
+        print(f"  绑定指纹: {task.contract.repairs_fingerprint}")
+        print(f"  完成定义: 规则 {', '.join(task.contract.required_rules)} 判定 pass")
+        print("  下一步: 在契约范围内完成最小修复 → task accept/submit/verify（预算两轮，同指纹熔断）")
+        return 0
+
+    if args.sub == "list":
+        repairs = list_repairs(root)
+        if not repairs:
+            print("无修复任务")
+            return 0
+        print(f"{'TASK':12} {'状态':22} {'指纹':18} 目标")
+        for t in repairs:
+            print(f"{t.task_id:12} {t.status.value:22} {t.contract.repairs_fingerprint:18} {t.contract.objective[:40]}")
+        return 0
+    return 2
+
+
 def cmd_intake(args) -> int:
     """意图编译器 v0（确定性种子）：文档 MUST 句 → CandidateRule（observed，不写终态）。"""
     from plugins import DETECTORS, SENSORS
@@ -541,6 +570,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("path", nargs="?", default=".")
     p.set_defaults(func=cmd_intake)
 
+    repair = sub.add_parser("repair", help="有界修复：Finding → 修复任务（同指纹熔断）")
+    repair_sub = repair.add_subparsers(dest="sub", required=True)
+    p = repair_sub.add_parser("open", help="为某条 finding 开修复任务")
+    p.add_argument("finding_id")
+    p.add_argument("--allow", action="append", required=True, help="允许修复改动的路径前缀，可重复")
+    p.add_argument("path", nargs="?", default=".")
+    p.set_defaults(func=cmd_repair)
+    p = repair_sub.add_parser("list", help="列出修复任务")
+    p.add_argument("path", nargs="?", default=".")
+    p.set_defaults(func=cmd_repair)
+
     p = sub.add_parser("explain", help="解释某条规则的判定：谁消费、证据是什么、为什么")
     p.add_argument("rule_id")
     p.add_argument("path", nargs="?", default=".")
@@ -554,7 +594,7 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     try:
         return args.func(args)
-    except RegistryError as exc:
+    except (RegistryError, RepairError) as exc:
         print(f"错误: {exc}", file=sys.stderr)
         return 2
 

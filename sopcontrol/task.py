@@ -49,6 +49,7 @@ class Contract(BaseModel):
     allowed_writes: list[str] = Field(default_factory=list)   # 路径前缀（目录或文件）
     required_rules: list[str] = Field(default_factory=list)   # 完成定义：这些规则 verdict==pass
     max_repairs: int = 2                                       # 手册 10.5：默认两轮，超出转终态
+    repairs_fingerprint: Optional[str] = None                  # 非 None = 修复任务，绑定 Finding 指纹
 
 
 class EnvelopeRecord(BaseModel):

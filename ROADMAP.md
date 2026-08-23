@@ -41,9 +41,12 @@
 - 验收：47 测试全绿；CLI 全生命周期实测（契约→执行→gap 修复轮→接线→verified→delivered）
 - 实测捕获的真 bug 两枚：完成门曾按全项目口径连坐无关规则 fail；CLI open 误引用 args.changed（API 层测试测不到的接线 bug）
 
-### B3 有界修复
-- [ ] gap contract → 最小影响范围 → 隔离 worktree → 独立验证
-- [ ] 重复指纹熔断（Finding.fingerprint 已就位）：同指纹两轮 → 转人工（Blockers 机制同款）
+### B3 有界修复 — 完成（2026-08-23 深夜，框架层）
+- [x] gap contract：`sopctl repair open <finding_id>` → 指纹绑定的修复任务（经 B2 任务机执行，完成门复用）
+- [x] 同指纹熔断：同断口重复开单拒绝；历史修复失败（failed_unverified/blocked）→ 拒绝再开、转人工
+- [x] 已达标拒绝：规则当前 pass 时不开修复（防无意义返工）
+- [x] 测试 5 项（契约生成/重复拒绝/熔断/已达标/未知 finding 可行动报错）；CLI 实测全链路
+- [ ] git worktree 隔离 —— 暂缓：隔离为"自动修复者"而设，其尚不存在；待模型插件位接入时一并实现（DESIGN 决策，非遗忘）
 
 ### B4 校准与投影
 - [ ] capability handshake（JSON/边界遵循/hook 可用性的合成评测）
