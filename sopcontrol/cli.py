@@ -13,6 +13,7 @@ from pathlib import Path
 import yaml
 
 from .audit import run_audit, run_task_verify
+from .harness import PUSH_RE, HookDecision
 from .ledger import Ledger
 from .model import Modality, RiskLevel, Rule, RuleStatus, SourceRef
 from .registry import Registry, RegistryError
@@ -500,6 +501,62 @@ def cmd_intake(args) -> int:
     return 0
 
 
+def cmd_harness_check(args) -> int:
+    """Claude Code PreToolUse 入口：stdin 收工具调用 JSON，stdout 出决策 JSON。"""
+    from .harness import check_tool_call, gate_status_for_push
+
+    try:
+        payload = json.loads(sys.stdin.read() or "{}")
+    except json.JSONDecodeError as exc:
+        decision = HookDecision(
+            permissionDecision="deny",
+            reason=f"harness check 无法解析输入（{exc}）：解析失败 fail-closed",
+        )
+    else:
+        gate_status = None
+        command = str((payload.get("tool_input") or {}).get("command") or "")
+        if PUSH_RE.search(command):
+            gate_status = gate_status_for_push(_project(args.path))
+        decision = check_tool_call(payload, gate_status)
+
+    print(json.dumps(decision.claude_payload(), ensure_ascii=False))
+    return 0
+
+
+def cmd_hook_claude(args) -> int:
+    """把 sopctl harness check 装进项目 .claude/settings.json 的 PreToolUse（合并，不覆盖他人配置）。"""
+    root = _project(args.path)
+    settings_path = root / ".claude" / "settings.json"
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+
+    data = {}
+    if settings_path.exists():
+        try:
+            data = json.loads(settings_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            print(f"错误: {settings_path} 不是合法 JSON，拒绝合并（请手工整合）", file=sys.stderr)
+            return 2
+
+    command = f'"{sys.executable}" -m sopcontrol.cli harness check'
+    pre = data.setdefault("hooks", {}).setdefault("PreToolUse", [])
+    entry = {"matcher": "Bash|Write|Edit|MultiEdit", "hooks": [{"type": "command", "command": command}]}
+
+    replaced = False
+    for existing in pre:
+        for h in existing.get("hooks", []):
+            if "sopcontrol.cli" in str(h.get("command", "")):
+                h["command"] = command
+                existing["matcher"] = entry["matcher"]
+                replaced = True
+    if not replaced:
+        pre.append(entry)
+
+    settings_path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    print(f"已安装 Claude Code PreToolUse 钩子 → {settings_path}")
+    print("生效方式: 在该目录运行 claude，工具调用将经过 sopctl 决策（deny/ask/allow）")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="sopctl",
@@ -602,6 +659,14 @@ def build_parser() -> argparse.ArgumentParser:
     p = repair_sub.add_parser("list", help="列出修复任务")
     p.add_argument("path", nargs="?", default=".")
     p.set_defaults(func=cmd_repair)
+
+    p = sub.add_parser("harness-check", help="harness 工具调用决策（stdin JSON → stdout 决策；供 hook 调用）")
+    p.add_argument("path", nargs="?", default=".")
+    p.set_defaults(func=cmd_harness_check)
+
+    p = hook_sub.add_parser("claude", help="安装 Claude Code PreToolUse 钩子（项目级 settings.json，合并式）")
+    p.add_argument("path", nargs="?", default=".")
+    p.set_defaults(func=cmd_hook_claude)
 
     p = sub.add_parser("explain", help="解释某条规则的判定：谁消费、证据是什么、为什么")
     p.add_argument("rule_id")
