@@ -48,14 +48,16 @@
 - [x] 测试 5 项（契约生成/重复拒绝/熔断/已达标/未知 finding 可行动报错）；CLI 实测全链路
 - [ ] git worktree 隔离 —— 暂缓：隔离为"自动修复者"而设，其尚不存在；待模型插件位接入时一并实现（DESIGN 决策，非遗忘）
 
-### B4 校准与投影 — Claude Code 适配完成（2026-08-24 凌晨）
-- [x] harness 适配：`sopctl harness-check`（决策纯函数，Claude PreToolUse 协议，字段对照官方文档核实）
-- [x] `sopctl hook claude` 安装器（项目级 settings.json，合并不覆盖、幂等）
-- [x] 策略：控制器文件信任根保护 / --no-verify 拒绝 / git push 终点门三态 / 门上下文缺失 fail-closed
+### B4 校准与投影 — 完成（2026-08-24，三 harness 适配，两台真实在环验证）
+- [x] harness 决策核心：`sopctl harness-check`（stdin/--payload，工具名跨 harness 归一，决策纯函数）
+- [x] Claude Code 适配（PreToolUse JSON，协议对照官方文档核实；本机无 key，live_verified=false 如实记录）
+- [x] **OpenCode 适配并实测**：`.opencode/plugins` 运行时插件；真实模型 Edit 控制器文件被拒演习通过
+- [x] **Codex 适配并实测**：AGENTS.md 投影（模型主动遵守）+ `sopctl wrap codex` 事后门（真实会话后 gate 阻断）
+- [x] 拦截组件自保护：卸插件/改钩子配置 = 提权，拒绝（人工动作）
+- [x] 能力画像 `.sopcontrol/harness-profile.yaml`（live_verified + live_evidence 归档）
 - [x] 接管包：`sopctl task takeover`（手册 8.3，只读）
-- [x] 沙箱 gate 预检通过（fail 态正确识别）
-- [ ] **真实 Claude 进程穿透演习**：被 claude API key 401 阻断（见 Blockers）；适配器与协议契约由 62+ 测试覆盖
-- [ ] codex / opencode 适配、capability handshake 合成评测、Rulesync 式平台投影
+- 剩余：codex 出现运行时钩子后升级其画像；capability handshake 合成评测矩阵（模型能力维度）
+- claude 适配保留：用户环境无 key（不修），有 key 环境可直接实测
 
 ### B5 模式库扩展 — 完成（2026-08-24 凌晨，经任务机自应用交付）
 - [x] `write_only_state`（只写不读代理，info；shop + jobflow 双域）
@@ -66,13 +68,11 @@
 
 ## 状态（每次运行后更新）
 
-- 2026-08-24 凌晨（会话内连续自驱第二轮）：B4 Claude Code 适配 + B5 模式库扩展完成。
-  71 测试全绿。模式库 8 模式、语料 15 断口用例 + 8 任务用例。自应用首次真实闭环：
-  模式库扩展经任务机契约与完成门交付（TASK-0001 delivered）。下一步候选：
-  修复 claude key 后重跑真实穿透演习；codex/opencode 适配；检测语义升级（调用图）。
+- 2026-08-24（会话内连续自驱第三轮）：B4 完成。OpenCode 与 Codex 适配并**真实在环验证**通过
+  （OpenCode 运行时拦截真实模型改控制器文件；Codex wrap 事后门阻断真实会话）。76 测试全绿，
+  九笔里程碑提交。演习发现并修复：拦截组件自保护缺失、投影 PATH 提示。下一步候选：
+  capability handshake 合成评测矩阵、检测语义升级（调用图）、B2 场景 1/6/7（现已有真实 harness 可测）。
 
 ## Blockers
 
-- **claude API key 401**：真实 Claude 进程穿透演习被用户环境认证失败阻断。
-  适配器/安装器/协议契约已完成并有测试覆盖；key 修复后在沙箱仓库重跑两条演习
-  （改控制器文件、`git push --no-verify`）即可闭环。
+- （无。claude API key 缺失不再阻塞：用户确认无 key 且不需要，适配保留待有 key 环境。）

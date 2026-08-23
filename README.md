@@ -8,19 +8,19 @@
 设计与调研手册见 [`docs/`](docs/)；建构决策记录见 [`DESIGN.md`](DESIGN.md)；
 已知绕过家族的诚实登记见 [`RESIDUAL_RISKS.md`](RESIDUAL_RISKS.md)。
 
-## 当前状态：B4 harness 适配 + B5 模式库扩展
+## 当前状态：B4 完成——三 harness 适配，两台真实在环验证
 
-- **Claude Code 适配**：`sopctl hook claude` 安装 PreToolUse 钩子（项目级、合并式、幂等）；
-  `sopctl harness-check` 按 Claude 协议输出 allow/deny/ask 决策。策略：控制器文件禁止普通
-  写入口触碰（信任根）、`--no-verify` 一律拒绝、`git push` 走终点门三态（fail→deny、
-  gap→ask、clean→allow）、门上下文缺失 fail-closed。协议字段已对照官方文档核实。
-- **检测模式库（8 模式）**：新增 `write_only_state`（只写不读代理，info）、
-  `state_in_parallel_files`（双处维护真源不明，gap）、`state_marker_absent`（声明状态不存在，
-  info），各配跨领域夹具与语料用例。
-- **自应用闭环**：本次模式库扩展本身经任务机交付（契约→submit 范围检查→完成门独立
-  审计 SELF-001/002→delivered），TASK-0001 存于本仓库 `.sopcontrol/`。
+- **OpenCode（运行时拦截，已实测）**：`sopctl hook opencode` 安装 `.opencode/plugins` 插件，
+  `tool.execute.before` 调 `sopctl harness-check` 决策。真实模型演习：Edit 控制器文件被当场
+  拒绝，模型转述理由后停止。
+- **Codex 0.147（无运行时钩子 → 建议+终态，已实测）**：`sopctl project codex` 生成 AGENTS.md
+  规则投影（模型会主动遵守，演习中它真的尝试运行 gate）；`sopctl wrap codex -- <args>`
+  事后门（真实会话后 gate 阻断，退出码 1）；git/CI 终态兜底。
+- **Claude Code（运行时拦截，协议已核实）**：适配完成；本机无 API key，待有 key 环境实测。
+- **拦截组件自保护**：删除 opencode 插件/claude 钩子配置 = 卸项圈，一律拒绝（人工动作）。
+- 能力画像落盘 `.sopcontrol/harness-profile.yaml`（live_verified 如实记录）。
 
-B0–B3 能力见 git 历史；检测器仍为 grep 智力（边界见 RESIDUAL_RISKS.md）。
+B0–B3 能力见 git 历史；检测 8 模式仍为 grep 智力（边界见 RESIDUAL_RISKS.md）。
 
 - `sopctl task open/accept/submit/verify/deliver` —— 任务契约 → 受控执行 → 完成门 → 交付
 - 完成门只信独立审计（E3）：required_rules 全部 pass 才 verified；fail → blocked（人工）；
@@ -60,6 +60,9 @@ sopctl task open . --objective "接线 X" --allow src --require-rule X-001
 sopctl task accept/submit/verify/deliver TASK-0001 .
 sopctl intake .                          # 文档 MUST 句 → 候选规则（不写注册表）
 sopctl hook claude .                     # 安装 Claude Code PreToolUse 钩子
+sopctl hook opencode .                   # 安装 OpenCode 运行时插件
+sopctl project codex .                   # AGENTS.md 规则投影（Codex 建议层）
+sopctl wrap codex . -- exec -s workspace-write "任务"   # 事后门 wrapper
 echo '{"tool_name":"Bash","tool_input":{"command":"git push"}}' | sopctl harness-check .
 ```
 

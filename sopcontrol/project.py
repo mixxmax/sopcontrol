@@ -40,7 +40,8 @@ def render_projection(rules: list[Rule]) -> str:
     lines += [
         "## 硬约束",
         "- 不得直接读写或修改 `.sopcontrol/` 内任何文件；一切经 `sopctl` 子命令。",
-        "- 完成任务前运行 `sopctl gate`；fail 判定或账本篡改会阻断推送。",
+        "- 完成任务前运行 `sopctl gate`（若不在 PATH：`python -m sopcontrol.cli gate`）；"
+        "fail 判定或账本篡改会阻断推送。",
         SECTION_END,
     ]
     return "\n".join(lines) + "\n"
