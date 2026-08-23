@@ -43,7 +43,13 @@ def cmd_init(args) -> int:
     (sc / "evidence").mkdir(parents=True)
     registry = sc / "rules" / "registry.yaml"
     registry.write_text("rules: []\n", encoding="utf-8")
-    print(f"已在 {root} 初始化 .sopcontrol/（规则注册表 + 证据账本目录）")
+    (sc / "manifest.yaml").write_text(
+        "# controller_paths：本仓库中构成控制器/验证器自身的路径前缀。\n"
+        "# 列出的路径在本项目任务里被改动时，必须先提交基线才能通过完成门（手册 9.3）。\n"
+        "controller_paths: []\n",
+        encoding="utf-8",
+    )
+    print(f"已在 {root} 初始化 .sopcontrol/（规则注册表 + 证据账本 + manifest）")
     print("下一步: sopctl rule add 登记规则，然后 sopctl audit")
     return 0
 

@@ -98,3 +98,32 @@ cases:
   - {do: deliver, expect: {allowed: true, to: delivered}}
   final_status: delivered
   ground_truth: 修复回路健康形态——第一轮 gap、第二轮真实接线并补测试后收敛交付
+
+- case_id: TCASE-009
+  name: verifier 自证嫌疑 → 阻断（14.1 场景6 / 手册 9.3）
+  fixture: ci-deploy
+  steps:
+  - {do: manifest, controller_paths: [scripts]}
+  - {do: shell, cmd: "git init -q && git config user.name t && git config user.email t@t"}
+  - {do: open, objective: 改动受控入口, allow: [scripts], require_rules: [DEPLOY-001]}
+  - {do: accept, expect: {allowed: true, to: executing}}
+  - {do: write_file, path: scripts/deploy.py, content: "def deploy(target):\n    print('deploying', target)\n"}
+  - {do: submit, changed: [scripts/deploy.py], expect: {allowed: true, to: verification_pending}}
+  - {do: verify, expect: {allowed: true, to: blocked}}
+  final_status: blocked
+  ground_truth: 任务改动了 manifest 声明的控制器路径且未提交基线——被验证代码与验证器同改后不得自行批准，转人工
+
+- case_id: TCASE-010
+  name: 控制器变更已提交基线 → 完成门正常裁决
+  fixture: ci-deploy
+  steps:
+  - {do: manifest, controller_paths: [scripts]}
+  - {do: shell, cmd: "git init -q && git config user.name t && git config user.email t@t"}
+  - {do: open, objective: 改动受控入口, allow: [scripts], require_rules: [DEPLOY-001]}
+  - {do: accept, expect: {allowed: true, to: executing}}
+  - {do: write_file, path: scripts/deploy.py, content: "def deploy(target):\n    print('deploying', target)\n"}
+  - {do: submit, changed: [scripts/deploy.py], expect: {allowed: true, to: verification_pending}}
+  - {do: shell, cmd: "git add -A && git commit -qm baseline"}
+  - {do: verify, expect: {allowed: true, to: repair_required}}
+  final_status: repair_required
+  ground_truth: 同样的控制器改动，提交基线后完成门不再以自证嫌疑阻断，按规则判定正常走修复回路

@@ -55,15 +55,53 @@ def run_audit(
     return AuditReport(rules=rules, evidence=evidence, findings=findings, verdicts=verdicts)
 
 
+def load_controller_paths(root: Path) -> list[str]:
+    """从 manifest.yaml 读控制器自身路径前缀；缺失视为空（普通项目无此概念）。"""
+    import yaml
+
+    manifest = Path(root) / ".sopcontrol" / "manifest.yaml"
+    if not manifest.exists():
+        return []
+    data = yaml.safe_load(manifest.read_text(encoding="utf-8")) or {}
+    return [str(p) for p in (data.get("controller_paths") or [])]
+
+
+def dirty_controller_changes(root: Path, task: TaskRecord) -> list[str]:
+    """任务改动中落在控制器路径内且未提交基线的部分（git 不可用 = fail-closed 视为脏）。"""
+    import subprocess
+
+    controller = load_controller_paths(root)
+    if not controller:
+        return []
+    touched = [
+        p for p in task.changed_paths
+        if any(p == c or p.startswith(c.rstrip("/") + "/") for c in controller)
+    ]
+    if not touched:
+        return []
+    try:
+        proc = subprocess.run(
+            ["git", "status", "--porcelain", "--"] + touched,
+            cwd=str(root), capture_output=True, text=True, timeout=15,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return touched  # git 不可用：无法证明干净 → 视为脏
+    if proc.returncode != 0:
+        return touched
+    return touched if proc.stdout.strip() else []
+
+
 def run_task_verify(root: Path, sensors: list, detectors: list, task: TaskRecord) -> TransitionDecision:
     """完成门编排：独立审计 → 规则判定 → 纯函数迁移决策。不信任务自报。"""
     report = run_audit(root, sensors, detectors, persist=True)
     ledger = Ledger(Path(root) / ".sopcontrol" / "evidence" / "ledger.jsonl")
     tampered = ledger.path.exists() and not ledger.verify()
+    controller_dirty = dirty_controller_changes(Path(root), task)
     verdicts = {v.rule_id: v.status for v in report.verdicts}
     return evaluate_transition(
         task, "verify",
         rule_verdicts=verdicts,
         known_rule_ids={r.rule_id for r in report.rules},
         ledger_tampered=tampered,
+        controller_dirty=controller_dirty,
     )

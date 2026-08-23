@@ -116,3 +116,11 @@ submit、留在 executing，自行改路径可重试（可自愈）；blocked �
 **意图编译器 v0 = 确定性种子**：`sopctl intake` 从 doc_scan 证据生成
 CandidateRule（status=observed，落 candidates.yaml），晋升必须显式
 `rule add`——LLM 分类器是未来的插件位，产 Candidate、永不写终态（手册 5.2）。
+
+**verifier 自证防护（2026-08-24 补，14.1 场景6）**：`manifest.yaml` 声明
+`controller_paths`（构成控制器/验证器自身的路径前缀；本仓库为 sopcontrol/ 与
+plugins/）。任务的 changed_paths 落在其中且未提交基线（git status 脏）→ 完成门
+直接 blocked（手册 9.3：不得在被验证代码与验证器同改后自行批准）；git 不可用
+fail-closed 视为脏。提交基线后照常裁决。这把"改 verifier 自证通过"从信任问题
+降级为流程问题：先 commit（可审计），再验证。彻底方案仍是 CI 从可信分支验证
+（手册 9.3 末条），单机 v1 到此为止。

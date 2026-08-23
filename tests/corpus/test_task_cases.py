@@ -1,5 +1,6 @@
 """任务语料执行器：把 task_cases.yaml 的脚本化步骤跑在真实任务 API 上（拷贝夹具到临时目录）。"""
 import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -55,6 +56,15 @@ def test_task_case(case, tmp_path):
                     '{"evidence_id": "ev-fake", "kind": "code_scan.identifiers", "subject": "src/x.py",'
                     ' "observed": ["x"], "observer": "code_scan", "input_hash": "deadbeef"}\n'
                 )
+
+        elif do == "manifest":
+            (work / ".sopcontrol" / "manifest.yaml").write_text(
+                yaml.safe_dump({"controller_paths": step["controller_paths"]}, allow_unicode=True),
+                encoding="utf-8",
+            )
+
+        elif do == "shell":
+            subprocess.run(step["cmd"], shell=True, cwd=str(work), check=True)
 
         else:  # accept / submit / verify / deliver
             if do == "verify":

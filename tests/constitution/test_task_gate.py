@@ -62,6 +62,32 @@ def test_unknown_rule_reference_is_rejected():
     assert "R-1" in decision.reason
 
 
+def test_verifier_self_approval_guard():
+    """场景6：控制器路径改动未提交基线 → blocked；已干净 → 正常裁决。"""
+    task = make_task()
+    task.status = TaskStatus.verification_pending
+    task.changed_paths = ["plugins/detectors/evil.py"]
+    task.contract = Contract(
+        objective="接线规则", allowed_writes=["plugins"],
+        required_rules=["R-1"],
+    )
+
+    dirty = evaluate_transition(
+        task, "verify",
+        rule_verdicts={"R-1": "pass"},
+        controller_dirty=["plugins/detectors/evil.py"],
+    )
+    assert dirty.to_status == TaskStatus.blocked
+    assert "9.3" in dirty.reason and "基线" in dirty.next_action
+
+    clean = evaluate_transition(
+        task, "verify",
+        rule_verdicts={"R-1": "pass"},
+        controller_dirty=[],
+    )
+    assert clean.to_status == TaskStatus.verified
+
+
 def test_path_normalization_rejects_escape_attempts():
     for bad in ["/etc/passwd", "../outside.py", "src/../../escape.py"]:
         assert path_allowed(bad, ["src"]) is False

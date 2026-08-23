@@ -149,6 +149,7 @@ def evaluate_transition(
     rule_verdicts: Optional[dict[str, str]] = None,
     known_rule_ids: Optional[set[str]] = None,
     ledger_tampered: bool = False,
+    controller_dirty: Optional[list[str]] = None,
 ) -> TransitionDecision:
     """纯函数迁移门：无 I/O。所有拒绝必须给出理由与下一步（手册 11.2）。"""
     status = task.status
@@ -203,6 +204,16 @@ def evaluate_transition(
                 allowed=True, to_status=TaskStatus.blocked, repair_count=task.repair_count,
                 reason="证据账本被篡改或损坏：信任根受损，转人工（12.2 fail-closed）",
                 next_action="sopctl doctor 复核账本，人工裁决后重建任务",
+            )
+        if controller_dirty:
+            return TransitionDecision(
+                allowed=True, to_status=TaskStatus.blocked, repair_count=task.repair_count,
+                reason=(
+                    f"verifier 自证嫌疑（14.1 场景6 / 手册 9.3）：本任务改动了控制器路径 "
+                    f"[{', '.join(controller_dirty)}] 且未提交基线——不得在被验证代码与 "
+                    f"验证器同改后自行批准"
+                ),
+                next_action="先 git commit 这些变更建立基线，再重新 verify；或人工裁决",
             )
         verdicts = rule_verdicts or {}
         for rule_id in task.contract.required_rules:

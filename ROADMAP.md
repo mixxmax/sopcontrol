@@ -68,11 +68,11 @@
 
 ## 状态（每次运行后更新）
 
-- 2026-08-24（会话内连续自驱第三轮）：B4 完成。OpenCode 与 Codex 适配并**真实在环验证**通过
-  （OpenCode 运行时拦截真实模型改控制器文件；Codex wrap 事后门阻断真实会话）。76 测试全绿，
-  九笔里程碑提交。演习发现并修复：拦截组件自保护缺失、投影 PATH 提示。下一步候选：
-  capability handshake 合成评测矩阵、检测语义升级（调用图）、B2 场景 1/6/7（现已有真实 harness 可测）。
+- 2026-08-24（会话内连续自驱第四轮）：verifier 自证防护落地（14.1 场景6 语料化：TCASE-009/010
+  + 宪法测试）。manifest.controller_paths 机制：控制器路径改动未提交基线 → 完成门 blocked；
+  本仓库 manifest 已声明 sopcontrol/ 与 plugins/。79 测试全绿，十笔提交。剩余场景 1（讨论不改码，
+  需对话意图层）与 7（换模型重蹈副作用，可用现有真实 harness + takeover 包做行为级语料）。
 
 ## Blockers
 
-- （无。claude API key 缺失不再阻塞：用户确认无 key 且不需要，适配保留待有 key 环境。）
+- （无）
