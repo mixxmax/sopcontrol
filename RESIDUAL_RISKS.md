@@ -36,3 +36,11 @@ doc_scan 只记录"文档里有 MUST 句"，不把它等同于 registry 中的�
 账本追加无文件锁。两个并发 audit 可能交错写行（JSONL 行级追加在 POSIX 上
 单行 ≤ PIPE_BUF 时原子，但跨平台不保证）。单人单项目场景不构成实际风险；
 B1 引入 CI 终态门时一并处理。
+
+## R6 hook 可被绕过（B1 起）
+
+pre-push 终态门可被 `git push --no-verify`、直接调用 git 底层传输或未装钩子的
+机器绕过（手册 12.2：跨平台不能实时拦截时，至少在终态拦截）。后盾是 CI：
+CI 从远端主分支运行可信的 sopctl gate，不信任本地钩子是否安装。另一个已知
+缺口：gate 在推送时运行，工作区与被推 commit 可能不一致（skew）——精确绑定
+需 B2 的 revision 机制。

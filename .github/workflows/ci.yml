@@ -10,6 +10,7 @@ jobs:
           python-version: "3.12"
       - run: pip install -e ".[dev]"
       - run: pytest -q
+      - run: sopctl self-test
       - name: strict gate exits 1 on gap fixture
         run: |
           set +e

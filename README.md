@@ -8,11 +8,15 @@
 设计与调研手册见 [`docs/`](docs/)；建构决策记录见 [`DESIGN.md`](DESIGN.md)；
 已知绕过家族的诚实登记见 [`RESIDUAL_RISKS.md`](RESIDUAL_RISKS.md)。
 
-## 当前状态：B0 行走骨架
+## 当前状态：B1 终点执行器
 
-一个最小闭环已经可以行走：规则登记 → 传感器观测 → 检测器识别断口 → 纯函数判定 →
-追加式账本 → 可解释输出。检测器刻意保持在 grep 智力水平——骨架要证明的是接口与判定
-链路，不是检测智力。
+B0 行走骨架（规则→证据→判定→账本→解释）之上，已具备最低可控性：
+
+- `sopctl gate` —— 终点门：fail 判定或账本篡改 → 阻断；gap 仅告警；审计异常 fail-closed
+- `sopctl hook install` —— pre-push 钩子（拒绝覆盖非 sopctl 钩子，幂等）
+- `sopctl self-test` —— 穿透演习：通过真实命令路径注入已知违规，断言真实阻断/放行
+
+检测器仍为 grep 智力（边界见 RESIDUAL_RISKS.md）。
 
 ## 快速开始
 
@@ -34,7 +38,10 @@ sopctl rule accept PUSH-001 /path/to/project
 sopctl audit /path/to/project            # 观察模式：只建议，不阻断
 sopctl audit /path/to/project --strict   # CI 门：存在 gap/fail 时退出码 1
 sopctl explain PUSH-001 /path/to/project # 谁消费、证据是什么、为什么
-sopctl doctor /path/to/project           # 安装自诊：注册表/账本完整性/插件
+sopctl doctor /path/to/project           # 安装自诊：注册表/账本完整性/插件/终态门
+sopctl gate /path/to/project             # 终点门（hook 与 CI 调用同一入口）
+sopctl hook install /path/to/project     # 安装 pre-push 终态门
+sopctl self-test                         # 穿透演习：验证 gate 真实有效
 ```
 
 ## 三个原子

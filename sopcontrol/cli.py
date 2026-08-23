@@ -139,6 +139,131 @@ def cmd_explain(args) -> int:
     return 0
 
 
+HOOK_MARKER = "# sopcontrol-hook v1"
+HOOK_TEMPLATE = f"""#!/bin/sh
+{HOOK_MARKER}
+# 终态门：fail 判定或账本篡改则阻断 push（gap 仅警告）
+exec sopctl gate "$(git rev-parse --show-toplevel)"
+"""
+
+
+def cmd_gate(args) -> int:
+    """终点执行器：fail 阻断、gap 告警、审计异常 fail-closed。"""
+    from plugins import DETECTORS, SENSORS
+
+    root = _project(args.path)
+    try:
+        report = run_audit(root, SENSORS, DETECTORS, persist=True)
+    except Exception as exc:  # 门自身故障必须阻断，不允许静默放行
+        print(f"gate: 审计失败，fail-closed 阻断（{exc}）", file=sys.stderr)
+        return 1
+
+    ledger = Ledger(root / ".sopcontrol" / "evidence" / "ledger.jsonl")
+    tampered = ledger.path.exists() and not ledger.verify()
+    fails = [v for v in report.verdicts if v.status == "fail"]
+    gaps = [v for v in report.verdicts if v.status == "gap"]
+
+    for v in gaps:
+        print(f"GAP(警告，不阻断) {v.rule_id}: {v.reason[:80]}")
+    for v in fails:
+        print(f"FAIL(阻断) {v.rule_id}: {v.reason[:100]}", file=sys.stderr)
+
+    if tampered:
+        print("FAIL(阻断): 证据账本被篡改或损坏（运行 sopctl doctor 复核）", file=sys.stderr)
+
+    if fails or tampered:
+        print(f"gate: 已阻断——fail {len(fails)} 项，账本{'损坏' if tampered else '完整'}", file=sys.stderr)
+        return 1
+    print(f"gate: 通过（gap 警告 {len(gaps)} 项未阻断，治理阶梯见 DESIGN.md §8）")
+    return 0
+
+
+def cmd_hook(args) -> int:
+    root = _project(args.path)
+    git_dir = root / ".git"
+    if not git_dir.exists():
+        print(f"错误: {root} 不是 git 仓库", file=sys.stderr)
+        return 2
+    hook_path = git_dir / "hooks" / args.hook
+    hook_path.parent.mkdir(parents=True, exist_ok=True)
+    if hook_path.exists() and HOOK_MARKER not in hook_path.read_text():
+        print(
+            f"拒绝覆盖: {hook_path} 已存在且不是 sopctl 安装的钩子；"
+            f"如需整合，请在你自己的钩子里调用 sopctl gate",
+            file=sys.stderr,
+        )
+        return 2
+    hook_path.write_text(HOOK_TEMPLATE, encoding="utf-8")
+    hook_path.chmod(0o755)
+    print(f"已安装 {args.hook} 终态门: {hook_path}")
+    return 0
+
+
+def cmd_self_test(args) -> int:
+    """穿透演习（消防演习语义）：通过真实命令路径注入已知违规，断言被真实阻断。"""
+    import shutil
+    import tempfile
+
+    canary_rule = """rules:
+- rule_id: SHIP-001
+  statement: 发货必须经 ship_gate 受控入口，遗留直发脚本不得存活
+  modality: MUST
+  status: accepted
+  scope: shipping
+  owner: product
+  risk: high
+  source:
+    type: document
+    ref: docs/sop.md
+  consumer_markers:
+  - ship_gate
+  legacy_markers:
+  - legacy_ship
+"""
+    legacy_alive = "def legacy_ship(pkg):\n    return {'sent': pkg}\n"
+    legacy_gone = "# 旧直发入口已下线\n"
+
+    with tempfile.TemporaryDirectory() as tmp:
+        canary = Path(tmp) / "canary"
+        (canary / "docs").mkdir(parents=True)
+        (canary / "src").mkdir()
+        (canary / "tests").mkdir()
+        (canary / ".sopcontrol" / "rules").mkdir(parents=True)
+        (canary / "docs" / "sop.md").write_text("# 发货 SOP\n- 发货必须经 ship_gate 受控入口。\n")
+        (canary / "src" / "ship.py").write_text("def ship_gate(pkg):\n    return {'sent': pkg, 'gated': True}\n")
+        (canary / "tests" / "test_ship.py").write_text(
+            "from ship import ship_gate\n\ndef test_gated():\n    assert ship_gate('p')['gated']\n"
+        )
+        (canary / ".sopcontrol" / "rules" / "registry.yaml").write_text(canary_rule)
+
+        results = []
+
+        # 演习1：旧入口存活 → gate 必须阻断
+        (canary / "src" / "legacy.py").write_text(legacy_alive)
+        results.append(("旧入口存活被阻断", main(["gate", str(canary)]) == 1))
+
+        # 演习2：清洁现场 → gate 必须放行（防"永远报警"）
+        (canary / "src" / "legacy.py").write_text(legacy_gone)
+        ledger_path = canary / ".sopcontrol" / "evidence" / "ledger.jsonl"
+        ledger_path.unlink(missing_ok=True)
+        results.append(("清洁现场被放行", main(["gate", str(canary)]) == 0))
+
+        # 演习3：现场清洁、仅账本被篡改 → gate 仍必须阻断（信任根）
+        ledger_path.write_text(
+            '{"evidence_id": "ev-fake", "kind": "code_scan.identifiers", "subject": "src/x.py",'
+            ' "observed": ["x"], "observer": "code_scan", "input_hash": "deadbeef"}\n'
+        )
+        results.append(("账本篡改被阻断", main(["gate", str(canary)]) == 1))
+
+    ok = True
+    for name, passed in results:
+        print(f"{'通过' if passed else '失败'}: {name}")
+        ok = ok and passed
+    if not ok:
+        print("self-test: 存在演习失败——终态门不可信，按 fail-closed 处理", file=sys.stderr)
+    return 0 if ok else 1
+
+
 def cmd_doctor(args) -> int:
     """安装自诊（CC Safety Net doctor 同款）：注册表可载入、账本未被篡改、插件可用。"""
     root = _project(args.path)
@@ -166,6 +291,14 @@ def cmd_doctor(args) -> int:
         print(f"插件: OK（sensors={[s.sensor_id for s in SENSORS]}, detectors={[d.detector_id for d in DETECTORS]}）")
     except Exception as exc:  # 插件加载失败必须暴露，不允许静默降级
         problems.append(f"插件加载失败: {exc}")
+
+    hook = root / ".git" / "hooks" / "pre-push"
+    if hook.exists():
+        armed = HOOK_MARKER in hook.read_text()
+        state = "已武装（sopctl gate）" if armed else "存在但非 sopctl 安装（手工整合请调用 sopctl gate）"
+    else:
+        state = "未安装（sopctl hook install）"
+    print(f"pre-push 终态门: {state}")
 
     if problems:
         for p in problems:
@@ -219,9 +352,23 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--json", action="store_true", help="输出 JSON 报告")
     p.set_defaults(func=cmd_audit)
 
-    p = sub.add_parser("doctor", help="安装自诊：注册表、账本完整性、插件可用性")
+    p = sub.add_parser("doctor", help="安装自诊：注册表、账本完整性、插件可用性、终态门状态")
     p.add_argument("path", nargs="?", default=".")
     p.set_defaults(func=cmd_doctor)
+
+    p = sub.add_parser("gate", help="终点门：fail 判定/账本篡改阻断，gap 仅告警（供 hook/CI 调用）")
+    p.add_argument("path", nargs="?", default=".")
+    p.set_defaults(func=cmd_gate)
+
+    hook = sub.add_parser("hook", help="git 终态门钩子")
+    hook_sub = hook.add_subparsers(dest="sub", required=True)
+    p = hook_sub.add_parser("install", help="安装 pre-push 终态门")
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--hook", default="pre-push", choices=["pre-push", "pre-commit"])
+    p.set_defaults(func=cmd_hook)
+
+    p = sub.add_parser("self-test", help="穿透演习：通过真实命令路径验证 gate 真实阻断已知违规")
+    p.set_defaults(func=cmd_self_test)
 
     p = sub.add_parser("explain", help="解释某条规则的判定：谁消费、证据是什么、为什么")
     p.add_argument("rule_id")
