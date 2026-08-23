@@ -16,9 +16,33 @@ from typing import Literal, Optional
 from pydantic import BaseModel
 
 PROTECTED_DIR = ".sopcontrol"
+# 控制器自身安装物：agent 卸掉自己的项圈 = 提权，一律拒绝（人工可手工移除）
+PROTECTED_HINTS = (".opencode/plugins/sopcontrol", ".claude/settings.json")
 
 PUSH_RE = re.compile(r"(^|&&|;|\|\||\|)\s*git push\b")
-_CLAUDE_TOOLS_WRITE = {"Write", "Edit", "MultiEdit"}
+
+# 能力画像（手册 5.9）：不同 harness 得到不同控制强度，如实记录，不假装一致
+HARNESS_PROFILES = {
+    "claude": {
+        "interception": "runtime: PreToolUse hook (JSON 决策)",
+        "terminal": "git pre-push 钩子 + CI gate",
+        "live_verified": False,
+        "note": "本环境 claude API key 无效（401），协议契约由测试覆盖",
+    },
+    "opencode": {
+        "interception": "runtime: .opencode/plugins tool.execute.before（抛错阻断）",
+        "terminal": "git pre-push 钩子 + CI gate",
+        "live_verified": True,
+        "live_evidence": "2026-08-24 沙箱演习：真实模型 Edit .sopcontrol 被拒，文件未改，模型转述理由后停止",
+    },
+    "codex": {
+        "interception": "none（0.147 无工具调用前钩子）",
+        "terminal": "git pre-push 钩子 + CI gate + sopctl wrap codex（事后门）",
+        "advisory": "AGENTS.md 规则投影（sopctl project codex）",
+        "live_verified": True,
+        "live_evidence": "2026-08-24 沙箱演习：codex 创建文件后 wrap 事后门阻断（fail 规则），退出码 1；模型曾主动尝试按投影运行 sopctl gate",
+    },
+}
 
 
 class HookDecision(BaseModel):
@@ -44,30 +68,44 @@ def _allow(reason: str) -> HookDecision:
 
 
 def check_tool_call(payload: dict, gate_status: Optional[str] = None) -> HookDecision:
-    """gate_status: None=与终点门无关 / "block" / "warn" / "clean"。纯函数。"""
-    tool = str(payload.get("tool_name") or "")
+    """gate_status: None=与终点门无关 / "block" / "warn" / "clean"。纯函数。
+
+    工具名大小写归一（Claude 用 Bash/Write，OpenCode 用 bash/edit/write）。
+    """
+    tool = str(payload.get("tool_name") or "").lower()
     tool_input = payload.get("tool_input") or {}
 
-    if tool in _CLAUDE_TOOLS_WRITE:
-        file_path = str(tool_input.get("file_path") or tool_input.get("path") or "")
+    if tool in {"write", "edit", "multiedit"}:
+        file_path = str(
+            tool_input.get("file_path") or tool_input.get("filePath")
+            or tool_input.get("path") or ""
+        )
         if file_path and any(part == PROTECTED_DIR for part in file_path.replace("\\", "/").split("/")):
             return _deny(
                 f"控制器文件 {file_path} 不允许经普通写入口修改：规则/账本/任务只能通过 "
                 f"sopctl 命令变更（信任根，手册 9.3）；规则变更请走 sopctl rule 流程"
             )
+        if file_path and any(hint in file_path.replace("\\", "/") for hint in PROTECTED_HINTS):
+            return _deny(
+                f"{file_path} 是 sopctl 安装的拦截组件：移除自身项圈属于提权动作，"
+                f"需要人工执行（手册 12.2）"
+            )
         return _allow("普通文件写入，不在受控清单")
 
-    if tool == "Bash":
+    if tool == "bash":
         command = str(tool_input.get("command") or "")
 
         if "--no-verify" in command:
             return _deny("拒绝 --no-verify：绕过验证钩子属于已登记绕过家族 R6，一律阻断")
 
-        touches_controller = PROTECTED_DIR in command and "sopctl" not in command
+        touches_controller = (
+            (PROTECTED_DIR in command or any(hint in command for hint in PROTECTED_HINTS))
+            and "sopctl" not in command
+        )
         if touches_controller:
             return _deny(
-                f"命令直接触碰 {PROTECTED_DIR}/ 但未走 sopctl：控制器状态只能经 sopctl 变更；"
-                f"读取用 sopctl explain/show，变更用对应子命令"
+                f"命令直接触碰控制器状态或拦截组件（{PROTECTED_DIR}/、opencode 插件、claude 钩子配置）"
+                f"但未走 sopctl：一切经 sopctl 子命令；移除拦截组件需人工执行"
             )
 
         if PUSH_RE.search(command):

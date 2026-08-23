@@ -159,11 +159,10 @@ exec sopctl gate "$(git rev-parse --show-toplevel)"
 """
 
 
-def cmd_gate(args) -> int:
-    """终点执行器：fail 阻断、gap 告警、审计异常 fail-closed。"""
+def run_gate(root: Path) -> int:
+    """终点门核心逻辑（cmd_gate 与 sopctl wrap 共用）。"""
     from plugins import DETECTORS, SENSORS
 
-    root = _project(args.path)
     try:
         report = run_audit(root, SENSORS, DETECTORS, persist=True)
     except Exception as exc:  # 门自身故障必须阻断，不允许静默放行
@@ -188,6 +187,10 @@ def cmd_gate(args) -> int:
         return 1
     print(f"gate: 通过（gap 警告 {len(gaps)} 项未阻断，治理阶梯见 DESIGN.md §8）")
     return 0
+
+
+def cmd_gate(args) -> int:
+    return run_gate(_project(args.path))
 
 
 def cmd_hook(args) -> int:
@@ -501,12 +504,56 @@ def cmd_intake(args) -> int:
     return 0
 
 
+OPENCODE_PLUGIN_TEMPLATE = '''// sopcontrol-hook v1 (marker) — sopctl hook opencode 生成；决策权在本地控制器，插件只是执行器
+import {{ execFileSync }} from "node:child_process";
+
+const PY = {python_json};
+const PROJECT = {project_json};
+
+export const SopControl = async () => {{
+  return {{
+    "tool.execute.before": async (input, output) => {{
+      let payload = null;
+      if (input.tool === "bash") {{
+        payload = {{ tool_name: "Bash", tool_input: {{ command: output.args.command }} }};
+      }} else if (input.tool === "edit" || input.tool === "write") {{
+        payload = {{ tool_name: "Write", tool_input: {{ file_path: output.args.filePath ?? output.args.file_path }} }};
+      }}
+      if (!payload) return; // 非受控工具：观察，不阻断
+      let decision;
+      try {{
+        const out = execFileSync(PY, ["-m", "sopcontrol.cli", "harness-check", "--payload",
+          JSON.stringify(payload), PROJECT], {{ encoding: "utf8" }});
+        decision = JSON.parse(out);
+      }} catch (e) {{
+        throw new Error("[sopcontrol] harness-check 不可用，fail-closed: " + e.message);
+      }}
+      const d = (decision.hookSpecificOutput ?? {{}});
+      if (d.permissionDecision === "deny") throw new Error("[sopcontrol] 拒绝: " + d.permissionDecisionReason);
+      if (d.permissionDecision === "ask") throw new Error("[sopcontrol] 需人工确认: " + d.permissionDecisionReason);
+    }},
+  }};
+}};
+'''
+
+
+def _write_profile(root: Path) -> None:
+    from .harness import HARNESS_PROFILES
+
+    path = Path(root) / ".sopcontrol" / "harness-profile.yaml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        yaml.safe_dump(HARNESS_PROFILES, allow_unicode=True, sort_keys=False), encoding="utf-8"
+    )
+
+
 def cmd_harness_check(args) -> int:
-    """Claude Code PreToolUse 入口：stdin 收工具调用 JSON，stdout 出决策 JSON。"""
+    """harness 工具调用决策：stdin JSON 或 --payload；stdout 出决策 JSON。"""
     from .harness import check_tool_call, gate_status_for_push
 
+    raw = args.payload if args.payload else (sys.stdin.read() or "{}")
     try:
-        payload = json.loads(sys.stdin.read() or "{}")
+        payload = json.loads(raw)
     except json.JSONDecodeError as exc:
         decision = HookDecision(
             permissionDecision="deny",
@@ -520,6 +567,71 @@ def cmd_harness_check(args) -> int:
         decision = check_tool_call(payload, gate_status)
 
     print(json.dumps(decision.claude_payload(), ensure_ascii=False))
+    return 0
+
+
+def cmd_hook_opencode(args) -> int:
+    """安装 OpenCode 运行时插件（.opencode/plugins/sopcontrol.js，工具调用前拦截）。"""
+    root = _project(args.path)
+    plugin_path = root / ".opencode" / "plugins" / "sopcontrol.js"
+    if plugin_path.exists() and "sopcontrol-hook v1" not in plugin_path.read_text(encoding="utf-8"):
+        print(f"拒绝覆盖: {plugin_path} 已存在且非 sopctl 安装", file=sys.stderr)
+        return 2
+    plugin_path.parent.mkdir(parents=True, exist_ok=True)
+    plugin_path.write_text(
+        OPENCODE_PLUGIN_TEMPLATE.format(
+            python_json=json.dumps(sys.executable),
+            project_json=json.dumps(str(root)),
+        ),
+        encoding="utf-8",
+    )
+    _write_profile(root)
+    print(f"已安装 OpenCode 运行时插件 → {plugin_path}")
+    print("拦截点: tool.execute.before（bash/edit/write）；deny/ask 均抛错阻断，决策来自 sopctl")
+    return 0
+
+
+def cmd_project_codex(args) -> int:
+    """AGENTS.md 规则投影（建议层；Codex 无运行时钩子，拦截靠终态门）。"""
+    from .project import write_projection
+
+    root = _project(args.path)
+    agents = write_projection(root)
+    _write_profile(root)
+    print(f"已写入规则投影 → {agents}（只替换带标记小节；权威源仍是 registry.yaml）")
+    print("Codex 控制策略: 建议（本投影）+ 事后门（sopctl wrap codex）+ git/CI 终态拦截")
+    return 0
+
+
+def cmd_wrap(args) -> int:
+    """事后门 wrapper：运行 harness 命令，结束后跑终点门；门失败则退出码非零。"""
+    import subprocess
+
+    root = _project(args.path)
+    rest = list(args.rest or [])
+    if rest and rest[0] == "--":
+        rest = rest[1:]
+    if not rest:
+        print("用法: sopctl wrap codex [PATH] -- <codex 参数...>", file=sys.stderr)
+        return 2
+    if args.harness != "codex":
+        print(f"wrap 暂只支持 codex（{args.harness} 有实时拦截，无需 wrap）", file=sys.stderr)
+        return 2
+    proc = subprocess.call(["codex"] + rest, cwd=str(root))
+    print(f"\n[sopctl wrap] codex 退出码 {proc}；运行事后终点门…")
+    gate_code = run_gate(root)
+    if gate_code != 0:
+        print("[sopctl wrap] 事后门未过：变更未获信任，git 推送将被 pre-push 钩子与 CI 阻断", file=sys.stderr)
+    return proc if proc != 0 else gate_code
+
+
+def cmd_harness_profile(args) -> int:
+    root = _project(args.path)
+    _write_profile(root)
+    path = root / ".sopcontrol" / "harness-profile.yaml"
+    print(f"已写入能力画像 → {path}")
+    for name, profile in yaml.safe_load(path.read_text(encoding="utf-8")).items():
+        print(f"  {name}: 拦截={profile.get('interception')}")
     return 0
 
 
@@ -660,13 +772,34 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("path", nargs="?", default=".")
     p.set_defaults(func=cmd_repair)
 
-    p = sub.add_parser("harness-check", help="harness 工具调用决策（stdin JSON → stdout 决策；供 hook 调用）")
+    p = sub.add_parser("harness-check", help="harness 工具调用决策（stdin/--payload JSON → stdout 决策；供 hook/plugin 调用）")
     p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--payload", help="工具调用 JSON（默认读 stdin）")
     p.set_defaults(func=cmd_harness_check)
 
     p = hook_sub.add_parser("claude", help="安装 Claude Code PreToolUse 钩子（项目级 settings.json，合并式）")
     p.add_argument("path", nargs="?", default=".")
     p.set_defaults(func=cmd_hook_claude)
+
+    p = hook_sub.add_parser("opencode", help="安装 OpenCode 运行时插件（.opencode/plugins，工具调用前拦截）")
+    p.add_argument("path", nargs="?", default=".")
+    p.set_defaults(func=cmd_hook_opencode)
+
+    project = sub.add_parser("project", help="平台规则投影（建议层，权威源仍是 registry）")
+    project_sub = project.add_subparsers(dest="sub", required=True)
+    p = project_sub.add_parser("codex", help="AGENTS.md 规则投影（Codex 无运行时钩子，靠终态门兜底）")
+    p.add_argument("path", nargs="?", default=".")
+    p.set_defaults(func=cmd_project_codex)
+
+    p = sub.add_parser("wrap", help="事后门 wrapper：运行 harness 命令后执行终点门")
+    p.add_argument("harness", choices=["codex"])
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("rest", nargs=argparse.REMAINDER)
+    p.set_defaults(func=cmd_wrap)
+
+    p = sub.add_parser("harness-profile", help="写入 harness 能力画像（.sopcontrol/harness-profile.yaml）")
+    p.add_argument("path", nargs="?", default=".")
+    p.set_defaults(func=cmd_harness_profile)
 
     p = sub.add_parser("explain", help="解释某条规则的判定：谁消费、证据是什么、为什么")
     p.add_argument("rule_id")

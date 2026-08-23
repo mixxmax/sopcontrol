@@ -50,6 +50,16 @@ def test_unrelated_bash_and_tools_are_observed_not_blocked():
     assert call("Read", file_path=".sopcontrol/evidence/ledger.jsonl").permissionDecision == "allow"
 
 
+def test_uninstalling_own_leash_is_denied():
+    d = call("Write", file_path=".opencode/plugins/sopcontrol.js", content="export const X = 1")
+    assert d.permissionDecision == "deny" and "人工" in d.reason
+    d = call("Edit", file_path="proj/.claude/settings.json", old_string="a", new_string="b")
+    assert d.permissionDecision == "deny"
+    d = call("Bash", command="rm .opencode/plugins/sopcontrol.js")
+    assert d.permissionDecision == "deny"
+    assert call("Bash", command="sopctl doctor").permissionDecision == "allow"
+
+
 def test_claude_payload_shape():
     payload = call("Write", file_path=".sopcontrol/x", content="y").claude_payload()
     assert payload["hookSpecificOutput"]["hookEventName"] == "PreToolUse"
