@@ -9,6 +9,7 @@ from pathlib import Path
 
 from .model import Rule, RuleStatus
 from .registry import Registry
+from .task import LEGAL_ACTIONS
 
 SECTION_START = "<!-- sopcontrol:v1 -->"
 SECTION_END = "<!-- /sopcontrol:v1 -->"
@@ -38,12 +39,16 @@ def render_projection(rules: list[Rule], tasks: list | None = None) -> str:
             lines.append("- " + " ".join(bits))
         lines.append("")
     if tasks:
-        lines.append("## 任务状态（换会话/换模型先看这里——已交付任务不得重复执行副作用）")
+        lines.append(
+            "## 任务状态（换会话/换模型先看这里；以下即全量信息，无需再用命令查询任务）"
+        )
         for t in tasks:
-            lines.append(
-                f"- {t.task_id} [{t.status.value}] {t.contract.objective[:50]}"
-                + ("——已完成并经完成门验证，勿重做" if t.status.value == "delivered" else "")
-            )
+            action = LEGAL_ACTIONS[t.status][0]
+            lines.append(f"- {t.task_id} [{t.status.value}] {t.contract.objective[:60]}")
+            lines.append(f"  完成定义: {', '.join(t.contract.required_rules) or '（无）'} 全部 pass；"
+                         f"修复预算: {t.repair_count}/{t.contract.max_repairs}；合法动作: {action}")
+            if t.status.value == "delivered":
+                lines.append("  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件")
         lines.append("")
     lines += [
         "## 硬约束",
