@@ -340,3 +340,24 @@ def cmd_vertical_check(args) -> int:
     print("vertical-check: 通过——垂直骨干役用闭环（日用见 PLAYBOOK.md）")
     return 0
 
+
+def cmd_graph(args) -> int:
+    """打印 Python 文件级 import 邻接（import_graph 薄卡）。"""
+    from plugins.sensors.import_graph import ImportGraphSensor, build_adjacency
+
+    root = _project(args.path)
+    evidence = ImportGraphSensor().observe(
+        __import__("sopcontrol.context", fromlist=["ProjectContext"]).ProjectContext(root)
+    )
+    adj = build_adjacency(evidence)
+    if not adj:
+        print("无 import 边（或无可解析 .py）")
+        return 0
+    limit = int(getattr(args, "limit", 50) or 50)
+    for i, (subj, mods) in enumerate(adj.items()):
+        if i >= limit:
+            print(f"... 另有 {len(adj) - limit} 个文件未列出（--limit 可调）")
+            break
+        print(f"{subj} → {', '.join(mods)}")
+    return 0
+

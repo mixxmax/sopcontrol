@@ -8,6 +8,27 @@ version = "0.1.0"
 description = "SOP Control: intent-rule-delivery compiler and control plane for coding agents（垂直骨干役用可用）"
 readme = "README.md"
 requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "SOP Control contributors" }]
+keywords = [
+    "agent",
+    "sop",
+    "guardrail",
+    "policy",
+    "coding-agent",
+    "verification",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Quality Assurance",
+]
 dependencies = [
     "pydantic>=2.5",
     "PyYAML>=6",
@@ -15,6 +36,11 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=7"]
+
+[project.urls]
+Homepage = "https://github.com/example/sopcontrol"
+Documentation = "https://github.com/example/sopcontrol#readme"
+Issues = "https://github.com/example/sopcontrol/issues"
 
 [project.scripts]
 sopctl = "sopcontrol.cli:main"

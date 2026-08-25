@@ -32,6 +32,8 @@ sopctl project all .             # AGENTS.md + CLAUDE.md 投影
 sopctl capability-eval --model local --fixture strong .   # 或 fragile/weak
 sopctl capability-compare --live opencode --baseline strong .  # live vs 基线归档
 sopctl doctor . --vertical       # 应全部通过；身份与钩子已武装
+sopctl project check .           # 投影是否相对 registry 过期
+sopctl graph .                   # Python import 邻接（认知薄卡）
 ```
 
 本仓自检：

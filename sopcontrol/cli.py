@@ -14,6 +14,7 @@ from .cli_task import *
 from .cli_intent import *
 from .cli_identity import *
 from .cli_harness import *
+from .cli_rules import *
 from .registry import RegistryError
 from .repair import RepairError
 
@@ -27,6 +28,11 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("init", help="在目标项目初始化 .sopcontrol/")
     p.add_argument("path", nargs="?", default=".", help="目标项目路径，默认当前目录")
     p.set_defaults(func=cmd_init)
+
+    p = sub.add_parser("graph", help="Python 文件级 import 邻接图（项目认知薄卡）")
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--limit", type=int, default=50, help="最多列出多少个文件")
+    p.set_defaults(func=cmd_graph)
 
     rule = sub.add_parser("rule", help="规则登记与生命周期")
     rule_sub = rule.add_subparsers(dest="sub", required=True)
@@ -207,6 +213,7 @@ def build_parser() -> argparse.ArgumentParser:
         ("opencode", "AGENTS.md（OpenCode 优先读此文件）"),
         ("claude", "CLAUDE.md（Claude Code 项目指导）"),
         ("all", "同步 AGENTS.md + CLAUDE.md（Rulesync 式）"),
+        ("check", "检测投影是否相对 registry 过期（漂移则退出码 1）"),
     ):
         p = project_sub.add_parser(name, help=help_text)
         p.add_argument("path", nargs="?", default=".")

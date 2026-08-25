@@ -239,17 +239,17 @@ cases:
 - case_id: CASE-030
   fixture: shop-checkout
   rule_id: REFUND-009
-  expected_verdict: {status: unknown, absorption: null}
+  expected_verdict: {status: gap, absorption: documented}
   expected_findings:
   - {pattern_id: write_only_state, severity: info}
   - {pattern_id: schema_field_unread, severity: gap}
-  ground_truth: 14.1 场景3 加深——schema_extra_field 有 Store 无 Load（AST name_flows）
+  ground_truth: 14.1 场景3——schema_extra_field 有 Store 无 Load；verdict 现为 gap
 
 - case_id: CASE-031
   fixture: ci-deploy
   rule_id: DEPLOY-011
-  expected_verdict: {status: unknown, absorption: null}
+  expected_verdict: {status: gap, absorption: documented}
   expected_findings:
   - {pattern_id: write_only_state, severity: info}
   - {pattern_id: schema_field_unread, severity: gap}
-  ground_truth: schema_field_unread 第二领域（CI）——release_schema_field 只写不读
+  ground_truth: schema_field_unread 第二领域（CI）；verdict gap

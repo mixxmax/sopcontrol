@@ -137,3 +137,59 @@ def write_all_projections(root: Path) -> list[Path]:
         )
         written.append(merge_section(Path(root) / filename, section))
     return written
+
+
+def _expected_section(root: Path, refresh_hint: str) -> str:
+    rules = Registry(Path(root) / ".sopcontrol" / "rules" / "registry.yaml").load()
+    from .task import TaskStore
+
+    try:
+        tasks = TaskStore(root).list_all()
+    except Exception:
+        tasks = None
+    return render_projection(rules, tasks, refresh_hint=refresh_hint)
+
+
+def _disk_section(path: Path) -> str | None:
+    if not path.exists():
+        return None
+    content = path.read_text(encoding="utf-8")
+    if SECTION_START not in content or SECTION_END not in content:
+        return None
+    start = content.index(SECTION_START)
+    end = content.index(SECTION_END) + len(SECTION_END)
+    return content[start:end]
+
+
+def check_projections(root: Path) -> list[dict]:
+    """对比磁盘投影小节与当前 registry/任务应生成的内容；漂移则回报。"""
+    # AGENTS.md 用 project all 提示；CLAUDE.md 同
+    targets = [
+        (Path(root) / "AGENTS.md", "sopctl project all"),
+        (Path(root) / "CLAUDE.md", "sopctl project all"),
+    ]
+    # 去重文件
+    seen: set[str] = set()
+    reports: list[dict] = []
+    for path, hint in targets:
+        key = str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        expected = _expected_section(root, hint).rstrip() + "\n"
+        disk = _disk_section(path)
+        if disk is None:
+            reports.append({
+                "path": path.name,
+                "status": "missing",
+                "detail": "无投影小节或文件不存在",
+            })
+            continue
+        # 规范化尾空白再比
+        ok = disk.rstrip() + "\n" == expected
+        reports.append({
+            "path": path.name,
+            "status": "ok" if ok else "stale",
+            "detail": "与 registry 一致" if ok else "已过期：请运行 sopctl project all",
+        })
+    return reports

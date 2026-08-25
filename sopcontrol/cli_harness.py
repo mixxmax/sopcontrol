@@ -19,7 +19,6 @@ from .verdict import evaluate_rule
 from plugins import DETECTORS, SENSORS
 
 
-
 def cmd_capability_compare(args) -> int:
     """live 探针 vs 夹具基线对比，追加 capability-compare.yaml。"""
     from .evals import run_capability_compare
@@ -59,7 +58,6 @@ def cmd_capability_compare(args) -> int:
     return 0
 
 
-
 def cmd_capability_eval(args) -> int:
     """模型维度握手：夹具/响应文件/live harness → tier → model-profile.yaml。"""
     from .evals import run_capability_eval
@@ -95,7 +93,6 @@ def cmd_capability_eval(args) -> int:
     return 0
 
 
-
 def cmd_harness_check(args) -> int:
     """harness 工具调用决策：stdin JSON 或 --payload；stdout 出决策 JSON。"""
     from .harness import check_tool_call, gate_status_for_push
@@ -122,7 +119,6 @@ def cmd_harness_check(args) -> int:
     return 0
 
 
-
 def cmd_harness_eval(args) -> int:
     """能力评测：一次性沙箱内对真实 harness 执行挑衅剧本（会消耗模型 token）。"""
     from .evals import run_harness_eval
@@ -142,7 +138,6 @@ def cmd_harness_eval(args) -> int:
     return 0 if ok else 1
 
 
-
 def cmd_harness_profile(args) -> int:
     root = _project(args.path)
     _write_profile(root)
@@ -151,7 +146,6 @@ def cmd_harness_profile(args) -> int:
     for name, profile in yaml.safe_load(path.read_text(encoding="utf-8")).items():
         print(f"  {name}: 拦截={profile.get('interception')}")
     return 0
-
 
 
 def cmd_hook_claude(args) -> int:
@@ -188,7 +182,6 @@ def cmd_hook_claude(args) -> int:
     return 0
 
 
-
 def cmd_hook_opencode(args) -> int:
     """安装 OpenCode 运行时插件（.opencode/plugins/sopcontrol.js，工具调用前拦截）。"""
     root = _project(args.path)
@@ -210,13 +203,21 @@ def cmd_hook_opencode(args) -> int:
     return 0
 
 
-
 def cmd_project(args) -> int:
-    """平台规则投影：codex/opencode → AGENTS.md；claude → CLAUDE.md；all → 两者。"""
-    from .project import write_all_projections, write_projection
+    """平台规则投影：codex/opencode → AGENTS.md；claude → CLAUDE.md；all → 两者；check 漂移。"""
+    from .project import check_projections, write_all_projections, write_projection
 
     root = _project(args.path)
     sub = args.sub
+    if sub == "check":
+        reports = check_projections(root)
+        stale = False
+        for r in reports:
+            mark = "OK" if r["status"] == "ok" else r["status"].upper()
+            print(f"{r['path']}: {mark} — {r['detail']}")
+            if r["status"] != "ok":
+                stale = True
+        return 1 if stale else 0
     try:
         if sub == "all":
             paths = write_all_projections(root)
@@ -237,62 +238,6 @@ def cmd_project(args) -> int:
     else:
         print("已同步 AGENTS.md 与 CLAUDE.md；各 harness 控制策略不变")
     return 0
-
-
-
-def cmd_rule_accept(args) -> int:
-    root = _project(args.path)
-    rule = Registry(root / ".sopcontrol" / "rules" / "registry.yaml").transition(
-        args.rule_id, RuleStatus.accepted
-    )
-    print(f"{rule.rule_id} 已接受（accepted_at={rule.accepted_at}）；下一步 sopctl audit 检查吸收")
-    return 0
-
-
-
-def cmd_rule_add(args) -> int:
-    from .conflict import find_conflicts
-
-    root = _project(args.path)
-    reg = Registry(root / ".sopcontrol" / "rules" / "registry.yaml")
-    rule = Rule(
-        rule_id=args.id,
-        statement=args.statement,
-        modality=Modality(args.modality),
-        status=RuleStatus(args.status),
-        scope=args.scope,
-        owner=args.owner,
-        risk=RiskLevel(args.risk),
-        source=SourceRef(type=args.source_type, ref=args.source_ref),
-        consumer_markers=list(args.consumer_marker or []),
-        tags=list(args.tag or []),
-    )
-    if rule.status == RuleStatus.accepted:
-        conflicts = find_conflicts(rule, reg.load())
-        if conflicts:
-            detail = "；".join(c["reason"] for c in conflicts)
-            print(f"错误: 规则冲突（14.1 场景10）：{detail}", file=sys.stderr)
-            return 2
-    reg.add(rule)
-    print(f"已登记规则 {rule.rule_id} [{rule.status.value}]：{rule.statement}")
-    if rule.status == RuleStatus.accepted:
-        print("注意：规则已直接置为 accepted；常规流程应从 proposed 出发，经确认后 accept")
-    return 0
-
-
-
-def cmd_rule_list(args) -> int:
-    root = _project(args.path)
-    rules = Registry(root / ".sopcontrol" / "rules" / "registry.yaml").load()
-    if not rules:
-        print("注册表为空")
-        return 0
-    print(f"{'RULE':16} {'状态':10} {'强度':9} {'吸收标记':24} 陈述")
-    for r in rules:
-        markers = ",".join(r.consumer_markers) or "-"
-        print(f"{r.rule_id:16} {r.status.value:10} {r.modality.value:9} {markers:24} {r.statement[:40]}")
-    return 0
-
 
 
 def cmd_wrap(args) -> int:

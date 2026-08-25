@@ -94,7 +94,7 @@ def evaluate_rule(rule: Rule, evidence: list[Evidence], findings: list[Finding])
         )
 
     prod, test = consumer_evidence(rule, evidence)
-    base = _absorption_verdict(rule, prod, test, fids)
+    base = _absorption_verdict(rule, prod, test, fids, related_findings=related)
 
     legacy = legacy_evidence(rule, evidence)
     if legacy:
@@ -110,8 +110,32 @@ def evaluate_rule(rule: Rule, evidence: list[Evidence], findings: list[Finding])
     return base
 
 
-def _absorption_verdict(rule: Rule, prod: list[Evidence], test: list[Evidence], fids: list[str]) -> Verdict:
+def _absorption_verdict(
+    rule: Rule,
+    prod: list[Evidence],
+    test: list[Evidence],
+    fids: list[str],
+    *,
+    related_findings: list[Finding] | None = None,
+) -> Verdict:
     if rule.state_markers and not rule.consumer_markers:
+        unread = [
+            f for f in (related_findings or [])
+            if f.pattern_id == "schema_field_unread"
+        ]
+        if unread:
+            fields = ", ".join(rule.state_markers)
+            return Verdict(
+                rule_id=rule.rule_id,
+                status="gap",
+                absorption=Absorption.documented,
+                reason=(
+                    f"状态/schema 字段 [{fields}] 有写入但生产与测试均无读取"
+                    f"（schema_field_unread，14.1 场景3）"
+                ),
+                next_action="为字段增加真实读取消费者，或从 state_markers 移除未使用字段",
+                finding_ids=fids,
+            )
         return Verdict(
             rule_id=rule.rule_id,
             status="unknown",

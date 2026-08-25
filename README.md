@@ -43,9 +43,13 @@ B0–B3 能力见 git 历史；检测 8 模式仍为 grep 智力（边界见 RES
 ## 快速开始（垂直骨干 0.1.0）
 
 ```bash
-# 安装（Python >= 3.10）——开发态
+# 安装（Python >= 3.10）——开发态（本仓）
 python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"
+
+# 或从 git 预习安装（将 URL 换成你的远端；当前未正式发布到 PyPI）
+# pip install "git+https://github.com/YOUR/sopcontrol.git"
+
 # 确认入口
 .venv/bin/sopctl --help
 

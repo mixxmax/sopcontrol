@@ -5,11 +5,12 @@ from plugins.sensors.ast_scan import AstScanSensor
 from plugins.sensors.code_scan import CodeScanSensor
 from plugins.sensors.doc_scan import DocScanSensor
 from plugins.sensors.go_scan import GoScanSensor
+from plugins.sensors.import_graph import ImportGraphSensor
 from plugins.sensors.js_scan import JsScanSensor
 from plugins.sensors.rust_scan import RustScanSensor
 
 SENSORS = [
     CodeScanSensor(), DocScanSensor(), AstScanSensor(),
-    JsScanSensor(), GoScanSensor(), RustScanSensor(),
+    JsScanSensor(), GoScanSensor(), RustScanSensor(), ImportGraphSensor(),
 ]
 DETECTORS = [NoConsumerDetector(), StateHealthDetector()]
