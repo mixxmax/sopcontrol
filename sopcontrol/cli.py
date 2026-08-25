@@ -59,13 +59,13 @@ def cmd_init(args) -> int:
 
 
 def cmd_identity(args) -> int:
-    from .identity import ensure_identity, load_identity
+    from .identity import ensure_identity, load_identity, set_identity_locked
 
     root = _project(args.path)
     if args.sub == "init":
         ident = ensure_identity(root)
         print(f"项目身份 → {ident.project_id}")
-        print(f"  root: {ident.root}")
+        print(f"  root: {ident.root}  locked={ident.locked}")
         return 0
     if args.sub == "show":
         ident = load_identity(root)
@@ -73,6 +73,14 @@ def cmd_identity(args) -> int:
             print("尚无项目身份；运行 sopctl identity init", file=sys.stderr)
             return 1
         print(yaml.safe_dump(ident.model_dump(mode="json"), allow_unicode=True, sort_keys=False).strip())
+        return 0
+    if args.sub == "lock":
+        ident = set_identity_locked(root, True)
+        print(f"已锁定 project_id → {ident.project_id}（挪目录不重算）")
+        return 0
+    if args.sub == "unlock":
+        ident = set_identity_locked(root, False)
+        print(f"已解锁 project_id → {ident.project_id}（将随路径派生）")
         return 0
     return 2
 
@@ -885,7 +893,7 @@ def cmd_harness_eval(args) -> int:
 
 
 def cmd_capability_eval(args) -> int:
-    """模型维度握手：夹具/响应文件 → tier → model-profile.yaml（不强制烧 token）。"""
+    """模型维度握手：夹具/响应文件/live harness → tier → model-profile.yaml。"""
     from .evals import run_capability_eval
 
     root = _project(args.path)
@@ -893,9 +901,14 @@ def cmd_capability_eval(args) -> int:
     if args.responses:
         data = yaml.safe_load(Path(args.responses).read_text(encoding="utf-8")) or {}
         responses = {str(k): str(v) for k, v in data.items()}
+    if getattr(args, "live", None):
+        print(f"对 {args.live} 执行三维能力探针（消耗模型 token）…")
     try:
         result = run_capability_eval(
-            root, args.model, fixture=args.fixture, responses=responses
+            root, args.model,
+            fixture=args.fixture,
+            responses=responses,
+            live=getattr(args, "live", None),
         )
     except ValueError as exc:
         print(f"错误: {exc}", file=sys.stderr)
@@ -908,6 +921,7 @@ def cmd_capability_eval(args) -> int:
     print(
         f"  旋钮: max_repairs={knobs['max_repairs']}  "
         f"write_granularity={knobs['write_granularity']}"
+        f"  strict_schema={knobs.get('strict_schema')}"
     )
     print(f"  理由: {knobs['reason']}")
     return 0
@@ -1070,12 +1084,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     identity = sub.add_parser("identity", help="项目身份（Phase 6 种子：跨 harness 识别同一项目）")
     identity_sub = identity.add_subparsers(dest="sub", required=True)
-    p = identity_sub.add_parser("init", help="创建或刷新 .sopcontrol/identity.yaml")
-    p.add_argument("path", nargs="?", default=".")
-    p.set_defaults(func=cmd_identity)
-    p = identity_sub.add_parser("show", help="显示项目身份")
-    p.add_argument("path", nargs="?", default=".")
-    p.set_defaults(func=cmd_identity)
+    for name, help_text in (
+        ("init", "创建或刷新 .sopcontrol/identity.yaml"),
+        ("show", "显示项目身份"),
+        ("lock", "锁定 project_id：挪目录不重算（缓解 R11）"),
+        ("unlock", "解锁：恢复按绝对路径派生"),
+    ):
+        p = identity_sub.add_parser(name, help=help_text)
+        p.add_argument("path", nargs="?", default=".")
+        p.set_defaults(func=cmd_identity)
 
     p = sub.add_parser(
         "intake",
@@ -1164,6 +1181,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--responses",
         help="YAML 文件：三探针响应 {json_stability, boundary_follow, instruction_follow}",
+    )
+    p.add_argument(
+        "--live", choices=["opencode"],
+        help="真实 harness 探针（烧 token；结果如实归档，超时/失败不算通过）",
     )
     p.add_argument("path", nargs="?", default=".")
     p.set_defaults(func=cmd_capability_eval)

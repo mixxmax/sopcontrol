@@ -61,9 +61,8 @@ status 改成 verified 绕过完成门——revision 只防并发覆盖，不防
 
 ## R11 项目身份随绝对路径漂移（Phase 6 种子）
 
-`project_id` 由解析后的绝对路径哈希派生。仓库挪盘、换机器 clone 到不同路径会得到
-新 id——不做全局 registry 同步。全局 daemon / 远程项目身份是 Phase 6 其余部分，
-本切片只保证同根同会话内稳定。
+默认 `project_id` 由绝对路径哈希派生；挪盘/换路径会变。缓解：`sopctl identity lock`
+固定 id（仍非全局 registry）。全局 daemon / 远程身份同步仍属 Phase 6 其余部分。
 
 ## R10 JS/TS 词法剥离的已知缝隙（js_scan 起）
 

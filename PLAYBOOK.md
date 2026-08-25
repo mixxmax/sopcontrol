@@ -25,6 +25,7 @@ sopctl --help    # 或 .venv/bin/sopctl --help
 ```bash
 sopctl init .                    # 若尚无 .sopcontrol/
 sopctl identity init .           # 项目身份
+sopctl identity lock .           # 可选：锁定 id，挪目录不重算（缓解 R11）
 sopctl hook install .            # pre-push 终态门
 sopctl project all .             # AGENTS.md + CLAUDE.md 投影
 sopctl capability-eval --model local --fixture strong .   # 或 fragile/weak

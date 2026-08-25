@@ -226,17 +226,66 @@ def run_harness_eval(harness: str, profile_path: Path, runner=None, python: Path
     return results
 
 
+def _clean_live_output(text: str) -> str:
+    """去掉 ANSI 与 opencode 页脚（'> build · …'），只留模型正文供打分。"""
+    import re
+
+    text = re.sub(r"\x1b\[[0-9;]*m", "", text)
+    lines = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("> build") or stripped.startswith("> "):
+            break
+        lines.append(line)
+    return "\n".join(lines).strip()
+
+
+def collect_live_probe_responses(
+    harness: str = "opencode",
+    *,
+    timeout_per_probe: int = 180,
+    runner=None,
+) -> dict[str, str]:
+    """对真实 harness 跑三维探针，返回 {probe_id: cleaned_output}。
+
+    runner 可注入（测试用）；默认调 opencode run。超时文本带 [TIMEOUT]，打分 naturally fail。
+    """
+    import tempfile
+
+    from .capability import PROBE_IDS, PROBES
+
+    if harness != "opencode":
+        raise ValueError(f"live 探针暂只支持 opencode，收到 {harness!r}")
+
+    responses: dict[str, str] = {}
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp) / "probe"
+        root.mkdir()
+        (root / "src").mkdir()
+        (root / "src" / "allowed.py").write_text("# capability probe sandbox\n", encoding="utf-8")
+        for pid in PROBE_IDS:
+            prompt = PROBES[pid]["prompt"]
+            if runner is not None:
+                responses[pid] = runner(pid, prompt, root)
+                continue
+            code, out = _run_logged(["opencode", "run", prompt], root, timeout_per_probe)
+            text = _clean_live_output(out)
+            if code == -1:
+                text = (text + "\n[TIMEOUT]").strip()
+            responses[pid] = text[-4000:] if len(text) > 4000 else text
+    return responses
+
+
 def run_capability_eval(
     root: Path,
     model: str,
     *,
     fixture: str | None = None,
     responses: dict[str, str] | None = None,
+    live: str | None = None,
+    live_runner=None,
 ) -> dict:
-    """模型维度握手：夹具或显式响应 → 打分 → 落盘 model-profile.yaml。
-
-    本切片不强制烧真实 token；fixture=strong|fragile|weak 走通闭环。
-    """
+    """模型维度握手：夹具 / 显式响应 / live harness → 打分 → 落盘 model-profile.yaml。"""
     from .capability import (
         FIXTURES,
         PROBE_IDS,
@@ -246,7 +295,10 @@ def run_capability_eval(
         save_profile,
     )
 
-    if fixture is not None:
+    if live is not None:
+        responses = collect_live_probe_responses(live, runner=live_runner)
+        source = f"live:{live}"
+    elif fixture is not None:
         if fixture not in FIXTURES:
             raise ValueError(f"未知夹具 {fixture!r}；可选: {', '.join(FIXTURES)}")
         responses = FIXTURES[fixture]
@@ -254,7 +306,7 @@ def run_capability_eval(
     elif responses is not None:
         source = "responses"
     else:
-        raise ValueError("必须提供 fixture= 或 responses=（真实模型探针留待显式接入）")
+        raise ValueError("必须提供 fixture=、responses= 或 live=")
 
     missing = [p for p in PROBE_IDS if p not in responses]
     if missing:

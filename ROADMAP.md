@@ -72,12 +72,10 @@
 
 ## 状态（每次运行后更新）
 
-- 2026-08-25（第九轮）：**垂直骨干役用闭环完成**——meta 路径不计入生产消费者；
-  SELF-001/002 → wired_and_tested；`PLAYBOOK.md` / `sopctl vertical-check` /
-  `doctor --vertical`；本仓 identity + pre-push + project all 已武装。14.1=15/15。
-  下一档（横向）：全局安装/远程身份、多语言表面、自动修复者插卡。
+- 2026-08-25（第十轮）：小步 1–7——双域语料；CI gate；v0.1.0+SKILL；go_scan；
+  capability `--live opencode`（清洗 ANSI 后重跑归档）；identity lock。
+- 2026-08-25（第九轮）：垂直骨干役用闭环完成。14.1=15/15。
 - 2026-08-25（第八轮）：场景8；多平台投影。
-- 2026-08-25（第七轮）：handshake、场景1/10/12/13/14、js_scan、身份种子。
 
 ## Blockers
 

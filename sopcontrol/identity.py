@@ -1,7 +1,7 @@
 """项目身份（Phase 6 最小切片）：跨 harness 识别同一项目的稳定 id。
 
-不做全局 daemon。身份落在 `.sopcontrol/identity.yaml`，内容由项目根路径
-规范化后哈希——同根同 id，换机器路径变则 id 变（诚实边界，记 R11）。
+默认由绝对路径哈希派生（换路径会变，R11）。
+`locked: true` 时保留手写/既有 project_id，路径变更只更新 root 字段。
 """
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from .model import content_hash, utcnow
 class ProjectIdentity(BaseModel):
     project_id: str
     root: str
+    locked: bool = False
     created_at: str = ""
     note: str = "跨 harness 识别用；权威规则仍在 registry（Phase 6 种子）"
 
@@ -37,16 +38,36 @@ def load_identity(root: Path) -> Optional[ProjectIdentity]:
     return ProjectIdentity.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")) or {})
 
 
+def _save(root: Path, identity: ProjectIdentity) -> Path:
+    path = identity_path(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        yaml.safe_dump(identity.model_dump(mode="json"), allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
+    return path
+
+
 def ensure_identity(root: Path) -> ProjectIdentity:
-    """已有则校验 root 字段；缺失则创建。路径变更导致 id 漂移时更新并注明。"""
+    """缺失则创建；unlocked 时路径变则重算 id；locked 时保留 id。"""
     root = Path(root).resolve()
     existing = load_identity(root)
     expected_id = compute_project_id(root)
+
+    if existing and existing.locked:
+        if existing.root != str(root):
+            existing.root = str(root)
+            existing.note = "locked：路径已变，project_id 保持不变（缓解 R11）"
+            _save(root, existing)
+        return existing
+
     if existing and existing.project_id == expected_id and existing.root == str(root):
         return existing
+
     identity = ProjectIdentity(
         project_id=expected_id,
         root=str(root),
+        locked=False,
         created_at=utcnow().strftime("%Y-%m-%d %H:%M:%S"),
         note=(
             "路径变化后重新派生 id"
@@ -54,10 +75,18 @@ def ensure_identity(root: Path) -> ProjectIdentity:
             else "跨 harness 识别用；权威规则仍在 registry（Phase 6 种子）"
         ),
     )
-    path = identity_path(root)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        yaml.safe_dump(identity.model_dump(mode="json"), allow_unicode=True, sort_keys=False),
-        encoding="utf-8",
-    )
+    _save(root, identity)
     return identity
+
+
+def set_identity_locked(root: Path, locked: bool) -> ProjectIdentity:
+    """锁定/解锁：锁定后 ensure 不再因路径变更改写 project_id。"""
+    ident = ensure_identity(root)
+    ident.locked = locked
+    ident.note = (
+        "locked：project_id 固定，挪目录不重算（仍非全局 registry）"
+        if locked
+        else "unlocked：project_id 随绝对路径派生"
+    )
+    _save(Path(root).resolve(), ident)
+    return ident

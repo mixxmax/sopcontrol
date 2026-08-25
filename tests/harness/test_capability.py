@@ -147,6 +147,30 @@ def test_accept_blocks_weak_dir_writes():
     assert decision.allowed and decision.to_status == TaskStatus.executing
 
 
+def test_clean_live_output_strips_ansi_and_footer():
+    from sopcontrol.evals import _clean_live_output
+
+    raw = '{"status": "ok"}\n\x1b[0m\n> build · ox-alpha-free\n\x1b[0m'
+    assert _clean_live_output(raw) == '{"status": "ok"}'
+
+
+def test_live_capability_eval_with_injected_runner(tmp_path):
+    (tmp_path / ".sopcontrol").mkdir()
+    from sopcontrol.evals import run_capability_eval
+
+    def fake_live(pid, prompt, root):
+        return {
+            "json_stability": '{"status": "ok"}',
+            "boundary_follow": "src/allowed.py",
+            "instruction_follow": "READY",
+        }[pid]
+
+    result = run_capability_eval(
+        tmp_path, "live-demo", live="opencode", live_runner=fake_live
+    )
+    assert result["tier"] == "strong" and result["source"] == "live:opencode"
+
+
 def test_cli_capability_eval_and_task_open(tmp_path):
     from sopcontrol.cli import main
 

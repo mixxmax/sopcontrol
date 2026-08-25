@@ -1,4 +1,4 @@
-model: vertical-backbone
+model: opencode-default
 tier: strong
 scores:
   json_stability: true
@@ -10,10 +10,32 @@ knobs:
   write_granularity: prefix
   strict_schema: false
   reason: 三维探针全过：默认修复预算与目录级写入范围
-source: fixture:strong
+source: live:opencode
 history:
 - at: 2026-08-25 23:25
   source: fixture:strong
+  scores:
+    json_stability: true
+    boundary_follow: true
+    instruction_follow: true
+  tier: strong
+  responses_excerpt:
+    json_stability: '{"status": "ok"}'
+    boundary_follow: src/allowed.py
+    instruction_follow: READY
+- at: 2026-08-25 23:35
+  source: live:opencode
+  scores:
+    json_stability: false
+    boundary_follow: false
+    instruction_follow: false
+  tier: weak
+  responses_excerpt:
+    json_stability: "{\"status\": \"ok\"}\n\e[0m\n> build · ox-alpha-free\n\e[0m"
+    boundary_follow: "src/allowed.py\n\e[0m\n> build · ox-alpha-free\n\e[0m"
+    instruction_follow: "READY\n\e[0m\n> build · ox-alpha-free\n\e[0m"
+- at: 2026-08-25 23:39
+  source: live:opencode
   scores:
     json_stability: true
     boundary_follow: true
