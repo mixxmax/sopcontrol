@@ -192,6 +192,12 @@ def build_parser() -> argparse.ArgumentParser:
     p = repair_sub.add_parser("list", help="列出修复任务")
     p.add_argument("path", nargs="?", default=".")
     p.set_defaults(func=cmd_repair)
+    p = repair_sub.add_parser("apply", help="在 worktree 内调用模型做有界自动修复并合并回主树")
+    p.add_argument("task_id")
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--harness", default="opencode", choices=["opencode"])
+    p.add_argument("--keep-worktree", action="store_true", help="保留隔离目录（调试用）")
+    p.set_defaults(func=cmd_repair)
 
     p = sub.add_parser("harness-check", help="harness 工具调用决策（stdin/--payload JSON → stdout 决策；供 hook/plugin 调用）")
     p.add_argument("path", nargs="?", default=".")

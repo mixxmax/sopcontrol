@@ -47,7 +47,7 @@
 - [x] 同指纹熔断：同断口重复开单拒绝；历史修复失败（failed_unverified/blocked）→ 拒绝再开、转人工
 - [x] 已达标拒绝：规则当前 pass 时不开修复（防无意义返工）
 - [x] 测试 5 项（契约生成/重复拒绝/熔断/已达标/未知 finding 可行动报错）；CLI 实测全链路
-- [ ] git worktree 隔离 —— 暂缓：隔离为"自动修复者"而设，其尚不存在；待模型插件位接入时一并实现（DESIGN 决策，非遗忘）
+- [x] git worktree 隔离 + `sopctl repair apply`（自动修复者 v0：隔离改、契约外丢弃、合并回主树；2026-08-26）
 
 ### B4 校准与投影 — 完成（2026-08-25，含 capability handshake）
 - [x] harness 决策核心：`sopctl harness-check`（stdin/--payload，工具名跨 harness 归一，决策纯函数）
@@ -72,8 +72,9 @@
 
 ## 状态（每次运行后更新）
 
-- 2026-08-26（立等续 1–5）：schema_field_unread→verdict gap；import_graph；cli_rules；
-  project check；打包元数据/README git 预习安装。
+- 2026-08-26（立等 6–8）：JobsFlow 真仓控制面狗粮（用户授权）；Claude live 仍 401；
+  worktree + repair apply 自动修复者 v0。
+- 2026-08-26（立等续 1–5）：schema verdict；import_graph；cli_rules；project check；打包预习。
 - 2026-08-26（立等 1–8）：场景3/lex_strip/cli 拆分/intake/CI/狗粮/Claude/对比。
 - 2026-08-25（横向 C）：rust_scan；CI doctor；capability-compare；identity export/import。
 - 2026-08-25（质量收口 B）：audit --compact；投影 SKILL 要点。

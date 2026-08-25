@@ -1,8 +1,6 @@
-"""有界修复 v0（B3）：Finding → 修复任务，经 B2 任务机执行，同指纹熔断。
+"""有界修复（B3）：Finding → 修复任务；自动修复者在 worktree 内改文件后合并回主树。
 
-修复智能在脊柱之外：人或模型插件在契约内完成语义修复（手册 5.6）；
-本模块只提供有界框架——契约、预算、指纹熔断、完成门复用。
-git worktree 隔离留给存在自动修复者的那一天（ROADMAP 记录暂缓理由）。
+脊柱不内嵌 LLM：apply 通过外部 harness CLI（默认 opencode）执行语义修复。
 """
 from __future__ import annotations
 
@@ -12,7 +10,15 @@ from .audit import run_audit
 from .ledger import Ledger
 from .model import Finding
 from .registry import Registry
-from .task import Contract, TaskRecord, TaskStatus, TaskStore
+from .task import Contract, TaskRecord, TaskStatus, TaskStore, path_allowed
+from .worktree import (
+    WorktreeError,
+    copy_paths_to_main,
+    create_repair_worktree,
+    list_changed_files,
+    remove_repair_worktree,
+    worktree_path,
+)
 
 
 class RepairError(Exception):
@@ -74,3 +80,75 @@ def open_repair(
 
 def list_repairs(root: Path) -> list[TaskRecord]:
     return [t for t in TaskStore(root).list_all() if t.contract.repairs_fingerprint]
+
+
+def _repair_prompt(task: TaskRecord) -> str:
+    allows = ", ".join(task.contract.allowed_writes) or "（无）"
+    rules = ", ".join(task.contract.required_rules) or "（无）"
+    return (
+        f"你是有界修复执行者。目标：{task.contract.objective}\n"
+        f"只允许修改这些路径前缀：{allows}\n"
+        f"完成后规则 {rules} 应能判定 pass。\n"
+        f"不要改 .sopcontrol/；不要扩大范围；做最小改动后停止。"
+    )
+
+
+def apply_repair(
+    root: Path,
+    task_id: str,
+    *,
+    harness: str = "opencode",
+    runner=None,
+    timeout: int = 300,
+    keep_worktree: bool = False,
+) -> dict:
+    """在 worktree 中调用外部模型做最小修复，并把契约内改动合并回主树。
+
+    runner(worktree_path, prompt) -> None 可注入（测试用）；默认 opencode run。
+    """
+    root = Path(root).resolve()
+    store = TaskStore(root)
+    task = store.load(task_id)
+    if not task.contract.repairs_fingerprint:
+        raise RepairError(f"{task_id} 不是修复任务（无 repairs_fingerprint）")
+    if task.status not in (TaskStatus.contract_proposed, TaskStatus.executing, TaskStatus.repair_required):
+        raise RepairError(f"任务状态 {task.status.value} 不可自动修复")
+
+    try:
+        work = create_repair_worktree(root, task_id)
+    except WorktreeError as exc:
+        raise RepairError(str(exc)) from exc
+
+    prompt = _repair_prompt(task)
+    try:
+        if runner is not None:
+            runner(work, prompt)
+        elif harness == "opencode":
+            from .evals import _run_logged
+
+            code, out = _run_logged(["opencode", "run", prompt], work, timeout)
+            if code == -1:
+                raise RepairError(f"自动修复超时：{out[-200:]}")
+        else:
+            raise RepairError(f"暂不支持 harness={harness!r}（当前：opencode）")
+
+        changed = list_changed_files(work)
+        allowed = [
+            p for p in changed
+            if path_allowed(p, task.contract.allowed_writes)
+            and not p.startswith(".sopcontrol/")
+        ]
+        rejected = [p for p in changed if p not in allowed]
+        copied = copy_paths_to_main(work, root, allowed)
+    finally:
+        if not keep_worktree:
+            remove_repair_worktree(root, task_id)
+
+    return {
+        "task_id": task_id,
+        "worktree": str(worktree_path(root, task_id)),
+        "changed": changed,
+        "copied": copied,
+        "rejected_out_of_contract": rejected,
+        "prompt": prompt[:200],
+    }

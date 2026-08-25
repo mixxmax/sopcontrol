@@ -23,6 +23,8 @@ from plugins import DETECTORS, SENSORS
 def cmd_repair(args) -> int:
     from plugins import DETECTORS, SENSORS
 
+    from .repair import apply_repair
+
     root = _project(args.path)
     if args.sub == "open":
         try:
@@ -33,7 +35,10 @@ def cmd_repair(args) -> int:
         print(f"已开修复任务 {task.task_id} [contract_proposed]：{task.contract.objective[:60]}")
         print(f"  绑定指纹: {task.contract.repairs_fingerprint}")
         print(f"  完成定义: 规则 {', '.join(task.contract.required_rules)} 判定 pass")
-        print("  下一步: 在契约范围内完成最小修复 → task accept/submit/verify（预算两轮，同指纹熔断）")
+        print(
+            "  下一步: sopctl repair apply "
+            f"{task.task_id}  或人工在契约内修改后 task accept/submit/verify"
+        )
         return 0
 
     if args.sub == "list":
@@ -44,6 +49,27 @@ def cmd_repair(args) -> int:
         print(f"{'TASK':12} {'状态':22} {'指纹':18} 目标")
         for t in repairs:
             print(f"{t.task_id:12} {t.status.value:22} {t.contract.repairs_fingerprint:18} {t.contract.objective[:40]}")
+        return 0
+
+    if args.sub == "apply":
+        try:
+            result = apply_repair(
+                root,
+                args.task_id,
+                harness=getattr(args, "harness", "opencode") or "opencode",
+                keep_worktree=bool(getattr(args, "keep_worktree", False)),
+            )
+        except RepairError as exc:
+            print(f"错误: {exc}", file=sys.stderr)
+            return 2
+        print(f"自动修复合并回主树：复制 {len(result['copied'])} 个文件")
+        for p in result["copied"]:
+            print(f"  + {p}")
+        if result["rejected_out_of_contract"]:
+            print("契约外改动已丢弃（隔离树内）：")
+            for p in result["rejected_out_of_contract"]:
+                print(f"  × {p}")
+        print(f"下一步: sopctl task accept/submit/verify {args.task_id}")
         return 0
     return 2
 

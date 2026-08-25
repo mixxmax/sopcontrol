@@ -10,3 +10,5 @@ build/
 corpus/fixtures/**/.sopcontrol/evidence/
 corpus/fixtures/**/.sopcontrol/tasks/
 corpus/fixtures/**/.sopcontrol/rules/candidates.yaml
+
+.sopcontrol/worktrees/
