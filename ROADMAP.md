@@ -72,11 +72,10 @@
 
 ## 状态（每次运行后更新）
 
-- 2026-08-25（连续自驱第七轮续）：场景12/14 **完成**——无 hook harness 终态门验收；
-  input_hash stale 过滤接入 explain/doctor；14.1 覆盖 **12/15**（缺 10 冲突、13 并发）。
-  非 Python / 场景1 / capability handshake 同轮已交付；105 测试全绿。下一步：场景
-  10/13 或 Phase 6 项目身份最小切片。
-- 2026-08-25：js_scan；场景1；capability handshake。
+- 2026-08-25（连续自驱第七轮续）：场景10 规则冲突 **完成**——同消费者标记 MUST↔MUST_NOT
+  在 accept/add 硬拦；supersedes 豁免。此前同轮：12/14、js_scan、场景1、capability
+  handshake。14.1 覆盖 **13/15**（缺 13 并发）；108 测试全绿。下一步：场景13 或 Phase 6。
+- 2026-08-25：场景12/14 stale/无钩子；js_scan；场景1；handshake。
 - 2026-08-24：场景7；14.1 覆盖 9/15。
 
 ## Blockers

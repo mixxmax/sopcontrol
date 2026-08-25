@@ -55,7 +55,10 @@ def cmd_init(args) -> int:
 
 
 def cmd_rule_add(args) -> int:
+    from .conflict import find_conflicts
+
     root = _project(args.path)
+    reg = Registry(root / ".sopcontrol" / "rules" / "registry.yaml")
     rule = Rule(
         rule_id=args.id,
         statement=args.statement,
@@ -68,7 +71,13 @@ def cmd_rule_add(args) -> int:
         consumer_markers=list(args.consumer_marker or []),
         tags=list(args.tag or []),
     )
-    Registry(root / ".sopcontrol" / "rules" / "registry.yaml").add(rule)
+    if rule.status == RuleStatus.accepted:
+        conflicts = find_conflicts(rule, reg.load())
+        if conflicts:
+            detail = "；".join(c["reason"] for c in conflicts)
+            print(f"错误: 规则冲突（14.1 场景10）：{detail}", file=sys.stderr)
+            return 2
+    reg.add(rule)
     print(f"已登记规则 {rule.rule_id} [{rule.status.value}]：{rule.statement}")
     if rule.status == RuleStatus.accepted:
         print("注意：规则已直接置为 accepted；常规流程应从 proposed 出发，经确认后 accept")

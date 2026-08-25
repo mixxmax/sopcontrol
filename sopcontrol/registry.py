@@ -56,6 +56,8 @@ class Registry:
         raise RegistryError(f"未找到规则 {rule_id}；现有规则: {known}")
 
     def transition(self, rule_id: str, new_status: RuleStatus) -> Rule:
+        from .conflict import find_conflicts
+
         rules = self.load()
         for rule in rules:
             if rule.rule_id == rule_id:
@@ -66,6 +68,14 @@ class Registry:
                         f"非法生命周期迁移 {rule.status.value} → {new_status.value}；"
                         f"从 {rule.status.value} 出发允许: {options}"
                     )
+                if new_status == RuleStatus.accepted:
+                    conflicts = find_conflicts(rule, rules)
+                    if conflicts:
+                        detail = "；".join(c["reason"] for c in conflicts)
+                        raise RegistryError(
+                            f"规则冲突（14.1 场景10）：{detail}。"
+                            f"请先 supersede/废弃旧规则，或调整 consumer_markers，不得让相反模态并存"
+                        )
                 rule.status = new_status
                 if new_status == RuleStatus.accepted and rule.accepted_at is None:
                     rule.accepted_at = utcnow()
