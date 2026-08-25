@@ -72,12 +72,12 @@
 
 ## 状态（每次运行后更新）
 
-- 2026-08-25（连续自驱第七轮续）：非 Python 表面 **完成**——`js_scan` 词法剥离移植
-  AST 思路（无新依赖）；web-gate + ci-deploy 双域语料 CASE-017/018/019；DESIGN §13 /
-  R10。场景1 与 capability handshake 同轮已交付；14.1 覆盖 **10/15**。下一步：场景
-  12/14 深化 → Phase 6。
-- 2026-08-25：场景1 对话意图层；B4 capability handshake；测试 96→99+。
-- 2026-08-24：场景7 改进复测通过；14.1 覆盖 9/15。
+- 2026-08-25（连续自驱第七轮续）：场景12/14 **完成**——无 hook harness 终态门验收；
+  input_hash stale 过滤接入 explain/doctor；14.1 覆盖 **12/15**（缺 10 冲突、13 并发）。
+  非 Python / 场景1 / capability handshake 同轮已交付；105 测试全绿。下一步：场景
+  10/13 或 Phase 6 项目身份最小切片。
+- 2026-08-25：js_scan；场景1；capability handshake。
+- 2026-08-24：场景7；14.1 覆盖 9/15。
 
 ## Blockers
 

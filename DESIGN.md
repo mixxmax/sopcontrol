@@ -174,6 +174,16 @@ harness 画像与模型画像并列，不互相覆盖。
 **不做什么**：不自动开任务、不自动 accept 规则、不把「讨论」写成实施 envelope。
 清除 discuss_only 靠用户说出实施标记（或 `sopctl intent clear`）。
 
+## 14. 场景12/14 深化（2026-08-25 补）
+
+**场景12（无 hook）**：不假装运行时拦截。`HARNESS_PROFILES.codex.interception=none`
+时普通 Write 经 harness-check 观察放行；控制点是 `sopctl wrap` / `gate` / pre-push /
+CI——与手册 5.9「无 hooks → wrapper、Git hook、CI」一致。
+
+**场景14（stale）**：账本追加不删旧行。`stale.partition_evidence` 按当前文件
+`input_hash`（及 `valid_until`）划分；`explain`/`doctor` 忽略 stale 证据并明示，
+禁止用过期观测支撑通过判定。gate/audit 本就重扫现场，不依赖旧行。
+
 ## 13. 非 Python 表面：js_scan（2026-08-25 补）
 
 **问题**：`.ts/.js` 仍走 grep，注释假消费者会复发（R1 反向家族）。

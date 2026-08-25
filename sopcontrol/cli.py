@@ -127,15 +127,20 @@ def cmd_audit(args) -> int:
 
 
 def cmd_explain(args) -> int:
+    from .stale import partition_evidence
+
     root = _project(args.path)
     registry = Registry(root / ".sopcontrol" / "rules" / "registry.yaml")
     rule = registry.get(args.rule_id)
     ledger = Ledger(root / ".sopcontrol" / "evidence" / "ledger.jsonl")
-    evidence = ledger.load_evidence()
+    all_evidence = ledger.load_evidence(current_only=False)
+    evidence, stale = partition_evidence(root, all_evidence)
     findings = ledger.load_findings()
-    if not evidence and not findings:
+    if not evidence and not findings and not stale:
         print("账本为空，判定缺少独立证据；先运行 sopctl audit")
         return 1
+    if stale:
+        print(f"注意: {len(stale)} 条账本证据因输入变化或过期已 stale，不参与判定（14.1 场景14）")
     verdict = evaluate_rule(rule, evidence, findings)
 
     print(f"规则 {rule.rule_id} — {rule.statement}")
@@ -303,6 +308,13 @@ def cmd_doctor(args) -> int:
         print(f"账本完整性: {'OK' if ok else '被篡改或损坏'}")
         if not ok:
             problems.append("账本校验失败：存在 id 与内容不符的记录")
+        from .stale import partition_evidence
+
+        _, stale = partition_evidence(root, ledger.load_evidence(current_only=False))
+        if stale:
+            print(f"账本 stale: {len(stale)} 条（输入已变或过期；explain/判定会忽略，请重新 audit）")
+        else:
+            print("账本 stale: 无")
     else:
         print("账本: 尚无（audit 后生成）")
 
