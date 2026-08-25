@@ -174,6 +174,18 @@ harness 画像与模型画像并列，不互相覆盖。
 **不做什么**：不自动开任务、不自动 accept 规则、不把「讨论」写成实施 envelope。
 清除 discuss_only 靠用户说出实施标记（或 `sopctl intent clear`）。
 
+## 17. 垂直骨干役用闭环（2026-08-25 补）
+
+标准：控制闭环齐备（检测智力与多语言留给插卡）。收官三项：
+
+1. **本仓役用**：`sopctl vertical-check` 武装身份/投影/钩子，audit 无 fail，
+   gate/self-test 通过；自应用 SELF-001/002 达 wired_and_tested。
+2. **日用剧本**：`PLAYBOOK.md` + `scripts/vertical-check.sh`。
+3. **役用教训入库**：`corpus/`/`docs/` 不算生产消费者（`is_production_path`）；
+   自应用标记改为 AST 可见具名函数，避免 YAML 假接线。
+
+横向（多语言、多领域、自动修复者、全局 daemon）明确后置。
+
 ## 16. 场景8 与多平台投影（2026-08-25 补）
 
 **场景8**：弱模型漏 MUST 字段。契约增加 `required_fields`；`submit` 校验

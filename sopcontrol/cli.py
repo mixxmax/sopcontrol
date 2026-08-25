@@ -364,20 +364,91 @@ def cmd_doctor(args) -> int:
         print(f"项目身份: {ident.project_id}")
     else:
         print("项目身份: 未登记（sopctl identity init）")
+        if getattr(args, "vertical", False):
+            problems.append("垂直役用要求已登记项目身份（sopctl identity init）")
 
     hook = root / ".git" / "hooks" / "pre-push"
     if hook.exists():
-        armed = HOOK_MARKER in hook.read_text()
+        armed = HOOK_MARKER in hook.read_text(encoding="utf-8")
         state = "已武装（sopctl gate）" if armed else "存在但非 sopctl 安装（手工整合请调用 sopctl gate）"
+        if getattr(args, "vertical", False) and not armed:
+            problems.append("垂直役用要求 pre-push 为 sopctl 终态门")
     else:
         state = "未安装（sopctl hook install）"
+        if getattr(args, "vertical", False):
+            problems.append("垂直役用要求已安装 pre-push 终态门（sopctl hook install）")
     print(f"pre-push 终态门: {state}")
 
     if problems:
         for p in problems:
             print(f"问题: {p}", file=sys.stderr)
         return 1
-    print("doctor: 全部通过")
+    print("doctor: 全部通过" + ("（垂直役用就绪）" if getattr(args, "vertical", False) else ""))
+    return 0
+
+
+def cmd_vertical_check(args) -> int:
+    """垂直骨干役用：武装身份/投影/钩子 → doctor --vertical → audit/gate/self-test。"""
+    from .identity import ensure_identity
+    from .project import write_all_projections
+
+    root = _project(args.path)
+    if not (root / ".sopcontrol").exists():
+        print("错误: 尚未 sopctl init", file=sys.stderr)
+        return 2
+
+    ident = ensure_identity(root)
+    print(f"身份: OK → {ident.project_id}")
+    for p in write_all_projections(root):
+        print(f"投影: OK → {p}")
+
+    from .evals import run_capability_eval
+
+    try:
+        cap = run_capability_eval(root, "vertical-backbone", fixture="strong")
+        print(f"能力画像: OK → tier={cap['tier']}")
+    except Exception as exc:
+        print(f"能力画像: 跳过（{exc}）")
+
+    # 复用 hook install（无 git 则失败）
+    class _HookArgs:
+        path = str(root)
+        hook = "pre-push"
+
+    hook_code = cmd_hook(_HookArgs())
+    if hook_code != 0:
+        return hook_code
+
+    class _DocArgs:
+        path = str(root)
+        vertical = True
+
+    if cmd_doctor(_DocArgs()) != 0:
+        return 1
+
+    from plugins import DETECTORS, SENSORS
+
+    report = run_audit(root, SENSORS, DETECTORS, persist=True)
+    fails = [v for v in report.verdicts if v.status == "fail"]
+    gaps = [v for v in report.verdicts if v.status == "gap"]
+    print(f"audit: fail={len(fails)} gap={len(gaps)}")
+    if fails:
+        for v in fails:
+            print(f"  FAIL {v.rule_id}: {v.reason[:100]}", file=sys.stderr)
+        print("vertical-check: 存在 fail 判定，骨干役用未闭环", file=sys.stderr)
+        return 1
+
+    if run_gate(root) != 0:
+        return 1
+
+    # self-test 在一次性沙箱，不碰本仓
+    class _ST:
+        pass
+
+    if cmd_self_test(_ST()) != 0:
+        return 1
+
+    print("vertical-check: 通过——垂直骨干役用闭环（日用见 PLAYBOOK.md）")
     return 0
 
 
@@ -932,7 +1003,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("doctor", help="安装自诊：注册表、账本完整性、插件可用性、终态门状态")
     p.add_argument("path", nargs="?", default=".")
+    p.add_argument(
+        "--vertical", action="store_true",
+        help="垂直役用标准：身份与 pre-push 未武装则失败",
+    )
     p.set_defaults(func=cmd_doctor)
+
+    p = sub.add_parser(
+        "vertical-check",
+        help="垂直骨干役用闭环：武装身份/投影/钩子 → doctor --vertical → audit/gate/self-test",
+    )
+    p.add_argument("path", nargs="?", default=".")
+    p.set_defaults(func=cmd_vertical_check)
 
     p = sub.add_parser("gate", help="终点门：fail 判定/账本篡改阻断，gap 仅告警（供 hook/CI 调用）")
     p.add_argument("path", nargs="?", default=".")

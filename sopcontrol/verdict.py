@@ -4,7 +4,7 @@
 """
 from __future__ import annotations
 
-from .context import is_test_path
+from .context import is_production_path, is_test_path
 from .model import (
     Absorption,
     Evidence,
@@ -40,21 +40,26 @@ def marker_hit(ev: Evidence, markers: list[str]) -> bool:
 
 
 def consumer_evidence(rule: Rule, evidence: list[Evidence]) -> tuple[list[Evidence], list[Evidence]]:
-    """返回 (生产路径消费者证据, 测试路径消费者证据)。"""
+    """返回 (生产路径消费者证据, 测试路径消费者证据)。语料/文档不算接线。"""
     prod, test = [], []
     for ev in evidence:
-        if marker_hit(ev, rule.consumer_markers):
-            (test if is_test_path(ev.subject) else prod).append(ev)
+        if not marker_hit(ev, rule.consumer_markers):
+            continue
+        if is_test_path(ev.subject):
+            test.append(ev)
+        elif is_production_path(ev.subject):
+            prod.append(ev)
+        # meta（corpus/docs）：忽略
     return prod, test
 
 
 def legacy_evidence(rule: Rule, evidence: list[Evidence]) -> list[Evidence]:
-    """生产路径上仍然存活的旧入口证据（测试路径中出现不算绕过）。"""
+    """生产路径上仍然存活的旧入口证据（测试与语料中出现不算绕过）。"""
     if not rule.legacy_markers:
         return []
     hits = []
     for ev in evidence:
-        if marker_hit(ev, rule.legacy_markers) and not is_test_path(ev.subject):
+        if marker_hit(ev, rule.legacy_markers) and is_production_path(ev.subject):
             hits.append(ev)
     return hits
 

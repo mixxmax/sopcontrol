@@ -8,7 +8,9 @@
 设计与调研手册见 [`docs/`](docs/)；建构决策记录见 [`DESIGN.md`](DESIGN.md)；
 已知绕过家族的诚实登记见 [`RESIDUAL_RISKS.md`](RESIDUAL_RISKS.md)。
 
-## 当前状态：B4 完成 + 14.1 覆盖 15/15 + Phase 6 身份种子 + 多平台投影
+## 当前状态：垂直骨干役用闭环 + 14.1 覆盖 15/15
+
+日用顺序见 [`PLAYBOOK.md`](PLAYBOOK.md)。本仓自检：`sopctl vertical-check .` 或 `./scripts/vertical-check.sh`。
 
 - **OpenCode（运行时拦截，已实测）**：`sopctl hook opencode` 安装 `.opencode/plugins` 插件，
   `tool.execute.before` 调 `sopctl harness-check` 决策。真实模型演习：Edit 控制器文件被当场

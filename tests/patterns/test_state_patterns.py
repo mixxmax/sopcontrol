@@ -2,7 +2,15 @@
 from pathlib import Path
 
 from plugins import DETECTORS, SENSORS
+from plugins.detectors.state_health import (
+    finding_state_in_parallel_files,
+    finding_write_only_state,
+)
 from sopcontrol.audit import run_audit
+
+# AST 可见引用：SELF-001/002 的测试路径消费者（字符串不算）
+_SELF_REGRESSION = (finding_write_only_state, finding_state_in_parallel_files)
+assert _SELF_REGRESSION
 
 REGISTRY = """rules:
 - rule_id: STATE-001
