@@ -48,9 +48,11 @@ class Contract(BaseModel):
     objective: str
     allowed_writes: list[str] = Field(default_factory=list)   # 路径前缀（目录或文件）
     required_rules: list[str] = Field(default_factory=list)   # 完成定义：这些规则 verdict==pass
+    required_fields: list[str] = Field(default_factory=list)  # MUST 输出字段（14.1 场景8）
     max_repairs: int = 2                                       # 手册 10.5：默认两轮，超出转终态
     repairs_fingerprint: Optional[str] = None                  # 非 None = 修复任务，绑定 Finding 指纹
     write_granularity: Optional[str] = None                    # prefix|prefer_file|file；来自模型画像
+    strict_schema: bool = False                                # 弱/不稳画像：accept 时强制 required_fields
     capability_note: Optional[str] = None                      # 握手说明（只读审计）
 
 
@@ -148,6 +150,7 @@ def evaluate_transition(
     action: str,
     *,
     changed_paths: Optional[list[str]] = None,
+    provided_fields: Optional[dict[str, str]] = None,
     rule_verdicts: Optional[dict[str, str]] = None,
     known_rule_ids: Optional[set[str]] = None,
     ledger_tampered: bool = False,
@@ -178,6 +181,11 @@ def evaluate_transition(
             )
             if gran_err:
                 problems.append(gran_err)
+        if contract.strict_schema and not contract.required_fields:
+            problems.append(
+                "strict_schema=true（弱/不稳模型画像）：必须声明 required_fields"
+                "（MUST 输出字段清单），防漏字段假完成（14.1 场景8）"
+            )
         if problems:
             return _reject("契约不完整: " + "；".join(problems) + "。修复后重新 open 或修改契约")
         return TransitionDecision(
@@ -200,9 +208,23 @@ def evaluate_transition(
                        f"扩大范围需人工重新确认契约（14.1 场景9）",
                 next_action="只提交契约内路径，或经人工确认后修改 allowed_writes",
             )
+        req_fields = task.contract.required_fields
+        if req_fields:
+            provided = provided_fields or {}
+            missing = [f for f in req_fields if f not in provided or not str(provided.get(f, "")).strip()]
+            if missing:
+                return TransitionDecision(
+                    allowed=False, to_status=None,
+                    reason=(
+                        f"漏掉 MUST 字段 [{', '.join(missing)}]（契约 required_fields；"
+                        f"14.1 场景8 弱模型字段遗漏）"
+                    ),
+                    next_action="补全 --field key=value 后重新 submit，不得省略必填字段",
+                )
         return TransitionDecision(
             allowed=True, to_status=TaskStatus.verification_pending,
-            reason=f"改动 {len(paths)} 个路径，全部在写入范围内",
+            reason=f"改动 {len(paths)} 个路径，全部在写入范围内"
+                   + (f"；MUST 字段齐备 [{', '.join(req_fields)}]" if req_fields else ""),
             next_action="运行 task verify 由控制器独立审计",
         )
 

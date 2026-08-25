@@ -174,6 +174,16 @@ harness 画像与模型画像并列，不互相覆盖。
 **不做什么**：不自动开任务、不自动 accept 规则、不把「讨论」写成实施 envelope。
 清除 discuss_only 靠用户说出实施标记（或 `sopctl intent clear`）。
 
+## 16. 场景8 与多平台投影（2026-08-25 补）
+
+**场景8**：弱模型漏 MUST 字段。契约增加 `required_fields`；`submit` 校验
+`--field key=value` 是否齐备。fragile/weak 画像设 `strict_schema=true`，accept
+时未声明字段清单即拒——确定性 schema 门，不靠模型自报。
+
+**多平台投影**：同一小节内容同步到 `AGENTS.md`（Codex/OpenCode）与 `CLAUDE.md`
+（Claude）。`sopctl project all` 一次写入；仍只替换 `<!-- sopcontrol:v1 -->` 区间，
+权威源不变。
+
 ## 15. Phase 6 种子：项目身份（2026-08-25 补）
 
 **不做全局 daemon。** `.sopcontrol/identity.yaml` 存 `project_id`（根路径规范化哈希）。

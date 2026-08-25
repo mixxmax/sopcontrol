@@ -52,13 +52,35 @@ cases:
   ground_truth: 消费者与回归齐备（wired_and_tested→pass）必须放行——防"永远报警"的完成门
 
 - case_id: TCASE-005
-  name: 无可验证完成定义的契约被拒（14.1 场景8）
+  name: 无可验证完成定义的契约被拒（完成定义缺失）
   fixture: ci-deploy
   steps:
   - {do: open, objective: 随便做点什么, allow: [src]}
   - {do: accept, expect: {allowed: false, to: null}}
   final_status: contract_proposed
-  ground_truth: 弱模型漏掉必需字段（required_rules）——契约不完整即拒绝，防"无完成定义的假任务"
+  ground_truth: 契约无 required_rules——不完整即拒绝，防"无完成定义的假任务"
+
+- case_id: TCASE-011
+  name: 弱模型漏掉 MUST 字段被拒（14.1 场景8）
+  fixture: ci-deploy
+  steps:
+  - {do: open, objective: 接线 DEPLOY-001, allow: [scripts/deploy.py], require_rules: [DEPLOY-001],
+     require_fields: [digest, status], strict_schema: true}
+  - {do: accept, expect: {allowed: true, to: executing}}
+  - {do: submit, changed: [scripts/deploy.py], fields: {digest: abc}, expect: {allowed: false, to: null}}
+  - {do: submit, changed: [scripts/deploy.py], fields: {digest: abc, status: ok}, expect: {allowed: true, to: verification_pending}}
+  final_status: verification_pending
+  ground_truth: 弱模型漏掉 MUST 字段 status——submit 拒绝；补齐后放行（确定性 schema，不靠模型自报）
+
+- case_id: TCASE-012
+  name: 弱模型画像强制 MUST 字段清单（14.1 场景8）
+  fixture: ci-deploy
+  steps:
+  - {do: open, objective: 接线 DEPLOY-001, allow: [scripts/deploy.py], require_rules: [DEPLOY-001],
+     strict_schema: true}
+  - {do: accept, expect: {allowed: false, to: null}}
+  final_status: contract_proposed
+  ground_truth: strict_schema 下未声明 required_fields——accept 拒绝，逼出字段契约
 
 - case_id: TCASE-006
   name: 未过完成门不得交付（防假完成）

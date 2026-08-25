@@ -72,11 +72,10 @@
 
 ## 状态（每次运行后更新）
 
-- 2026-08-25（连续自驱第七轮收束）：按交接手册 §4 价值序推进完毕——B4 capability
-  handshake；场景1/10/12/13/14；js_scan；Phase 6 项目身份种子（`sopctl identity`，
-  无全局 daemon）。手册 14.1 覆盖 **14/15**（场景8 仅有旋钮）。109+ 测试全绿。
-  剩余：场景8 专用演习、Rulesync 式多平台投影扩展、全局安装。
-- 2026-08-24：场景7；14.1 覆盖 9/15。
+- 2026-08-25（第八轮）：场景8 **完成**（required_fields + strict_schema）；
+  `sopctl project all|claude|opencode` 多平台投影。14.1 覆盖 **15/15**。
+- 2026-08-25（第七轮）：capability handshake、场景1/10/12/13/14、js_scan、身份种子。
+- 2026-08-24：场景7；14.1 覆盖 9/15。剩余：全局安装/远程身份（R11）。
 
 ## Blockers
 

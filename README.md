@@ -8,7 +8,7 @@
 设计与调研手册见 [`docs/`](docs/)；建构决策记录见 [`DESIGN.md`](DESIGN.md)；
 已知绕过家族的诚实登记见 [`RESIDUAL_RISKS.md`](RESIDUAL_RISKS.md)。
 
-## 当前状态：B4 完成 + 14.1 覆盖 14/15 + Phase 6 身份种子
+## 当前状态：B4 完成 + 14.1 覆盖 15/15 + Phase 6 身份种子 + 多平台投影
 
 - **OpenCode（运行时拦截，已实测）**：`sopctl hook opencode` 安装 `.opencode/plugins` 插件，
   `tool.execute.before` 调 `sopctl harness-check` 决策。真实模型演习：Edit 控制器文件被当场
@@ -65,7 +65,7 @@ sopctl task accept/submit/verify/deliver TASK-0001 .
 sopctl intake .                          # 文档 MUST 句 → 候选规则（不写注册表）
 sopctl hook claude .                     # 安装 Claude Code PreToolUse 钩子
 sopctl hook opencode .                   # 安装 OpenCode 运行时插件
-sopctl project codex .                   # AGENTS.md 规则投影（Codex 建议层）
+sopctl project codex|claude|opencode|all .  # 规则投影（AGENTS.md / CLAUDE.md）
 sopctl wrap codex . -- exec -s workspace-write "任务"   # 事后门 wrapper
 echo '{"tool_name":"Bash","tool_input":{"command":"git push"}}' | sopctl harness-check .
 sopctl capability-eval --model demo --fixture fragile .   # 模型画像（不烧 token）

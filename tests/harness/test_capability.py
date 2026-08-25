@@ -61,10 +61,13 @@ def test_tier_mapping():
 def test_control_knobs_table():
     assert control_knobs("strong").max_repairs == 2
     assert control_knobs("strong").write_granularity == "prefix"
+    assert control_knobs("strong").strict_schema is False
     assert control_knobs("fragile").max_repairs == 1
     assert control_knobs("fragile").write_granularity == "prefer_file"
+    assert control_knobs("fragile").strict_schema is True
     assert control_knobs("weak").max_repairs == 1
     assert control_knobs("weak").write_granularity == "file"
+    assert control_knobs("weak").strict_schema is True
     assert control_knobs("unknown").max_repairs == 2
 
 

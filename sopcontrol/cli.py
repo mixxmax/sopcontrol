@@ -381,7 +381,26 @@ def cmd_doctor(args) -> int:
     return 0
 
 
-def _task_decide(root: Path, task_id: str, action: str, args=None, changed_paths=None):
+def _parse_fields(raw: list[str] | None) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for item in raw or []:
+        if "=" not in item:
+            raise ValueError(f"--field 需要 key=value 形式，收到 {item!r}")
+        key, _, val = item.partition("=")
+        if not key.strip():
+            raise ValueError(f"--field 键为空: {item!r}")
+        out[key.strip()] = val
+    return out
+
+
+def _task_decide(
+    root: Path,
+    task_id: str,
+    action: str,
+    args=None,
+    changed_paths=None,
+    provided_fields=None,
+):
     """task 子命令共用骨架：载入 → 纯函数判定 → 应用 → 打印。返回退出码。"""
     from plugins import DETECTORS, SENSORS
 
@@ -392,7 +411,10 @@ def _task_decide(root: Path, task_id: str, action: str, args=None, changed_paths
         decision = run_task_verify(root, SENSORS, DETECTORS, task)
     else:
         decision = evaluate_transition(
-            task, action, changed_paths=changed_paths, known_rule_ids=known
+            task, action,
+            changed_paths=changed_paths,
+            provided_fields=provided_fields,
+            known_rule_ids=known,
         )
     task = store.apply(task, decision, action, changed_paths=changed_paths)
     mark = "迁移" if decision.allowed and decision.to_status else "拒绝"
@@ -428,6 +450,8 @@ def cmd_task(args) -> int:
             print(f"错误: {reject}", file=sys.stderr)
             return 2
         gran = profile.knobs.write_granularity if profile else None
+        strict = bool(profile and profile.knobs.strict_schema)
+        fields = list(args.require_field or [])
         task_id = store.next_task_id()
         task = TaskRecord(
             task_id=task_id,
@@ -435,8 +459,10 @@ def cmd_task(args) -> int:
                 objective=args.objective,
                 allowed_writes=writes,
                 required_rules=list(args.require_rule or []),
+                required_fields=fields,
                 max_repairs=repairs,
                 write_granularity=gran,
+                strict_schema=strict,
                 capability_note=note if profile else None,
             ),
         )
@@ -444,6 +470,10 @@ def cmd_task(args) -> int:
         print(f"已创建任务 {task_id} [contract_proposed]：{args.objective}")
         print(f"  写入范围: {', '.join(writes)}")
         print(f"  完成定义: 规则 {', '.join(args.require_rule or [])} 全部判定 pass")
+        if fields:
+            print(f"  MUST 字段: {', '.join(fields)}")
+        elif strict:
+            print("  MUST 字段: （strict_schema，accept 前须补 --require-field）")
         print(f"  修复预算: {repairs}" + (f"（画像调节）" if profile and not explicit else ""))
         if profile:
             print(f"  能力: {note}")
@@ -491,7 +521,16 @@ def cmd_task(args) -> int:
     if sub == "accept":
         return _task_decide(root, args.task_id, "accept")
     if sub == "submit":
-        return _task_decide(root, args.task_id, "submit", changed_paths=list(args.changed or []))
+        try:
+            fields = _parse_fields(getattr(args, "field", None))
+        except ValueError as exc:
+            print(f"错误: {exc}", file=sys.stderr)
+            return 2
+        return _task_decide(
+            root, args.task_id, "submit",
+            changed_paths=list(args.changed or []),
+            provided_fields=fields or None,
+        )
     if sub == "verify":
         return _task_decide(root, args.task_id, "verify")
     if sub == "deliver":
@@ -705,15 +744,31 @@ def cmd_hook_opencode(args) -> int:
     return 0
 
 
-def cmd_project_codex(args) -> int:
-    """AGENTS.md 规则投影（建议层；Codex 无运行时钩子，拦截靠终态门）。"""
-    from .project import write_projection
+def cmd_project(args) -> int:
+    """平台规则投影：codex/opencode → AGENTS.md；claude → CLAUDE.md；all → 两者。"""
+    from .project import write_all_projections, write_projection
 
     root = _project(args.path)
-    agents = write_projection(root)
+    sub = args.sub
+    try:
+        if sub == "all":
+            paths = write_all_projections(root)
+        else:
+            paths = [write_projection(root, sub)]
+    except ValueError as exc:
+        print(f"错误: {exc}", file=sys.stderr)
+        return 2
     _write_profile(root)
-    print(f"已写入规则投影 → {agents}（只替换带标记小节；权威源仍是 registry.yaml）")
-    print("Codex 控制策略: 建议（本投影）+ 事后门（sopctl wrap codex）+ git/CI 终态拦截")
+    for p in paths:
+        print(f"已写入规则投影 → {p}（只替换带标记小节；权威源仍是 registry.yaml）")
+    if sub == "codex":
+        print("Codex 控制策略: 建议（本投影）+ 事后门（sopctl wrap codex）+ git/CI 终态拦截")
+    elif sub == "opencode":
+        print("OpenCode 控制策略: 建议（本投影）+ 运行时插件（sopctl hook opencode）+ git/CI")
+    elif sub == "claude":
+        print("Claude 控制策略: 建议（本投影）+ PreToolUse 钩子（sopctl hook claude）+ git/CI")
+    else:
+        print("已同步 AGENTS.md 与 CLAUDE.md；各 harness 控制策略不变")
     return 0
 
 
@@ -901,21 +956,30 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--allow", action="append", required=True, help="允许写入的路径前缀，可重复")
     p.add_argument("--require-rule", action="append", help="完成定义：这些规则必须全部判定 pass")
     p.add_argument(
+        "--require-field", action="append",
+        help="MUST 输出字段名（可重复；弱模型画像下 accept 强制要求）",
+    )
+    p.add_argument(
         "--max-repairs", type=int, default=None,
         help="修复预算（默认跟模型画像；无画像时 2 轮；显式传参优先于画像）",
     )
     p.set_defaults(func=cmd_task)
-    def _task_cmd(name: str, help_text: str, *, task_id: bool = False, changed: bool = False):
+    def _task_cmd(name: str, help_text: str, *, task_id: bool = False, changed: bool = False, fields: bool = False):
         p = task_sub.add_parser(name, help=help_text)
         if task_id:
             p.add_argument("task_id")
         if changed:
             p.add_argument("--changed", action="append", help="本次改动路径，可重复")
+        if fields:
+            p.add_argument("--field", action="append", help="提交时的 MUST 字段 key=value，可重复")
         p.add_argument("path", nargs="?", default=".")
         p.set_defaults(func=cmd_task)
 
     _task_cmd("accept", "接受契约 → executing", task_id=True)
-    _task_cmd("submit", "提交改动路径 → verification_pending（范围检查）", task_id=True, changed=True)
+    _task_cmd(
+        "submit", "提交改动路径 → verification_pending（范围检查 + MUST 字段）",
+        task_id=True, changed=True, fields=True,
+    )
     _task_cmd("verify", "完成门：独立审计 → verified/repair/blocked/failed", task_id=True)
     _task_cmd("deliver", "交付（仅 verified 可交付）", task_id=True)
     _task_cmd("show", "查看任务状态与 envelope 历史", task_id=True)
@@ -981,9 +1045,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     project = sub.add_parser("project", help="平台规则投影（建议层，权威源仍是 registry）")
     project_sub = project.add_subparsers(dest="sub", required=True)
-    p = project_sub.add_parser("codex", help="AGENTS.md 规则投影（Codex 无运行时钩子，靠终态门兜底）")
-    p.add_argument("path", nargs="?", default=".")
-    p.set_defaults(func=cmd_project_codex)
+    for name, help_text in (
+        ("codex", "AGENTS.md（Codex；无运行时钩子，靠终态门兜底）"),
+        ("opencode", "AGENTS.md（OpenCode 优先读此文件）"),
+        ("claude", "CLAUDE.md（Claude Code 项目指导）"),
+        ("all", "同步 AGENTS.md + CLAUDE.md（Rulesync 式）"),
+    ):
+        p = project_sub.add_parser(name, help=help_text)
+        p.add_argument("path", nargs="?", default=".")
+        p.set_defaults(func=cmd_project)
 
     p = sub.add_parser("wrap", help="事后门 wrapper：运行 harness 命令后执行终点门")
     p.add_argument("harness", choices=["codex"])

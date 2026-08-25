@@ -114,27 +114,28 @@ class ControlKnobs(BaseModel):
     tier: Tier
     max_repairs: int
     write_granularity: WriteGranularity
+    strict_schema: bool = False  # 弱/不稳：强制 required_fields（场景8）
     reason: str
 
 
 def control_knobs(tier: Tier) -> ControlKnobs:
     if tier == "strong":
         return ControlKnobs(
-            tier=tier, max_repairs=2, write_granularity="prefix",
+            tier=tier, max_repairs=2, write_granularity="prefix", strict_schema=False,
             reason="三维探针全过：默认修复预算与目录级写入范围",
         )
     if tier == "fragile":
         return ControlKnobs(
-            tier=tier, max_repairs=1, write_granularity="prefer_file",
-            reason="JSON 或指令服从不稳：收紧修复预算；建议文件级写入范围",
+            tier=tier, max_repairs=1, write_granularity="prefer_file", strict_schema=True,
+            reason="JSON 或指令服从不稳：收紧修复预算；强制 MUST 字段清单（场景8）",
         )
     if tier == "weak":
         return ControlKnobs(
-            tier=tier, max_repairs=1, write_granularity="file",
-            reason="边界遵循失败：收紧修复预算，且 allowed_writes 必须落到具体文件",
+            tier=tier, max_repairs=1, write_granularity="file", strict_schema=True,
+            reason="边界遵循失败：文件级写入 + 强制 MUST 字段清单（场景8）",
         )
     return ControlKnobs(
-        tier="unknown", max_repairs=2, write_granularity="prefix",
+        tier="unknown", max_repairs=2, write_granularity="prefix", strict_schema=False,
         reason="无模型画像：保持默认旋钮，不假装测过（手册 5.9）",
     )
 

@@ -34,6 +34,8 @@ def test_task_case(case, tmp_path):
                 objective=step["objective"],
                 allowed_writes=list(step.get("allow", [])),
                 required_rules=list(step.get("require_rules", [])),
+                required_fields=list(step.get("require_fields", [])),
+                strict_schema=bool(step.get("strict_schema", False)),
             )
             if "max_repairs" in step:
                 kwargs["max_repairs"] = step["max_repairs"]
@@ -72,7 +74,10 @@ def test_task_case(case, tmp_path):
             else:
                 known = {r.rule_id for r in Registry(work / ".sopcontrol" / "rules" / "registry.yaml").load()}
                 decision = evaluate_transition(
-                    task, do, changed_paths=step.get("changed"), known_rule_ids=known
+                    task, do,
+                    changed_paths=step.get("changed"),
+                    provided_fields=step.get("fields"),
+                    known_rule_ids=known,
                 )
             task = store.apply(task, decision, do, changed_paths=step.get("changed"))
 
