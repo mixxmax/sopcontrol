@@ -128,3 +128,28 @@ cases:
   - {pattern_id: documented_rule_no_consumer, severity: gap}
   - {pattern_id: comment_only_reference, severity: gap}
   ground_truth: 首夜真实教训的模式化——标记只出现在 TODO 注释里，grep 命中但 AST 证明无真实引用
+
+- case_id: CASE-017
+  fixture: web-gate
+  rule_id: GATE-001
+  expected_verdict: {status: pass, absorption: wired_and_tested}
+  expected_findings: []
+  ground_truth: TypeScript 表面正向对照——js_scan 识别真实 request_gate 引用（含测试）
+
+- case_id: CASE-018
+  fixture: web-gate
+  rule_id: GATE-002
+  expected_verdict: {status: gap, absorption: documented}
+  expected_findings:
+  - {pattern_id: documented_rule_no_consumer, severity: gap}
+  - {pattern_id: comment_only_reference, severity: gap}
+  ground_truth: TS 注释假消费者——audit_hook 只在 TODO 注释，js_scan 剥离后不算引用
+
+- case_id: CASE-019
+  fixture: ci-deploy
+  rule_id: DEPLOY-005
+  expected_verdict: {status: gap, absorption: documented}
+  expected_findings:
+  - {pattern_id: documented_rule_no_consumer, severity: gap}
+  - {pattern_id: comment_only_reference, severity: gap}
+  ground_truth: JS/TS 表面第二领域（CI）——notify_hook 仅注释提及

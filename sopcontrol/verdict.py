@@ -24,11 +24,17 @@ GOVERNANCE_ACTIVE = {
 HARD_MODALITIES = {Modality.MUST, Modality.MUST_NOT}
 
 
+_STRUCTURED_KINDS = frozenset({"ast_scan.references", "js_scan.references"})
+_STRUCTURED_SUFFIXES = (".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs")
+
+
 def marker_hit(ev: Evidence, markers: list[str]) -> bool:
-    """标记命中判定：.py 以 AST 引用为准（注释不算）；其他表面用 grep 标识符。"""
-    if ev.kind == "ast_scan.references":
+    """标记命中：.py 用 AST、JS/TS 用 js_scan（注释/字符串不算）；其余表面用 grep。"""
+    if ev.kind in _STRUCTURED_KINDS:
         return any(m in (ev.observed or []) for m in markers)
-    if ev.kind == "code_scan.identifiers" and not ev.subject.endswith(".py"):
+    if ev.kind == "code_scan.identifiers":
+        if ev.subject.endswith(_STRUCTURED_SUFFIXES):
+            return False  # 交给专用扫描器，避免注释假阳性
         return any(m in (ev.observed or []) for m in markers)
     return False
 

@@ -21,8 +21,10 @@ class NoConsumerDetector:
     def detect(self, rules: list[Rule], evidence: list[Evidence]) -> list[Finding]:
         findings: list[Finding] = []
         id_evidence = [e for e in evidence if e.kind == "code_scan.identifiers"]
-        ast_by_subject = {
-            e.subject: e for e in evidence if e.kind == "ast_scan.references"
+        structured_by_subject = {
+            e.subject: e
+            for e in evidence
+            if e.kind in ("ast_scan.references", "js_scan.references")
         }
         for rule in rules:
             if rule.status not in GOVERNANCE_ACTIVE or rule.modality not in HARD_MODALITIES:
@@ -74,15 +76,20 @@ class NoConsumerDetector:
                         evidence_ids=[e.evidence_id for e in prod],
                     )
                 )
-            # 注释/字符串里的标记不算消费者：grep 命中但 AST 未命中的 .py 文件
+            # 注释/字符串里的标记不算消费者：grep 命中但结构化扫描未命中
             for grep_ev in id_evidence:
-                if not grep_ev.subject.endswith(".py"):
+                if not grep_ev.subject.endswith(
+                    (".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs")
+                ):
                     continue
                 if not any(m in (grep_ev.observed or []) for m in rule.consumer_markers):
                     continue
-                ast_ev = ast_by_subject.get(grep_ev.subject)
-                ast_names = ast_ev.observed if ast_ev else []
-                ghost = [m for m in rule.consumer_markers if m in (grep_ev.observed or []) and m not in (ast_names or [])]
+                struct_ev = structured_by_subject.get(grep_ev.subject)
+                struct_names = struct_ev.observed if struct_ev else []
+                ghost = [
+                    m for m in rule.consumer_markers
+                    if m in (grep_ev.observed or []) and m not in (struct_names or [])
+                ]
                 if ghost:
                     findings.append(
                         Finding(

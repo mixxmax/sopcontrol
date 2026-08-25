@@ -4,6 +4,7 @@ from plugins.detectors.state_health import StateHealthDetector
 from plugins.sensors.ast_scan import AstScanSensor
 from plugins.sensors.code_scan import CodeScanSensor
 from plugins.sensors.doc_scan import DocScanSensor
+from plugins.sensors.js_scan import JsScanSensor
 
-SENSORS = [CodeScanSensor(), DocScanSensor(), AstScanSensor()]
+SENSORS = [CodeScanSensor(), DocScanSensor(), AstScanSensor(), JsScanSensor()]
 DETECTORS = [NoConsumerDetector(), StateHealthDetector()]

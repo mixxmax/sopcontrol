@@ -173,3 +173,13 @@ harness 画像与模型画像并列，不互相覆盖。
 
 **不做什么**：不自动开任务、不自动 accept 规则、不把「讨论」写成实施 envelope。
 清除 discuss_only 靠用户说出实施标记（或 `sopctl intent clear`）。
+
+## 13. 非 Python 表面：js_scan（2026-08-25 补）
+
+**问题**：`.ts/.js` 仍走 grep，注释假消费者会复发（R1 反向家族）。
+
+**不做完整 TS AST**（禁止新依赖）。移植思路而非解析器：词法剥离
+`//` `/* */` 与引号/模板字符串后抽标识符，产出 `js_scan.references`。
+`marker_hit` 对 JS/TS 只认 js_scan（同 .py 只认 ast_scan）。语料双域：
+web-gate + ci-deploy。嵌套模板字符串与正则字面量仍可能漏剥——记入
+RESIDUAL_RISKS，不假装完备。

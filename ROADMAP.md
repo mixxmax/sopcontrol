@@ -72,12 +72,12 @@
 
 ## 状态（每次运行后更新）
 
-- 2026-08-25（连续自驱第七轮续）：场景1 对话意图层 **完成**——确定性分类 discuss_only
-  阻断 Write/Edit；永久政策句 → Candidate（observed）；`intake --conversation` /
-  `intent clear`；DESIGN §12；手册 14.1 覆盖 **10/15**；96 测试全绿。下一步：非 Python
-  表面 → 场景 12/14 → Phase 6。
-- 2026-08-25：B4 第 6 步 capability handshake **完成**——模型三维探针→tier→旋钮；92→96。
-- 2026-08-24（连续自驱第六轮）：场景7 改进复测**通过**；手册 14.1 覆盖 9/15。
+- 2026-08-25（连续自驱第七轮续）：非 Python 表面 **完成**——`js_scan` 词法剥离移植
+  AST 思路（无新依赖）；web-gate + ci-deploy 双域语料 CASE-017/018/019；DESIGN §13 /
+  R10。场景1 与 capability handshake 同轮已交付；14.1 覆盖 **10/15**。下一步：场景
+  12/14 深化 → Phase 6。
+- 2026-08-25：场景1 对话意图层；B4 capability handshake；测试 96→99+。
+- 2026-08-24：场景7 改进复测通过；14.1 覆盖 9/15。
 
 ## Blockers
 

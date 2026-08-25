@@ -73,3 +73,15 @@ rules:
     ref: docs/runbook.md
   consumer_markers:
   - cache_gate
+- rule_id: DEPLOY-005
+  statement: 部署完成通知必须经 notify_hook 发出
+  modality: MUST
+  status: accepted
+  scope: ci.notify
+  owner: platform
+  risk: medium
+  source:
+    type: document
+    ref: docs/runbook.md
+  consumer_markers:
+  - notify_hook
