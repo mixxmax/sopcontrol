@@ -57,3 +57,18 @@ def test_agents_projection_merges_only_own_section(tmp_path):
     text2 = agents.read_text(encoding="utf-8")
     assert "原有内容已更新" in text2
     assert text2.count(SECTION_START) == 1 and text2.count(SECTION_END) == 1
+
+
+def test_project_all_writes_agents_and_claude(tmp_path):
+    import shutil
+
+    work = tmp_path / "work"
+    shutil.copytree("corpus/fixtures/ci-deploy", work)
+    (work / "CLAUDE.md").write_text("# 原有 Claude 说明\n", encoding="utf-8")
+
+    assert main(["project", "all", str(work)]) == 0
+    agents = (work / "AGENTS.md").read_text(encoding="utf-8")
+    claude = (work / "CLAUDE.md").read_text(encoding="utf-8")
+    assert "DEPLOY-001" in agents and SECTION_START in agents
+    assert "DEPLOY-001" in claude and "原有 Claude 说明" in claude
+    assert "discuss_only" in claude or "只讨论" in claude
