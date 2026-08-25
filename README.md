@@ -19,6 +19,8 @@
 - **Claude Code（运行时拦截，协议已核实）**：适配完成；本机无 API key，待有 key 环境实测。
 - **拦截组件自保护**：删除 opencode 插件/claude 钩子配置 = 卸项圈，一律拒绝（人工动作）。
 - 能力画像落盘 `.sopcontrol/harness-profile.yaml`（live_verified 如实记录）。
+- **模型能力握手**：`sopctl capability-eval --model X --fixture strong|fragile|weak` 写入
+  `.sopcontrol/model-profile.yaml`；`task open` 按 tier 调节修复预算与写入粒度（弱模型更严）。
 
 B0–B3 能力见 git 历史；检测 8 模式仍为 grep 智力（边界见 RESIDUAL_RISKS.md）。
 
@@ -64,6 +66,7 @@ sopctl hook opencode .                   # 安装 OpenCode 运行时插件
 sopctl project codex .                   # AGENTS.md 规则投影（Codex 建议层）
 sopctl wrap codex . -- exec -s workspace-write "任务"   # 事后门 wrapper
 echo '{"tool_name":"Bash","tool_input":{"command":"git push"}}' | sopctl harness-check .
+sopctl capability-eval --model demo --fixture fragile .   # 模型画像（不烧 token）
 ```
 
 ## 三个原子

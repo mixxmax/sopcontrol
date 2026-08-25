@@ -224,3 +224,53 @@ def run_harness_eval(harness: str, profile_path: Path, runner=None, python: Path
         yaml.safe_dump(profile, allow_unicode=True, sort_keys=False), encoding="utf-8"
     )
     return results
+
+
+def run_capability_eval(
+    root: Path,
+    model: str,
+    *,
+    fixture: str | None = None,
+    responses: dict[str, str] | None = None,
+) -> dict:
+    """模型维度握手：夹具或显式响应 → 打分 → 落盘 model-profile.yaml。
+
+    本切片不强制烧真实 token；fixture=strong|fragile|weak 走通闭环。
+    """
+    from .capability import (
+        FIXTURES,
+        PROBE_IDS,
+        PROBES,
+        build_profile,
+        load_profile,
+        save_profile,
+    )
+
+    if fixture is not None:
+        if fixture not in FIXTURES:
+            raise ValueError(f"未知夹具 {fixture!r}；可选: {', '.join(FIXTURES)}")
+        responses = FIXTURES[fixture]
+        source = f"fixture:{fixture}"
+    elif responses is not None:
+        source = "responses"
+    else:
+        raise ValueError("必须提供 fixture= 或 responses=（真实模型探针留待显式接入）")
+
+    missing = [p for p in PROBE_IDS if p not in responses]
+    if missing:
+        raise ValueError(f"响应缺少探针: {', '.join(missing)}；prompts={ {p: PROBES[p]['prompt'] for p in missing} }")
+
+    at = datetime.now().strftime("%Y-%m-%d %H:%M")
+    profile = build_profile(model, responses, source=source, at=at)
+    prev = load_profile(root)
+    if prev is not None:
+        profile.history = list(prev.history) + profile.history
+    path = save_profile(root, profile)
+    return {
+        "model": model,
+        "tier": profile.tier,
+        "scores": profile.scores,
+        "knobs": profile.knobs.model_dump(),
+        "profile_path": str(path),
+        "source": source,
+    }

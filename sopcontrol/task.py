@@ -50,6 +50,8 @@ class Contract(BaseModel):
     required_rules: list[str] = Field(default_factory=list)   # 完成定义：这些规则 verdict==pass
     max_repairs: int = 2                                       # 手册 10.5：默认两轮，超出转终态
     repairs_fingerprint: Optional[str] = None                  # 非 None = 修复任务，绑定 Finding 指纹
+    write_granularity: Optional[str] = None                    # prefix|prefer_file|file；来自模型画像
+    capability_note: Optional[str] = None                      # 握手说明（只读审计）
 
 
 class EnvelopeRecord(BaseModel):
@@ -168,6 +170,14 @@ def evaluate_transition(
         unknown = [r for r in contract.required_rules if known_rule_ids is not None and r not in known_rule_ids]
         if unknown:
             problems.append(f"引用了不存在的规则: {', '.join(unknown)}")
+        if contract.write_granularity == "file":
+            from .capability import validate_writes_for_granularity
+
+            gran_err = validate_writes_for_granularity(
+                contract.allowed_writes, "file"
+            )
+            if gran_err:
+                problems.append(gran_err)
         if problems:
             return _reject("契约不完整: " + "；".join(problems) + "。修复后重新 open 或修改契约")
         return TransitionDecision(

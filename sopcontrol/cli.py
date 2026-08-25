@@ -356,26 +356,45 @@ def cmd_task(args) -> int:
     sub = args.sub
 
     if sub == "open":
+        from .capability import apply_knobs_to_open, load_profile
+
         for p in args.allow:
             try:
                 normalize_relpath(p)
             except ValueError as exc:
                 print(f"错误: {exc}", file=sys.stderr)
                 return 2
+        profile = load_profile(root)
+        explicit = getattr(args, "max_repairs", None) is not None
+        repairs, writes, reject, note = apply_knobs_to_open(
+            allowed_writes=list(args.allow),
+            max_repairs=args.max_repairs if explicit else 2,
+            max_repairs_explicit=explicit,
+            profile=profile,
+        )
+        if reject:
+            print(f"错误: {reject}", file=sys.stderr)
+            return 2
+        gran = profile.knobs.write_granularity if profile else None
         task_id = store.next_task_id()
         task = TaskRecord(
             task_id=task_id,
             contract=Contract(
                 objective=args.objective,
-                allowed_writes=list(args.allow),
+                allowed_writes=writes,
                 required_rules=list(args.require_rule or []),
-                max_repairs=args.max_repairs,
+                max_repairs=repairs,
+                write_granularity=gran,
+                capability_note=note if profile else None,
             ),
         )
         store.save(task)
         print(f"已创建任务 {task_id} [contract_proposed]：{args.objective}")
-        print(f"  写入范围: {', '.join(args.allow)}")
+        print(f"  写入范围: {', '.join(writes)}")
         print(f"  完成定义: 规则 {', '.join(args.require_rule or [])} 全部判定 pass")
+        print(f"  修复预算: {repairs}" + (f"（画像调节）" if profile and not explicit else ""))
+        if profile:
+            print(f"  能力: {note}")
         print("  下一步: sopctl task accept " + task_id)
         return 0
 
@@ -650,6 +669,35 @@ def cmd_harness_eval(args) -> int:
     return 0 if ok else 1
 
 
+def cmd_capability_eval(args) -> int:
+    """模型维度握手：夹具/响应文件 → tier → model-profile.yaml（不强制烧 token）。"""
+    from .evals import run_capability_eval
+
+    root = _project(args.path)
+    responses = None
+    if args.responses:
+        data = yaml.safe_load(Path(args.responses).read_text(encoding="utf-8")) or {}
+        responses = {str(k): str(v) for k, v in data.items()}
+    try:
+        result = run_capability_eval(
+            root, args.model, fixture=args.fixture, responses=responses
+        )
+    except ValueError as exc:
+        print(f"错误: {exc}", file=sys.stderr)
+        return 2
+    print(f"模型画像已写入 → {result['profile_path']}")
+    print(f"  model={result['model']}  tier={result['tier']}  source={result['source']}")
+    for probe, ok in result["scores"].items():
+        print(f"  {probe}: {'通过' if ok else '失败'}")
+    knobs = result["knobs"]
+    print(
+        f"  旋钮: max_repairs={knobs['max_repairs']}  "
+        f"write_granularity={knobs['write_granularity']}"
+    )
+    print(f"  理由: {knobs['reason']}")
+    return 0
+
+
 def cmd_harness_profile(args) -> int:
     root = _project(args.path)
     _write_profile(root)
@@ -763,7 +811,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--objective", required=True, help="任务目标")
     p.add_argument("--allow", action="append", required=True, help="允许写入的路径前缀，可重复")
     p.add_argument("--require-rule", action="append", help="完成定义：这些规则必须全部判定 pass")
-    p.add_argument("--max-repairs", type=int, default=2, help="修复预算（默认2轮，超出熔断）")
+    p.add_argument(
+        "--max-repairs", type=int, default=None,
+        help="修复预算（默认跟模型画像；无画像时 2 轮；显式传参优先于画像）",
+    )
     p.set_defaults(func=cmd_task)
     def _task_cmd(name: str, help_text: str, *, task_id: bool = False, changed: bool = False):
         p = task_sub.add_parser(name, help=help_text)
@@ -830,6 +881,22 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("harness", choices=["opencode", "codex", "scenario7"])
     p.add_argument("path", nargs="?", default=".")
     p.set_defaults(func=cmd_harness_eval)
+
+    p = sub.add_parser(
+        "capability-eval",
+        help="模型能力握手：三维探针打分 → model-profile.yaml（夹具不烧 token；调节 task open 旋钮）",
+    )
+    p.add_argument("--model", required=True, help="模型标识（写入画像，如 ox-alpha-free）")
+    p.add_argument(
+        "--fixture", choices=["strong", "fragile", "weak"],
+        help="离线夹具：不烧 token 即可走通握手闭环",
+    )
+    p.add_argument(
+        "--responses",
+        help="YAML 文件：三探针响应 {json_stability, boundary_follow, instruction_follow}",
+    )
+    p.add_argument("path", nargs="?", default=".")
+    p.set_defaults(func=cmd_capability_eval)
 
     p = sub.add_parser("explain", help="解释某条规则的判定：谁消费、证据是什么、为什么")
     p.add_argument("rule_id")

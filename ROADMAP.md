@@ -48,7 +48,7 @@
 - [x] 测试 5 项（契约生成/重复拒绝/熔断/已达标/未知 finding 可行动报错）；CLI 实测全链路
 - [ ] git worktree 隔离 —— 暂缓：隔离为"自动修复者"而设，其尚不存在；待模型插件位接入时一并实现（DESIGN 决策，非遗忘）
 
-### B4 校准与投影 — 完成（2026-08-24，三 harness 适配，两台真实在环验证）
+### B4 校准与投影 — 完成（2026-08-25，含 capability handshake）
 - [x] harness 决策核心：`sopctl harness-check`（stdin/--payload，工具名跨 harness 归一，决策纯函数）
 - [x] Claude Code 适配（PreToolUse JSON，协议对照官方文档核实；本机无 key，live_verified=false 如实记录）
 - [x] **OpenCode 适配并实测**：`.opencode/plugins` 运行时插件；真实模型 Edit 控制器文件被拒演习通过
@@ -56,7 +56,10 @@
 - [x] 拦截组件自保护：卸插件/改钩子配置 = 提权，拒绝（人工动作）
 - [x] 能力画像 `.sopcontrol/harness-profile.yaml`（live_verified + live_evidence 归档）
 - [x] 接管包：`sopctl task takeover`（手册 8.3，只读）
-- 剩余：codex 出现运行时钩子后升级其画像；capability handshake 合成评测矩阵（模型能力维度）
+- [x] **capability handshake（模型维度）**：三维探针 json/boundary/instruction → tier →
+  调节 `max_repairs`/`allowed_writes` 粒度；`sopctl capability-eval --fixture` 离线闭环；
+  `task open` 读 `.sopcontrol/model-profile.yaml`（显式 `--max-repairs` 优先）；DESIGN §11
+- 剩余：codex 出现运行时钩子后升级其画像；真实模型探针（可选，本切片不强制烧 token）
 - claude 适配保留：用户环境无 key（不修），有 key 环境可直接实测
 
 ### B5 模式库扩展 — 完成（2026-08-24 凌晨，经任务机自应用交付）
@@ -68,11 +71,11 @@
 
 ## 状态（每次运行后更新）
 
-- 2026-08-24（连续自驱第六轮）：场景7 改进复测**通过**——投影内嵌每任务的接管信息（状态/
-  完成定义/预算/唯一合法动作/已交付警示），真实模型纯阅读 AGENTS.md 即正确判断终态并不动文件，
-  零 bash 依赖。至此手册 14.1 覆盖 9/15。82 测试全绿，十四笔提交。
-  剩余按价值排序：capability handshake 矩阵（按模型能力调控制强度）、场景 1 对话意图层
-  （LLM 插件位）、非 Python 表面、场景 12/14（并发与 stale 深化）。
+- 2026-08-25（连续自驱第七轮）：B4 第 6 步 capability handshake **完成**——模型画像与
+  harness 画像并列；夹具 strong/fragile/weak 离线走通；task open 按 tier 调旋钮；92 测试
+  全绿。下一步：场景 1 对话意图层 → 非 Python 表面 → 场景 12/14。
+- 2026-08-24（连续自驱第六轮）：场景7 改进复测**通过**——投影内嵌每任务的接管信息；
+  手册 14.1 覆盖 9/15；82 测试全绿。
 
 ## Blockers
 

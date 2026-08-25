@@ -124,3 +124,34 @@ plugins/）。任务的 changed_paths 落在其中且未提交基线（git statu
 fail-closed 视为脏。提交基线后照常裁决。这把"改 verifier 自证通过"从信任问题
 降级为流程问题：先 commit（可审计），再验证。彻底方案仍是 CI 从可信分支验证
 （手册 9.3 末条），单机 v1 到此为止。
+
+## 11. B4 决策：capability handshake（模型维度，2026-08-25 补）
+
+**问题**：harness 画像只答"这台工具有没有钩子"；控制强度还要跟*模型实测能力*
+走（手册 5.9）。品牌名不可信——同一 harness 换模型后行为方差大。
+
+**不新增第四种真相。** 模型画像是慢回路校准产物，落盘
+`.sopcontrol/model-profile.yaml`；契约仍是 Rule/Evidence/Verdict 的组合。
+调节只动已有旋钮：`max_repairs` 与 `allowed_writes` 粒度——不发明新权限，
+更强模型只拿更大表达空间，副作用上限不变。
+
+**三维探针（合成评测，脊柱零 LLM）**：
+1. `json_stability`——能否只吐合法 JSON（偶发失败→更严 schema / 更少轮次）
+2. `boundary_follow`——声明的改动是否落在给定写入范围（越界→文件级粒度）
+3. `instruction_follow`——是否服从显式约束（跳步倾向→更紧预算）
+
+打分是确定性字符串/JSON 检查；响应由夹具注入或显式文件提供（本切片不强制
+烧真实 token）。三探针全过 → `strong`；JSON 或指令失手 → `fragile`；边界失手
+→ `weak`；无画像 → `unknown`（保持默认，不假装测过）。
+
+**旋钮映射（纯函数 `control_knobs`）**：
+
+| tier | max_repairs | write_granularity |
+|---|---|---|
+| strong / unknown | 2 | prefix（目录前缀可） |
+| fragile | 1 | prefer_file（目录可，记录建议） |
+| weak | 1 | file（open 时拒绝纯目录前缀） |
+
+**接入点**：`task open` 在用户未显式改 `--max-repairs`（仍为默认 2）时读取画像
+套用；显式传参优先于画像。`accept` 对 `file` 粒度再拦一道，理由可行动。
+harness 画像与模型画像并列，不互相覆盖。
