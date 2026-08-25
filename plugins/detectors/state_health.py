@@ -62,6 +62,51 @@ def finding_state_marker_absent(rule_id: str, markers: str) -> Finding:
     )
 
 
+def finding_schema_field_unread(rule_id: str, fields: list[str], write_files: list[str]) -> Finding:
+    """14.1 场景3：字段被写出（Store）但生产路径从未 Load。"""
+    return Finding(
+        pattern_id="schema_field_unread",
+        rule_id=rule_id,
+        summary=(
+            f"字段 [{', '.join(fields)}] 在生产路径有写入 "
+            f"({', '.join(sorted(write_files))})，但从未被读取——"
+            f"新增 schema/状态字段无真实消费者（14.1 场景3）"
+        ),
+        severity="gap",
+        detector="state_health",
+    )
+
+
+def _unread_schema_fields(
+    rule: Rule, evidence: list[Evidence]
+) -> tuple[list[str], list[str]]:
+    """返回 (从未被读的已写字段, 写入这些字段的生产文件)。
+
+    写入只计生产路径；读取计生产+测试（测试读到也不算「无消费者」）。
+    """
+    writes: dict[str, set[str]] = {}
+    reads: set[str] = set()
+    for ev in evidence:
+        if ev.kind != "ast_scan.name_flows":
+            continue
+        obs = ev.observed or {}
+        if not isinstance(obs, dict):
+            continue
+        if is_production_path(ev.subject):
+            for w in obs.get("writes") or []:
+                writes.setdefault(str(w), set()).add(ev.subject)
+            for r in obs.get("reads") or []:
+                reads.add(str(r))
+        elif is_test_path(ev.subject):
+            for r in obs.get("reads") or []:
+                reads.add(str(r))
+    unread = [m for m in rule.state_markers if m in writes and m not in reads]
+    files: set[str] = set()
+    for m in unread:
+        files |= writes.get(m, set())
+    return unread, sorted(files)
+
+
 class StateHealthDetector:
     detector_id = "state_health"
 
@@ -79,4 +124,10 @@ class StateHealthDetector:
                 findings.append(finding_write_only_state(rule.rule_id, markers, prod[0]))
             elif len(prod) >= 2:
                 findings.append(finding_state_in_parallel_files(rule.rule_id, markers, prod))
+
+            unread, write_files = _unread_schema_fields(rule, evidence)
+            if unread:
+                findings.append(
+                    finding_schema_field_unread(rule.rule_id, unread, write_files)
+                )
         return findings

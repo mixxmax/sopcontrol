@@ -235,3 +235,21 @@ cases:
   - {pattern_id: documented_rule_no_consumer, severity: gap}
   - {pattern_id: comment_only_reference, severity: gap}
   ground_truth: Rust 表面第二领域（CI）——TraceHook 仅注释
+
+- case_id: CASE-030
+  fixture: shop-checkout
+  rule_id: REFUND-009
+  expected_verdict: {status: unknown, absorption: null}
+  expected_findings:
+  - {pattern_id: write_only_state, severity: info}
+  - {pattern_id: schema_field_unread, severity: gap}
+  ground_truth: 14.1 场景3 加深——schema_extra_field 有 Store 无 Load（AST name_flows）
+
+- case_id: CASE-031
+  fixture: ci-deploy
+  rule_id: DEPLOY-011
+  expected_verdict: {status: unknown, absorption: null}
+  expected_findings:
+  - {pattern_id: write_only_state, severity: info}
+  - {pattern_id: schema_field_unread, severity: gap}
+  ground_truth: schema_field_unread 第二领域（CI）——release_schema_field 只写不读

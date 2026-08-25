@@ -44,7 +44,11 @@ def patterns_for(tmp_path, rule_id="STATE-001"):
 
 def test_write_only_state_detected(tmp_path):
     build(tmp_path, {"src/app.py": "order_state = {}\n"})
-    assert patterns_for(tmp_path) == {("write_only_state", "info")}
+    # 单文件只写：write_only_state + 场景3 加深 schema_field_unread
+    assert patterns_for(tmp_path) == {
+        ("write_only_state", "info"),
+        ("schema_field_unread", "gap"),
+    }
 
 
 def test_state_in_parallel_files_detected(tmp_path):

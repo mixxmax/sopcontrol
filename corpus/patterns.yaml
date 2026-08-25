@@ -47,7 +47,18 @@ patterns:
   domains: [e-commerce, job-search]
   status: proven-on-2-domains
   severity: info
-  note: grep 级代理——单文件出现不排除同文件内读写；语义成熟后升级 severity 并接入 verdict
+  note: grep 级代理——单文件出现不排除同文件内读写；场景3加深见 schema_field_unread
+
+- pattern_id: schema_field_unread
+  statement: 字段在生产路径被写入（AST Store）但从未被读取（Load）
+  detection: rule.state_markers × ast_scan.name_flows
+  fixtures:
+  - shop-checkout/REFUND-009
+  - ci-deploy/DEPLOY-011
+  domains: [e-commerce, ci-deploy]
+  status: proven-on-2-domains
+  severity: gap
+  note: 14.1 场景3 加深——比 write_only_state 更贴近「新增字段无消费者」
 
 - pattern_id: state_in_parallel_files
   statement: 同一状态标记并行出现在多个生产文件，双处维护真源不明

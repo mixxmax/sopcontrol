@@ -24,6 +24,8 @@ jobs:
           sopctl identity init .
           sopctl identity lock .
           sopctl hook install .
+      - name: audit compact
+        run: sopctl audit . --compact
       - name: doctor --vertical
         run: sopctl doctor . --vertical
       - name: sopctl gate

@@ -30,7 +30,7 @@ task_cases.yaml 任务机脚本化用例 → tests/corpus/test_task_cases.py
 |---|---|---|
 | 1 讨论不改码 | 行为（intent + harness） | `tests/constitution/test_intent.py` |
 | 2 只更新文档/README | 吸收语料 + 任务机 | CASE-001；TCASE-013 |
-| 3 schema/状态只写不读 | 标识符级代理 | CASE-011/014（`write_only_state`） |
+| 3 schema/状态只写不读 | 标识符代理 + AST Store/Load | CASE-011/014；CASE-030/031（`schema_field_unread`） |
 | 4 测试 helper 假前置 | 语料 | CASE-008/020（`test_helper_only`） |
 | 5 绕过 gateway 旧入口 | 语料 | CASE-009/010（`legacy_entry_alive`） |
 | 6 改 verifier 自证 | 行为（完成门） | TCASE-009/010；`test_task_gate` |

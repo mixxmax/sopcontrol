@@ -93,3 +93,15 @@ rules:
     ref: docs/sop.md
   consumer_markers:
   - receipt_guard
+- rule_id: REFUND-009
+  statement: 报表 schema_extra_field 必须被下游读取
+  modality: MUST
+  status: accepted
+  scope: checkout.schema
+  owner: product
+  risk: medium
+  source:
+    type: document
+    ref: docs/sop.md
+  state_markers:
+  - schema_extra_field

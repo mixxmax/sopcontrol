@@ -72,7 +72,9 @@
 
 ## 状态（每次运行后更新）
 
-- 2026-08-25（横向 C）：rust_scan；CI doctor --vertical；capability-compare；identity export/import。
+- 2026-08-26（立等 1–8）：场景3 schema_field_unread；lex_strip；cli 拆分；intake 临时标记；
+  CI compact；JobsFlow 形狗粮报告；Claude live=401 归档；capability 多基线对比。
+- 2026-08-25（横向 C）：rust_scan；CI doctor；capability-compare；identity export/import。
 - 2026-08-25（质量收口 B）：audit --compact；投影 SKILL 要点。
 - 2026-08-25（质量收口 A）：B1 标题；14.1 分层；vertical-check 差异；场景2。
 - 2026-08-25（第十轮）：小步 1–7。第九轮：垂直骨干役用闭环。14.1 有对应证据（含代理层）。

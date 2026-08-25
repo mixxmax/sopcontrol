@@ -22,6 +22,12 @@ def test_classify_is_pure(monkeypatch):
     assert classify_utterance("我们只讨论方案，不要修改代码").intent == "discuss_only"
     assert classify_utterance("可以改了，开始实现").intent == "implement"
     assert classify_utterance("以后必须先预览再确认").intent == "rule_candidate"
+    assert classify_utterance("这次必须先预览，仅本次").intent == "unknown"
+
+
+def test_temp_instruction_not_rule_candidate():
+    c = classify_utterance("for this task only you must use gateway")
+    assert c.intent == "unknown" and "临时" in c.reason
 
 
 def test_discuss_only_denies_writes():

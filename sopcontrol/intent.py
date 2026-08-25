@@ -27,7 +27,15 @@ IMPLEMENT_MARKERS = (
 )
 RULE_MARKERS = (
     "以后必须", "以后不得", "以后禁止", "必须永远", "永远不得",
+    "从今以后必须", "长期必须", "永久不得",
     "from now on must", "always must", "must never", "must always",
+    "going forward must", "as a permanent rule",
+)
+# 临时指令：即使含「必须」也不晋升为永久 Candidate
+TEMP_MARKERS = (
+    "这次必须", "仅本次", "只这一次", "临时要求", "本任务内", "仅此任务",
+    "for this task only", "just this once", "this time only",
+    "temporarily", "for now only", "only for this session",
 )
 
 
@@ -77,6 +85,13 @@ def classify_utterance(text: str) -> UtteranceClass:
         return UtteranceClass(
             intent="implement",
             reason=f"命中实施标记 {hit!r}：解除讨论锁定，允许受控写入",
+        )
+
+    hit = _contains_any(raw, TEMP_MARKERS)
+    if hit:
+        return UtteranceClass(
+            intent="unknown",
+            reason=f"命中临时指令标记 {hit!r}：不晋升为永久 Candidate（手册 4.4）",
         )
 
     hit = _contains_any(raw, RULE_MARKERS)

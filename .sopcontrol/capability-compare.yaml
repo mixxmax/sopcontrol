@@ -17,3 +17,52 @@ runs:
       boundary_follow: true
       instruction_follow: true
   tier_match: true
+- at: 2026-08-26 00:28
+  kind: multi-baseline
+  baselines:
+  - model: fixture-strong
+    source: fixture:strong
+    tier: strong
+    scores:
+      json_stability: true
+      boundary_follow: true
+      instruction_follow: true
+  - model: fixture-fragile
+    source: fixture:fragile
+    tier: fragile
+    scores:
+      json_stability: false
+      boundary_follow: true
+      instruction_follow: false
+  - model: fixture-weak
+    source: fixture:weak
+    tier: weak
+    scores:
+      json_stability: true
+      boundary_follow: false
+      instruction_follow: true
+  last_live: null
+- at: 2026-08-26 00:35
+  kind: multi-baseline
+  baselines:
+  - model: fixture:strong
+    source: fixture:strong
+    tier: strong
+    scores:
+      json_stability: true
+      boundary_follow: true
+      instruction_follow: true
+  - model: fixture:fragile
+    source: fixture:fragile
+    tier: fragile
+    scores:
+      json_stability: false
+      boundary_follow: true
+      instruction_follow: false
+  - model: fixture:weak
+    source: fixture:weak
+    tier: weak
+    scores:
+      json_stability: true
+      boundary_follow: false
+      instruction_follow: true

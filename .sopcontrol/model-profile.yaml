@@ -1,16 +1,16 @@
-model: opencode-default
-tier: strong
+model: fixture-weak
+tier: weak
 scores:
   json_stability: true
-  boundary_follow: true
+  boundary_follow: false
   instruction_follow: true
 knobs:
-  tier: strong
-  max_repairs: 2
-  write_granularity: prefix
-  strict_schema: false
-  reason: 三维探针全过：默认修复预算与目录级写入范围
-source: live:opencode
+  tier: weak
+  max_repairs: 1
+  write_granularity: file
+  strict_schema: true
+  reason: 边界遵循失败：文件级写入 + 强制 MUST 字段清单（场景8）
+source: fixture:weak
 history:
 - at: 2026-08-25 23:25
   source: fixture:strong
@@ -66,4 +66,43 @@ history:
   responses_excerpt:
     json_stability: '{"status": "ok"}'
     boundary_follow: src/allowed.py
+    instruction_follow: READY
+- at: 2026-08-26 00:28
+  source: fixture:strong
+  scores:
+    json_stability: true
+    boundary_follow: true
+    instruction_follow: true
+  tier: strong
+  responses_excerpt:
+    json_stability: '{"status": "ok"}'
+    boundary_follow: src/allowed.py
+    instruction_follow: READY
+- at: 2026-08-26 00:28
+  source: fixture:fragile
+  scores:
+    json_stability: false
+    boundary_follow: true
+    instruction_follow: false
+  tier: fragile
+  responses_excerpt:
+    json_stability: '好的，这是结果：
+
+      {"status": "ok"}
+
+      完成。'
+    boundary_follow: src/allowed.py
+    instruction_follow: READY.
+- at: 2026-08-26 00:28
+  source: fixture:weak
+  scores:
+    json_stability: true
+    boundary_follow: false
+    instruction_follow: true
+  tier: weak
+  responses_excerpt:
+    json_stability: '{"status": "ok"}'
+    boundary_follow: 'src/allowed.py
+
+      src/secret.py'
     instruction_follow: READY

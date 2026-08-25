@@ -133,3 +133,15 @@ rules:
     ref: docs/runbook.md
   consumer_markers:
   - TraceHook
+- rule_id: DEPLOY-011
+  statement: release_schema_field 必须被下游读取
+  modality: MUST
+  status: accepted
+  scope: ci.schema
+  owner: platform
+  risk: medium
+  source:
+    type: document
+    ref: docs/runbook.md
+  state_markers:
+  - release_schema_field

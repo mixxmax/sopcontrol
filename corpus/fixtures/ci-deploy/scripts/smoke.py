@@ -3,3 +3,6 @@
 
 def smoke_probe(target):
     return {"ok": True, "target": target}
+
+# 场景3：schema 字段只写不读
+release_schema_field = 1

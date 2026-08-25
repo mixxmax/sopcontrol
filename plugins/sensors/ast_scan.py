@@ -36,6 +36,37 @@ def static_references(source: str) -> list[str]:
     return sorted(n for n in names if len(n) >= 3)  # 与 grep 阈值一致
 
 
+def name_read_write(source: str) -> dict[str, list[str]]:
+    """区分 Store/Load，供场景3「字段写出但从未读取」。"""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return {"writes": [], "reads": []}
+    writes: set[str] = set()
+    reads: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name):
+            if isinstance(node.ctx, ast.Store):
+                writes.add(node.id)
+            elif isinstance(node.ctx, ast.Load):
+                reads.add(node.id)
+        elif isinstance(node, ast.Attribute) and len(node.attr) >= 3:
+            if isinstance(node.ctx, ast.Store):
+                writes.add(node.attr)
+            elif isinstance(node.ctx, ast.Load):
+                reads.add(node.attr)
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            # import 视为对该名的消费（读取绑定）
+            for alias in node.names:
+                name = (alias.asname or alias.name).split(".")[0]
+                if len(name) >= 3:
+                    reads.add(name)
+    return {
+        "writes": sorted(w for w in writes if len(w) >= 3),
+        "reads": sorted(r for r in reads if len(r) >= 3),
+    }
+
+
 class AstScanSensor:
     sensor_id = "ast_scan"
 
@@ -49,13 +80,26 @@ class AstScanSensor:
             refs = static_references(text)
             if not refs:
                 continue  # 空/不可解析：交给 code_scan 兜底
+            fh = file_hash(path)
+            rel = ctx.rel(path)
             out.append(
                 Evidence(
                     kind="ast_scan.references",
-                    subject=ctx.rel(path),
+                    subject=rel,
                     observed=refs,
                     observer=self.sensor_id,
-                    input_hash=file_hash(path),
+                    input_hash=fh,
                 )
             )
+            flows = name_read_write(text)
+            if flows["writes"] or flows["reads"]:
+                out.append(
+                    Evidence(
+                        kind="ast_scan.name_flows",
+                        subject=rel,
+                        observed=flows,
+                        observer=self.sensor_id,
+                        input_hash=fh,
+                    )
+                )
         return out
