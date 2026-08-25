@@ -12,6 +12,8 @@ python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"   # 本仓开发
 # 或：pip install -e /path/to/sopcontrol
 ```
 
+CI（本仓已提供）：`.github/workflows/gate.yml` 跑 `pytest` + `sopctl gate`。
+
 确认入口：
 
 ```bash
