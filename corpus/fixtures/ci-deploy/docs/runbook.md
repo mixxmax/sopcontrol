@@ -6,3 +6,4 @@
 - 部署完成通知必须经 notify_hook 发出。
 - 部署冒烟必须经 smoke_probe 探针。
 - 金丝雀标志必须单一维护。
+- 金丝雀提升必须经 CanaryHook。

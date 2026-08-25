@@ -109,3 +109,15 @@ rules:
     ref: docs/runbook.md
   state_markers:
   - canary_flag
+- rule_id: DEPLOY-009
+  statement: 金丝雀提升必须经 CanaryHook
+  modality: MUST
+  status: accepted
+  scope: ci.canary
+  owner: platform
+  risk: medium
+  source:
+    type: document
+    ref: docs/runbook.md
+  consumer_markers:
+  - CanaryHook

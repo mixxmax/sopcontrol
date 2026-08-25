@@ -1,0 +1,25 @@
+rules:
+- rule_id: GO-001
+  statement: 对外写操作必须经 AdmitRequest 受控入口
+  modality: MUST
+  status: accepted
+  scope: go.write
+  owner: platform
+  risk: high
+  source:
+    type: document
+    ref: docs/sop.md
+  consumer_markers:
+  - AdmitRequest
+- rule_id: GO-002
+  statement: 审计钩子必须经 RegisterAuditHook 注册
+  modality: MUST
+  status: accepted
+  scope: go.audit
+  owner: platform
+  risk: medium
+  source:
+    type: document
+    ref: docs/sop.md
+  consumer_markers:
+  - RegisterAuditHook
