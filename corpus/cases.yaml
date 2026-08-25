@@ -7,7 +7,7 @@ cases:
   expected_verdict: {status: gap, absorption: documented}
   expected_findings:
   - {pattern_id: documented_rule_no_consumer, severity: gap}
-  ground_truth: 手册 1.2 症状3——"必须先预览再确认"写入文档后仍被绕过；JobsFlow 历史真实断口，蒸馏为最小现场
+  ground_truth: 14.1 场景2 / 手册 1.2——规则写进文档（「必须先预览再确认」）但生产无消费者；只改文档不算接线
 
 - case_id: CASE-002
   fixture: shop-checkout

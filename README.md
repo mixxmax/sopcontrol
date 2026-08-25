@@ -11,7 +11,8 @@
 ## 当前状态：垂直骨干役用闭环 + 14.1 覆盖 15/15
 
 日用顺序见 [`PLAYBOOK.md`](PLAYBOOK.md)；模型交互见 [`SKILL.md`](SKILL.md)。  
-本仓自检：`sopctl vertical-check .` 或 `./scripts/vertical-check.sh`。
+本仓自检：`sopctl vertical-check .`（身份/投影/钩子/audit/gate/self-test）。  
+完整含 pytest：`./scripts/vertical-check.sh`（多跑测试套件，二者不等同）。
 
 - **OpenCode（运行时拦截，已实测）**：`sopctl hook opencode` 安装 `.opencode/plugins` 插件，
   `tool.execute.before` 调 `sopctl harness-check` 决策。真实模型演习：Edit 控制器文件被当场
@@ -48,9 +49,10 @@ python3 -m venv .venv
 # 确认入口
 .venv/bin/sopctl --help
 
-# 本仓役用自检（身份/投影/钩子/audit/gate/self-test）
+# 本仓役用自检（身份/投影/钩子/audit/gate/self-test；不含 pytest）
 .venv/bin/sopctl vertical-check .
-# 或：./scripts/vertical-check.sh
+# 含 pytest 的完整脚本：
+./scripts/vertical-check.sh
 
 # 跑语料与宪法测试
 .venv/bin/pytest -q

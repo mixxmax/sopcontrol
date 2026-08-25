@@ -22,7 +22,7 @@
 - [x] 3 领域夹具 + 10 语料用例 + 宪法测试；doctor / explain / strict 门
 - 验收：`sopctl init/rule/audit/explain` 全通；26 测试全绿；账本幂等；strict 退出码正确
 
-### B1 终点执行器 — 进行中
+### B1 终点执行器 — 完成（2026-08-23）
 - [x] `sopctl gate`：fail 判定与账本篡改 → 阻断（退出码 1）；gap 仅告警（L2/L3 阶梯）；审计异常 fail-closed
 - [x] `sopctl hook install`：pre-push 终态门（带标记；拒绝覆盖非 sopctl 钩子；幂等重装）
 - [x] `sopctl self-test`：穿透演习——通过真实命令路径注入已知违规（legacy 绕过、账本篡改），断言被阻断；清洁现场断言放行
@@ -72,10 +72,9 @@
 
 ## 状态（每次运行后更新）
 
-- 2026-08-25（第十轮）：小步 1–7——双域语料；CI gate；v0.1.0+SKILL；go_scan；
-  capability `--live opencode`（清洗 ANSI 后重跑归档）；identity lock。
-- 2026-08-25（第九轮）：垂直骨干役用闭环完成。14.1=15/15。
-- 2026-08-25（第八轮）：场景8；多平台投影。
+- 2026-08-25（质量收口 A）：B1 标题改正；corpus README 14.1 诚实分层；vertical-check
+  CLI/脚本差异写清；CASE-001/TCASE-013 显式场景2。
+- 2026-08-25（第十轮）：小步 1–7。第九轮：垂直骨干役用闭环。14.1 有对应证据（含代理层）。
 
 ## Blockers
 

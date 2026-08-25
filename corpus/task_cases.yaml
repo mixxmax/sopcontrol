@@ -26,7 +26,7 @@ cases:
   - {do: submit, changed: [scripts/deploy.py], expect: {allowed: true, to: verification_pending}}
   - {do: verify, expect: {allowed: true, to: failed_unverified}}
   final_status: failed_unverified
-  ground_truth: 只更新文档/声称完成但规则始终 gap——两轮修复未收敛即熔断转终态，不许无限返工烧 token
+  ground_truth: 14.1 场景11——规则始终 gap、两轮修复未收敛即熔断转终态（与场景2「只改文档」相关但本例侧重熔断）
 
 - case_id: TCASE-003
   name: fail 规则（绕过存活）转人工（14.1 场景5）
@@ -149,3 +149,15 @@ cases:
   - {do: verify, expect: {allowed: true, to: repair_required}}
   final_status: repair_required
   ground_truth: 同样的控制器改动，提交基线后完成门不再以自证嫌疑阻断，按规则判定正常走修复回路
+
+- case_id: TCASE-013
+  name: 只更新文档不算接线（14.1 场景2）
+  fixture: jobflow-preview
+  steps:
+  - {do: open, objective: 接线 PUSH-001 预览确认, allow: [docs, src], require_rules: [PUSH-001]}
+  - {do: accept, expect: {allowed: true, to: executing}}
+  - {do: write_file, path: docs/tracker-sop.md, content: "# 岗位入表 SOP\n\n- 新岗位入表必须先预览后确认，确认后才能写表。（已在文档强调）\n- 不得为仅预览的岗位分配材料编号。\n- 材料归档通道必须保持可用。\n"}
+  - {do: submit, changed: [docs/tracker-sop.md], expect: {allowed: true, to: verification_pending}}
+  - {do: verify, expect: {allowed: true, to: repair_required}}
+  final_status: repair_required
+  ground_truth: 14.1 场景2——任务只改文档/README 式声明，生产仍无 require_preview 消费者；完成门判 gap→repair，不得 verified

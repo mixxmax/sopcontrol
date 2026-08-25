@@ -180,7 +180,8 @@ harness 画像与模型画像并列，不互相覆盖。
 
 1. **本仓役用**：`sopctl vertical-check` 武装身份/投影/钩子，audit 无 fail，
    gate/self-test 通过；自应用 SELF-001/002 达 wired_and_tested。
-2. **日用剧本**：`PLAYBOOK.md` + `scripts/vertical-check.sh`。
+   （`scripts/vertical-check.sh` 额外跑 pytest，比 CLI 更严，二者不等同。）
+2. **日用剧本**：`PLAYBOOK.md`。
 3. **役用教训入库**：`corpus/`/`docs/` 不算生产消费者（`is_production_path`）；
    自应用标记改为 AST 可见具名函数，避免 YAML 假接线。
 

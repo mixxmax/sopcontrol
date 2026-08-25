@@ -29,4 +29,4 @@ echo "== self-test =="
 echo "== pytest =="
 "$PY" -m pytest -q
 echo
-echo "vertical-check: 全部通过。日用顺序见 PLAYBOOK.md"
+echo "vertical-check.sh: 全部通过（含 pytest；比 sopctl vertical-check 更严）。日用见 PLAYBOOK.md"

@@ -32,10 +32,11 @@ sopctl capability-eval --model local --fixture strong .   # 或 fragile/weak
 sopctl doctor .                  # 应全部通过；身份与钩子已武装
 ```
 
-本仓自检一键：
+本仓自检：
 
 ```bash
-./scripts/vertical-check.sh
+sopctl vertical-check .          # 身份/投影/钩子 + doctor --vertical + audit/gate/self-test
+./scripts/vertical-check.sh      # 同上，并额外跑 pytest（更严；二者不等同）
 ```
 
 ## 2. 登记规则（人工授权）
