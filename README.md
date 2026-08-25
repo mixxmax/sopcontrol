@@ -1,6 +1,6 @@
 # SOP Control
 
-**意图—规则—交付的编译器与控制平面**（行走骨架 v0.0.1）
+**意图—规则—交付的编译器与控制平面**（垂直骨干 v0.1.0）
 
 > 让用户的产品意图不再依赖某个模型记得，也不再停留在对话里；让规则经过治理后成为
 > 代码可以执行、系统可以验证、失败可以修复、换模型可以延续的长期产品能力。
@@ -10,7 +10,8 @@
 
 ## 当前状态：垂直骨干役用闭环 + 14.1 覆盖 15/15
 
-日用顺序见 [`PLAYBOOK.md`](PLAYBOOK.md)。本仓自检：`sopctl vertical-check .` 或 `./scripts/vertical-check.sh`。
+日用顺序见 [`PLAYBOOK.md`](PLAYBOOK.md)；模型交互见 [`SKILL.md`](SKILL.md)。  
+本仓自检：`sopctl vertical-check .` 或 `./scripts/vertical-check.sh`。
 
 - **OpenCode（运行时拦截，已实测）**：`sopctl hook opencode` 安装 `.opencode/plugins` 插件，
   `tool.execute.before` 调 `sopctl harness-check` 决策。真实模型演习：Edit 控制器文件被当场
@@ -38,14 +39,21 @@ B0–B3 能力见 git 历史；检测 8 模式仍为 grep 智力（边界见 RES
 
 检测器仍为 grep 智力（边界见 RESIDUAL_RISKS.md）。
 
-## 快速开始
+## 快速开始（垂直骨干 0.1.0）
 
 ```bash
-# 安装（Python >= 3.10）
-pip install -e ".[dev]"
+# 安装（Python >= 3.10）——开发态
+python3 -m venv .venv
+.venv/bin/pip install -e ".[dev]"
+# 确认入口
+.venv/bin/sopctl --help
 
-# 跑语料与宪法测试（验收方式）
-pytest
+# 本仓役用自检（身份/投影/钩子/audit/gate/self-test）
+.venv/bin/sopctl vertical-check .
+# 或：./scripts/vertical-check.sh
+
+# 跑语料与宪法测试
+.venv/bin/pytest -q
 
 # 在目标项目上使用
 sopctl init /path/to/project

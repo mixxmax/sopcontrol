@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sopcontrol"
-version = "0.0.1"
-description = "SOP Control: intent-rule-delivery compiler and control plane for coding agents"
+version = "0.1.0"
+description = "SOP Control: intent-rule-delivery compiler and control plane for coding agents（垂直骨干役用可用）"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
