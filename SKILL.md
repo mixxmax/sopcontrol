@@ -21,6 +21,7 @@ sopctl task takeover <TASK-ID> .          # 换会话最小接手包
 sopctl intake . --conversation chat.txt  # 讨论/政策句 → Candidate 或 discuss_only
 sopctl intent clear .                    # 解除讨论锁定
 sopctl repair open <finding_id> --allow <path>
+sopctl repair apply <TASK-ID> --harness opencode
 sopctl doctor . --vertical
 sopctl vertical-check .
 sopctl capability-compare --live opencode --baseline strong .
