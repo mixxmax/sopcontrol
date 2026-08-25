@@ -484,13 +484,31 @@ def cmd_repair(args) -> int:
 
 
 def cmd_intake(args) -> int:
-    """意图编译器 v0（确定性种子）：文档 MUST 句 → CandidateRule（observed，不写终态）。"""
+    """意图编译器 v0：文档 MUST 句和/或对话摘录 → Candidate（observed，不写终态）。"""
     from plugins import DETECTORS, SENSORS
 
+    from .intent import process_conversation
+
     root = _project(args.path)
+
+    if getattr(args, "conversation", None):
+        text = Path(args.conversation).read_text(encoding="utf-8")
+        summary = process_conversation(root, text)
+        print(
+            f"对话意图处理：有效语句 {summary['utterances']}，"
+            f"新增候选 {summary['candidates_added']}，"
+            f"会话意图={summary['final_intent']}"
+        )
+        for note in summary["notes"]:
+            print(f"  · {note}")
+        if summary["final_intent"] == "discuss_only":
+            print("  写工具将被 harness-check 拒绝，直至解除讨论锁定")
+        # 对话路径可单独运行；未要求文档扫描时到此结束
+        if not getattr(args, "with_docs", False):
+            return 0
+
     report = run_audit(root, SENSORS, DETECTORS, persist=False)
     registry_path = root / ".sopcontrol" / "rules" / "registry.yaml"
-    known = {r.rule_id for r in Registry(registry_path).load()}
     known_statements = {r.statement for r in Registry(registry_path).load()}
 
     candidates_path = root / ".sopcontrol" / "rules" / "candidates.yaml"
@@ -527,6 +545,22 @@ def cmd_intake(args) -> int:
         print(f"  {c['candidate_id']}: {c['statement'][:50]}  ← {c['source']['ref']}")
     print("晋升方式: sopctl rule add --statement '...'（人工确认后进入 registry）")
     return 0
+
+
+def cmd_intent(args) -> int:
+    """查看或清除会话意图（discuss_only 锁定）。"""
+    from .intent import clear_session_intent, load_session_intent
+
+    root = _project(args.path)
+    if args.sub == "show":
+        session = load_session_intent(root)
+        print(yaml.safe_dump(session.model_dump(mode="json"), allow_unicode=True, sort_keys=False).strip())
+        return 0
+    if args.sub == "clear":
+        clear_session_intent(root)
+        print("已清除会话意图（discuss_only 锁定解除）")
+        return 0
+    return 2
 
 
 OPENCODE_PLUGIN_TEMPLATE = '''// sopcontrol-hook v1 (marker) — sopctl hook opencode 生成；决策权在本地控制器，插件只是执行器
@@ -575,7 +609,9 @@ def _write_profile(root: Path) -> None:
 def cmd_harness_check(args) -> int:
     """harness 工具调用决策：stdin JSON 或 --payload；stdout 出决策 JSON。"""
     from .harness import check_tool_call, gate_status_for_push
+    from .intent import load_session_intent
 
+    root = _project(args.path)
     raw = args.payload if args.payload else (sys.stdin.read() or "{}")
     try:
         payload = json.loads(raw)
@@ -588,8 +624,9 @@ def cmd_harness_check(args) -> int:
         gate_status = None
         command = str((payload.get("tool_input") or {}).get("command") or "")
         if PUSH_RE.search(command):
-            gate_status = gate_status_for_push(_project(args.path))
-        decision = check_tool_call(payload, gate_status)
+            gate_status = gate_status_for_push(root)
+        session = load_session_intent(root)
+        decision = check_tool_call(payload, gate_status, session_intent=session.intent)
 
     print(json.dumps(decision.claude_payload(), ensure_ascii=False))
     return 0
@@ -833,9 +870,29 @@ def build_parser() -> argparse.ArgumentParser:
     _task_cmd("takeover", "接管包：新模型/新会话的最小接手信息（只读）", task_id=True)
     _task_cmd("list", "列出任务")
 
-    p = sub.add_parser("intake", help="意图编译器 v0：文档 MUST 句 → CandidateRule（observed，不写终态）")
+    p = sub.add_parser(
+        "intake",
+        help="意图编译器 v0：文档 MUST 句和/或对话摘录 → Candidate（observed，不写终态）",
+    )
     p.add_argument("path", nargs="?", default=".")
+    p.add_argument(
+        "--conversation",
+        help="对话摘录文件：识别 discuss_only / 永久政策候选（14.1 场景1）",
+    )
+    p.add_argument(
+        "--with-docs", action="store_true",
+        help="处理对话时同时扫描文档 MUST 句（默认对话路径单独运行）",
+    )
     p.set_defaults(func=cmd_intake)
+
+    intent = sub.add_parser("intent", help="会话意图：查看/清除 discuss_only 锁定")
+    intent_sub = intent.add_subparsers(dest="sub", required=True)
+    p = intent_sub.add_parser("show", help="显示当前会话意图")
+    p.add_argument("path", nargs="?", default=".")
+    p.set_defaults(func=cmd_intent)
+    p = intent_sub.add_parser("clear", help="清除 discuss_only 锁定")
+    p.add_argument("path", nargs="?", default=".")
+    p.set_defaults(func=cmd_intent)
 
     repair = sub.add_parser("repair", help="有界修复：Finding → 修复任务（同指纹熔断）")
     repair_sub = repair.add_subparsers(dest="sub", required=True)

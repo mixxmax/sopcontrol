@@ -35,8 +35,9 @@
 - [x] TaskContract / PolicyEnvelope 最小 schema（DESIGN.md §10：不新增第四种真相）
 - [x] INTAKE→…→DELIVERED 状态机 + 合法迁移表（task.py；blocked/failed_unverified 终态）
 - [x] `sopctl task open/accept/submit/verify/deliver/show/list`：范围走私拒绝、完成门只信 E3 审计、修复熔断（默认两轮）、revision 防旧覆盖
-- [x] 任务语料 `corpus/task_cases.yaml`（8 用例）：14.1 场景 2/5/8/9/11/15 + 两个正向对照；场景 1/6/7 依赖 harness/模型层，归 B4
+- [x] 任务语料 `corpus/task_cases.yaml`（8 用例）：14.1 场景 2/5/8/9/11/15 + 两个正向对照；场景 6/7 归 B4（场景 1 见下）
 - [x] 意图编译器 v0：`sopctl intake` 文档 MUST 句 → CandidateRule（observed，永不写注册表；强度建议区分必须/不得）
+- [x] 场景1 对话意图层：`intake --conversation` + discuss_only 阻断写工具（DESIGN §12，2026-08-25）
 - [x] 宪法测试补：迁移门纯度（炸 open）、拒绝可解释、路径规范化拒绝 `..`/绝对路径
 - 验收：47 测试全绿；CLI 全生命周期实测（契约→执行→gap 修复轮→接线→verified→delivered）
 - 实测捕获的真 bug 两枚：完成门曾按全项目口径连坐无关规则 fail；CLI open 误引用 args.changed（API 层测试测不到的接线 bug）
@@ -71,11 +72,12 @@
 
 ## 状态（每次运行后更新）
 
-- 2026-08-25（连续自驱第七轮）：B4 第 6 步 capability handshake **完成**——模型画像与
-  harness 画像并列；夹具 strong/fragile/weak 离线走通；task open 按 tier 调旋钮；92 测试
-  全绿。下一步：场景 1 对话意图层 → 非 Python 表面 → 场景 12/14。
-- 2026-08-24（连续自驱第六轮）：场景7 改进复测**通过**——投影内嵌每任务的接管信息；
-  手册 14.1 覆盖 9/15；82 测试全绿。
+- 2026-08-25（连续自驱第七轮续）：场景1 对话意图层 **完成**——确定性分类 discuss_only
+  阻断 Write/Edit；永久政策句 → Candidate（observed）；`intake --conversation` /
+  `intent clear`；DESIGN §12；手册 14.1 覆盖 **10/15**；96 测试全绿。下一步：非 Python
+  表面 → 场景 12/14 → Phase 6。
+- 2026-08-25：B4 第 6 步 capability handshake **完成**——模型三维探针→tier→旋钮；92→96。
+- 2026-08-24（连续自驱第六轮）：场景7 改进复测**通过**；手册 14.1 覆盖 9/15。
 
 ## Blockers
 

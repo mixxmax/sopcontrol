@@ -67,15 +67,27 @@ def _allow(reason: str) -> HookDecision:
     return HookDecision(permissionDecision="allow", reason=reason)
 
 
-def check_tool_call(payload: dict, gate_status: Optional[str] = None) -> HookDecision:
+def check_tool_call(
+    payload: dict,
+    gate_status: Optional[str] = None,
+    session_intent: Optional[str] = None,
+) -> HookDecision:
     """gate_status: None=与终点门无关 / "block" / "warn" / "clean"。纯函数。
 
+    session_intent: 由调用方注入（CLI 读 session-intent.yaml）；discuss_only 时拒绝写工具。
     工具名大小写归一（Claude 用 Bash/Write，OpenCode 用 bash/edit/write）。
     """
     tool = str(payload.get("tool_name") or "").lower()
     tool_input = payload.get("tool_input") or {}
+    intent = session_intent or str(payload.get("session_intent") or "")
 
     if tool in {"write", "edit", "multiedit"}:
+        if intent == "discuss_only":
+            return _deny(
+                "当前会话意图为 discuss_only（用户明确只讨论不修改）：拒绝写文件。"
+                "讨论不是实施授权（14.1 场景1）；若要改代码请先解除讨论锁定"
+                "（说出实施意图或 sopctl intent clear）"
+            )
         file_path = str(
             tool_input.get("file_path") or tool_input.get("filePath")
             or tool_input.get("path") or ""

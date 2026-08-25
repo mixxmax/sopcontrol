@@ -155,3 +155,21 @@ fail-closed 视为脏。提交基线后照常裁决。这把"改 verifier 自证
 **接入点**：`task open` 在用户未显式改 `--max-repairs`（仍为默认 2）时读取画像
 套用；显式传参优先于画像。`accept` 对 `file` 粒度再拦一道，理由可行动。
 harness 画像与模型画像并列，不互相覆盖。
+
+## 12. 场景1 决策：对话意图层 v0（2026-08-25 补）
+
+**问题**：用户说「只讨论，不修改」时，模型仍可能改代码——讨论被误判为实施授权
+（手册 14.1 场景1 / Phase 0 验收）。
+
+**脊柱仍零 LLM。** 分类器是确定性插件位：`classify_utterance` 纯函数，按显式
+标记词判定 `discuss_only` / `implement` / `rule_candidate` / `unknown`。LLM 分类器
+仍是未来插卡，约定不变——只产 Candidate，永不写终态（与 intake 文档路径一致）。
+
+**产物**：
+- 会话意图落盘 `.sopcontrol/session-intent.yaml`（`intent` + `source_excerpt`）；
+- 永久政策句 → `candidates.yaml`（status=observed），晋升仍须 `rule add`；
+- `harness-check` 在 CLI 边界读会话意图并注入决策函数：`discuss_only` 时拒绝
+  Write/Edit（bash 仍走既有受控清单，不在本切片扩面）。
+
+**不做什么**：不自动开任务、不自动 accept 规则、不把「讨论」写成实施 envelope。
+清除 discuss_only 靠用户说出实施标记（或 `sopctl intent clear`）。

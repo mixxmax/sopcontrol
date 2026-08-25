@@ -29,6 +29,8 @@ B0–B3 能力见 git 历史；检测 8 模式仍为 grep 智力（边界见 RES
   gap → repair_required（默认两轮熔断 → failed_unverified）
 - 范围走私（契约外路径）拒绝该次提交，可自愈重试；revision 防旧上下文覆盖新状态
 - `sopctl intake` —— 意图编译器 v0：文档 MUST 句 → CandidateRule（observed，永不写注册表）
+- `sopctl intake --conversation chat.txt` —— 对话意图：discuss_only 锁定写工具；永久政策→Candidate
+- `sopctl intent show|clear` —— 查看/解除讨论锁定（14.1 场景1）
 - `sopctl repair open <finding_id>` —— 有界修复：断口 → 指纹绑定修复任务（重复开单拒绝、
   同指纹熔断转人工、预算两轮；修复智能在脊柱之外，人在契约内完成最小修复）
 
@@ -67,6 +69,8 @@ sopctl project codex .                   # AGENTS.md 规则投影（Codex 建议
 sopctl wrap codex . -- exec -s workspace-write "任务"   # 事后门 wrapper
 echo '{"tool_name":"Bash","tool_input":{"command":"git push"}}' | sopctl harness-check .
 sopctl capability-eval --model demo --fixture fragile .   # 模型画像（不烧 token）
+sopctl intake . --conversation chat.txt                   # 对话意图（讨论≠改码）
+sopctl intent show .
 ```
 
 ## 三个原子
