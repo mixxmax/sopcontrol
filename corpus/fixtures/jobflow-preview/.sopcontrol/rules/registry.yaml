@@ -41,3 +41,13 @@ rules:
     ref: docs/tracker-sop.md
   state_markers:
   - preview_state
+- rule_id: PUSH-004
+  statement: 材料归档通道必须保持可用
+  modality: MUST
+  status: accepted
+  scope: tracker.archive
+  owner: product
+  risk: medium
+  source:
+    type: document
+    ref: docs/tracker-sop.md

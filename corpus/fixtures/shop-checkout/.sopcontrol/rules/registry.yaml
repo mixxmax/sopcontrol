@@ -81,3 +81,15 @@ rules:
     ref: docs/sop.md
   state_markers:
   - daily_digest
+- rule_id: REFUND-008
+  statement: 退款凭证必须经 receipt_guard 校验
+  modality: MUST
+  status: accepted
+  scope: checkout.refund
+  owner: product
+  risk: medium
+  source:
+    type: document
+    ref: docs/sop.md
+  consumer_markers:
+  - receipt_guard

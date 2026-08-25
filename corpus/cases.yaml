@@ -153,3 +153,35 @@ cases:
   - {pattern_id: documented_rule_no_consumer, severity: gap}
   - {pattern_id: comment_only_reference, severity: gap}
   ground_truth: JS/TS 表面第二领域（CI）——notify_hook 仅注释提及
+
+- case_id: CASE-020
+  fixture: shop-checkout
+  rule_id: REFUND-008
+  expected_verdict: {status: gap, absorption: documented}
+  expected_findings:
+  - {pattern_id: test_helper_only, severity: gap}
+  ground_truth: test_helper_only 第二领域（电商）——receipt_guard 仅测试 helper
+
+- case_id: CASE-021
+  fixture: ci-deploy
+  rule_id: DEPLOY-006
+  expected_verdict: {status: gap, absorption: wired}
+  expected_findings:
+  - {pattern_id: documented_rule_untested, severity: gap}
+  ground_truth: documented_rule_untested 第二领域（CI）——smoke_probe 有生产无测试
+
+- case_id: CASE-022
+  fixture: ci-deploy
+  rule_id: DEPLOY-007
+  expected_verdict: {status: unknown, absorption: null}
+  expected_findings:
+  - {pattern_id: state_marker_absent, severity: info}
+  ground_truth: state_marker_absent 第二领域（CI）——canary_flag 声明但不存在
+
+- case_id: CASE-023
+  fixture: jobflow-preview
+  rule_id: PUSH-004
+  expected_verdict: {status: unknown, absorption: null}
+  expected_findings:
+  - {pattern_id: consumer_markers_undefined, severity: info}
+  ground_truth: consumer_markers_undefined 第二领域（求职）——硬规则未声明消费者

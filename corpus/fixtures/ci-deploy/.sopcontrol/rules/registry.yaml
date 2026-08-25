@@ -85,3 +85,27 @@ rules:
     ref: docs/runbook.md
   consumer_markers:
   - notify_hook
+- rule_id: DEPLOY-006
+  statement: 部署冒烟必须经 smoke_probe 探针
+  modality: MUST
+  status: accepted
+  scope: ci.smoke
+  owner: platform
+  risk: medium
+  source:
+    type: document
+    ref: docs/runbook.md
+  consumer_markers:
+  - smoke_probe
+- rule_id: DEPLOY-007
+  statement: 金丝雀标志必须单一维护
+  modality: MUST
+  status: accepted
+  scope: ci.state
+  owner: platform
+  risk: low
+  source:
+    type: document
+    ref: docs/runbook.md
+  state_markers:
+  - canary_flag
