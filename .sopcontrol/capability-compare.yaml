@@ -1,0 +1,19 @@
+runs:
+- at: 2026-08-25 23:59
+  live:
+    model: opencode-default
+    source: live:opencode
+    tier: strong
+    scores:
+      json_stability: true
+      boundary_follow: true
+      instruction_follow: true
+  baseline:
+    model: fixture:strong
+    source: fixture:strong
+    tier: strong
+    scores:
+      json_stability: true
+      boundary_follow: true
+      instruction_follow: true
+  tier_match: true

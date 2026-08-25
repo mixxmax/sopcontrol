@@ -23,6 +23,9 @@ sopctl intent clear .                    # 解除讨论锁定
 sopctl repair open <finding_id> --allow <path>
 sopctl doctor . --vertical
 sopctl vertical-check .
+sopctl capability-compare --live opencode --baseline strong .
+sopctl identity export . --out id.yaml
+sopctl identity import . --file id.yaml
 ```
 
 `submit` 若契约有 MUST 字段：`--field key=value`（漏字段会被拒）。

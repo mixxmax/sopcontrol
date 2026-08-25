@@ -26,10 +26,12 @@ sopctl --help    # 或 .venv/bin/sopctl --help
 sopctl init .                    # 若尚无 .sopcontrol/
 sopctl identity init .           # 项目身份
 sopctl identity lock .           # 可选：锁定 id，挪目录不重算（缓解 R11）
+sopctl identity export . --out identity-bundle.yaml   # 可携带到另一路径 import
 sopctl hook install .            # pre-push 终态门
 sopctl project all .             # AGENTS.md + CLAUDE.md 投影
 sopctl capability-eval --model local --fixture strong .   # 或 fragile/weak
-sopctl doctor .                  # 应全部通过；身份与钩子已武装
+sopctl capability-compare --live opencode --baseline strong .  # live vs 基线归档
+sopctl doctor . --vertical       # 应全部通过；身份与钩子已武装
 ```
 
 本仓自检：

@@ -10,7 +10,7 @@ from sopcontrol.context import ProjectContext, file_hash
 from sopcontrol.model import Evidence
 
 CODE_SUFFIXES = {
-    ".py", ".sh", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".go",
+    ".py", ".sh", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".go", ".rs",
     ".yaml", ".yml", ".toml",
 }
 IDENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{2,}")

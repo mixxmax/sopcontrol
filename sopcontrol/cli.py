@@ -59,7 +59,13 @@ def cmd_init(args) -> int:
 
 
 def cmd_identity(args) -> int:
-    from .identity import ensure_identity, load_identity, set_identity_locked
+    from .identity import (
+        ensure_identity,
+        export_identity,
+        import_identity,
+        load_identity,
+        set_identity_locked,
+    )
 
     root = _project(args.path)
     if args.sub == "init":
@@ -81,6 +87,33 @@ def cmd_identity(args) -> int:
     if args.sub == "unlock":
         ident = set_identity_locked(root, False)
         print(f"已解锁 project_id → {ident.project_id}（将随路径派生）")
+        return 0
+    if args.sub == "export":
+        try:
+            payload = export_identity(root)
+        except FileNotFoundError as exc:
+            print(f"错误: {exc}", file=sys.stderr)
+            return 2
+        out = getattr(args, "out", None)
+        text = yaml.safe_dump(payload, allow_unicode=True, sort_keys=False)
+        if out:
+            Path(out).write_text(text, encoding="utf-8")
+            print(f"已导出 → {out}")
+        else:
+            print(text.strip())
+        return 0
+    if args.sub == "import":
+        src = getattr(args, "file", None)
+        if not src:
+            print("错误: identity import 需要 --file", file=sys.stderr)
+            return 2
+        data = yaml.safe_load(Path(src).read_text(encoding="utf-8")) or {}
+        try:
+            ident = import_identity(root, data)
+        except ValueError as exc:
+            print(f"错误: {exc}", file=sys.stderr)
+            return 2
+        print(f"已导入并锁定 → {ident.project_id}")
         return 0
     return 2
 
@@ -894,6 +927,38 @@ def cmd_harness_eval(args) -> int:
     return 0 if ok else 1
 
 
+def cmd_capability_compare(args) -> int:
+    """live 探针 vs 夹具基线对比，追加 capability-compare.yaml。"""
+    from .evals import run_capability_compare
+
+    root = _project(args.path)
+    print(
+        f"对比 live={args.live} vs baseline={args.baseline} "
+        f"（live 会消耗模型 token）…"
+    )
+    try:
+        result = run_capability_compare(
+            root,
+            live=args.live,
+            baseline_fixture=args.baseline,
+            live_model=args.model,
+        )
+    except ValueError as exc:
+        print(f"错误: {exc}", file=sys.stderr)
+        return 2
+    entry = result["entry"]
+    print(f"已追加 → {result['compare_path']}")
+    print(
+        f"  live:     tier={entry['live']['tier']}  scores={entry['live']['scores']}"
+    )
+    print(
+        f"  baseline: tier={entry['baseline']['tier']}  "
+        f"scores={entry['baseline']['scores']}"
+    )
+    print(f"  tier_match: {entry['tier_match']}")
+    return 0
+
+
 def cmd_capability_eval(args) -> int:
     """模型维度握手：夹具/响应文件/live harness → tier → model-profile.yaml。"""
     from .evals import run_capability_eval
@@ -1099,6 +1164,14 @@ def build_parser() -> argparse.ArgumentParser:
         p = identity_sub.add_parser(name, help=help_text)
         p.add_argument("path", nargs="?", default=".")
         p.set_defaults(func=cmd_identity)
+    p = identity_sub.add_parser("export", help="导出可携带身份包（默认锁定）")
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--out", help="写入文件（默认 stdout）")
+    p.set_defaults(func=cmd_identity)
+    p = identity_sub.add_parser("import", help="导入身份包并锁定到当前项目")
+    p.add_argument("--file", required=True, help="export 产出的 YAML")
+    p.add_argument("path", nargs="?", default=".")
+    p.set_defaults(func=cmd_identity)
 
     p = sub.add_parser(
         "intake",
@@ -1194,6 +1267,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("path", nargs="?", default=".")
     p.set_defaults(func=cmd_capability_eval)
+
+    p = sub.add_parser(
+        "capability-compare",
+        help="live 探针 vs 夹具基线对比 → capability-compare.yaml",
+    )
+    p.add_argument("--model", default="opencode-default", help="live 侧模型标识")
+    p.add_argument("--live", choices=["opencode"], default="opencode")
+    p.add_argument(
+        "--baseline", choices=["strong", "fragile", "weak"], default="strong",
+        help="对比用的离线夹具基线",
+    )
+    p.add_argument("path", nargs="?", default=".")
+    p.set_defaults(func=cmd_capability_compare)
 
     p = sub.add_parser("explain", help="解释某条规则的判定：谁消费、证据是什么、为什么")
     p.add_argument("rule_id")

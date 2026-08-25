@@ -24,7 +24,10 @@ class NoConsumerDetector:
         structured_by_subject = {
             e.subject: e
             for e in evidence
-            if e.kind in ("ast_scan.references", "js_scan.references", "go_scan.references")
+            if e.kind in (
+                "ast_scan.references", "js_scan.references",
+                "go_scan.references", "rust_scan.references",
+            )
         }
         for rule in rules:
             if rule.status not in GOVERNANCE_ACTIVE or rule.modality not in HARD_MODALITIES:
@@ -79,7 +82,7 @@ class NoConsumerDetector:
             # 注释/字符串里的标记不算消费者：grep 命中但结构化扫描未命中
             for grep_ev in id_evidence:
                 if not grep_ev.subject.endswith(
-                    (".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".go")
+                    (".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".go", ".rs")
                 ):
                     continue
                 if not any(m in (grep_ev.observed or []) for m in rule.consumer_markers):

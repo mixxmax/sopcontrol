@@ -326,3 +326,54 @@ def run_capability_eval(
         "profile_path": str(path),
         "source": source,
     }
+
+
+def run_capability_compare(
+    root: Path,
+    *,
+    live: str = "opencode",
+    baseline_fixture: str = "strong",
+    live_model: str = "live",
+    live_runner=None,
+) -> dict:
+    """对比 live 探针与夹具基线，追加写入 .sopcontrol/capability-compare.yaml。"""
+    from .capability import FIXTURES, build_profile
+
+    if baseline_fixture not in FIXTURES:
+        raise ValueError(f"未知基线夹具 {baseline_fixture!r}")
+
+    live_result = run_capability_eval(
+        root, live_model, live=live, live_runner=live_runner
+    )
+    base_at = datetime.now().strftime("%Y-%m-%d %H:%M")
+    base_profile = build_profile(
+        f"fixture:{baseline_fixture}",
+        FIXTURES[baseline_fixture],
+        source=f"fixture:{baseline_fixture}",
+        at=base_at,
+    )
+    entry = {
+        "at": base_at,
+        "live": {
+            "model": live_result["model"],
+            "source": live_result["source"],
+            "tier": live_result["tier"],
+            "scores": live_result["scores"],
+        },
+        "baseline": {
+            "model": base_profile.model,
+            "source": base_profile.source,
+            "tier": base_profile.tier,
+            "scores": base_profile.scores,
+        },
+        "tier_match": live_result["tier"] == base_profile.tier,
+    }
+    path = Path(root) / ".sopcontrol" / "capability-compare.yaml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = {"runs": []}
+    if path.exists():
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {"runs": []}
+        data.setdefault("runs", [])
+    data["runs"].append(entry)
+    path.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
+    return {"compare_path": str(path), "entry": entry}

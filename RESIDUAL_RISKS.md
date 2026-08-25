@@ -64,11 +64,11 @@ status 改成 verified 绕过完成门——revision 只防并发覆盖，不防
 默认 `project_id` 由绝对路径哈希派生；挪盘/换路径会变。缓解：`sopctl identity lock`
 固定 id（仍非全局 registry）。全局 daemon / 远程身份同步仍属 Phase 6 其余部分。
 
-## R10 JS/TS 词法剥离的已知缝隙（js_scan 起）
+## R10 JS/TS/Go/Rust 词法剥离的已知缝隙
 
-`js_scan` 不解析完整语法：嵌套模板字符串、正则字面量 `/.../`、JSX 文本节点
-可能残留或误剥。当前语料不覆盖这些构造；命中后再补夹具。不引入 TypeScript
-编译器依赖是刻意边界（脊柱依赖白名单）。
+`js_scan` / `go_scan` / `rust_scan` 不解析完整语法：嵌套模板、正则字面量、
+raw string、宏展开等可能残留或误剥。语料覆盖基本注释/字符串；命中后再补夹具。
+不引入各语言编译器依赖是刻意边界（脊柱依赖白名单）。
 
 ## R9 修复智能在脊柱之外（B3 起）
 

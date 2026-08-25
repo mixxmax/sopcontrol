@@ -90,3 +90,33 @@ def set_identity_locked(root: Path, locked: bool) -> ProjectIdentity:
     )
     _save(Path(root).resolve(), ident)
     return ident
+
+
+def export_identity(root: Path) -> dict:
+    """导出可携带的身份包（不含本机绝对路径）。"""
+    ident = load_identity(root)
+    if ident is None:
+        raise FileNotFoundError("尚无项目身份；先 sopctl identity init")
+    return {
+        "project_id": ident.project_id,
+        "locked": True,  # 导入后默认锁定，避免路径重算冲掉
+        "note": ident.note or "exported identity",
+        "created_at": ident.created_at,
+    }
+
+
+def import_identity(root: Path, payload: dict) -> ProjectIdentity:
+    """导入身份包并锁定；更新 root 为当前路径。"""
+    root = Path(root).resolve()
+    pid = str(payload.get("project_id") or "").strip()
+    if not pid:
+        raise ValueError("导入文件缺少 project_id")
+    identity = ProjectIdentity(
+        project_id=pid,
+        root=str(root),
+        locked=True,
+        created_at=str(payload.get("created_at") or utcnow().strftime("%Y-%m-%d %H:%M:%S")),
+        note=str(payload.get("note") or "imported：已锁定 project_id"),
+    )
+    _save(root, identity)
+    return identity

@@ -171,6 +171,26 @@ def test_live_capability_eval_with_injected_runner(tmp_path):
     assert result["tier"] == "strong" and result["source"] == "live:opencode"
 
 
+def test_capability_compare_archives(tmp_path):
+    (tmp_path / ".sopcontrol").mkdir()
+    from sopcontrol.evals import run_capability_compare
+
+    def fake_live(pid, prompt, root):
+        return {
+            "json_stability": '{"status": "ok"}',
+            "boundary_follow": "src/allowed.py",
+            "instruction_follow": "READY",
+        }[pid]
+
+    result = run_capability_compare(
+        tmp_path, live="opencode", baseline_fixture="strong",
+        live_model="demo", live_runner=fake_live,
+    )
+    assert result["entry"]["tier_match"] is True
+    path = tmp_path / ".sopcontrol" / "capability-compare.yaml"
+    assert path.exists() and "runs:" in path.read_text(encoding="utf-8")
+
+
 def test_cli_capability_eval_and_task_open(tmp_path):
     from sopcontrol.cli import main
 

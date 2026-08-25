@@ -24,6 +24,21 @@ def test_cli_init_writes_identity(tmp_path):
     assert ident is not None and ident.project_id.startswith("proj-")
 
 
+def test_identity_export_import(tmp_path):
+    a = tmp_path / "a"
+    b = tmp_path / "b"
+    a.mkdir()
+    b.mkdir()
+    ensure_identity(a)
+    set_identity_locked(a, True)
+    pid = load_identity(a).project_id
+    bundle = tmp_path / "id.yaml"
+    assert main(["identity", "export", str(a), "--out", str(bundle)]) == 0
+    assert main(["identity", "import", str(b), "--file", str(bundle)]) == 0
+    imported = load_identity(b)
+    assert imported.project_id == pid and imported.locked is True
+
+
 def test_locked_identity_survives_path_move(tmp_path):
     a = tmp_path / "a"
     b = tmp_path / "b"

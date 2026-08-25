@@ -25,10 +25,11 @@ HARD_MODALITIES = {Modality.MUST, Modality.MUST_NOT}
 
 
 _STRUCTURED_KINDS = frozenset({
-    "ast_scan.references", "js_scan.references", "go_scan.references",
+    "ast_scan.references", "js_scan.references",
+    "go_scan.references", "rust_scan.references",
 })
 _STRUCTURED_SUFFIXES = (
-    ".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".go",
+    ".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".go", ".rs",
 )
 
 

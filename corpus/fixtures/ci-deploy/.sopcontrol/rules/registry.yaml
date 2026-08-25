@@ -121,3 +121,15 @@ rules:
     ref: docs/runbook.md
   consumer_markers:
   - CanaryHook
+- rule_id: DEPLOY-010
+  statement: 发布追踪必须经 TraceHook
+  modality: MUST
+  status: accepted
+  scope: ci.trace
+  owner: platform
+  risk: medium
+  source:
+    type: document
+    ref: docs/runbook.md
+  consumer_markers:
+  - TraceHook

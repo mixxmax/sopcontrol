@@ -71,7 +71,7 @@ patterns:
 
 - pattern_id: comment_only_reference
   statement: 消费者标记只出现于注释/字符串，不构成真实代码引用（结构化扫描证明）
-  detection: code_scan 命中 × ast_scan/js_scan/go_scan 未命中（.py / .ts/.js / .go）
+  detection: code_scan 命中 × 结构化扫描未命中（.py/.ts/.js/.go/.rs）
   fixtures:
   - shop-checkout/REFUND-002
   - ci-deploy/DEPLOY-004
@@ -79,10 +79,12 @@ patterns:
   - ci-deploy/DEPLOY-005
   - go-gateway/GO-002
   - ci-deploy/DEPLOY-009
-  domains: [e-commerce, ci-deploy, web-api, go-service]
+  - rust-gate/RS-002
+  - ci-deploy/DEPLOY-010
+  domains: [e-commerce, ci-deploy, web-api, go-service, rust-service]
   status: proven-on-multi-domains
   severity: gap
-  note: 首夜真实教训的模式化；JS/TS/Go 词法剥离移植同一思路（无新依赖）
+  note: 首夜真实教训的模式化；JS/TS/Go/Rust 词法剥离移植同一思路（无新依赖）
 
 - pattern_id: consumer_markers_undefined
   statement: 已接受的硬规则未声明什么算消费者，无法判定吸收

@@ -19,6 +19,7 @@ task_cases.yaml 任务机脚本化用例 → tests/corpus/test_task_cases.py
 - `ci-deploy`：CI 发布域
 - `web-gate`：TypeScript / Web API 域
 - `go-gateway`：Go 服务域
+- `rust-gate`：Rust 服务域
 
 **双域验证规则**：模式至少在两个不相关领域命中才算 `proven-on-2-domains` /
 `proven-on-multi-domains`（见 `patterns.yaml` 的 `status`）。

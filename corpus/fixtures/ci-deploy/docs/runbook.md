@@ -7,3 +7,4 @@
 - 部署冒烟必须经 smoke_probe 探针。
 - 金丝雀标志必须单一维护。
 - 金丝雀提升必须经 CanaryHook。
+- 发布追踪必须经 TraceHook。
