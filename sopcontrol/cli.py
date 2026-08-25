@@ -34,6 +34,8 @@ def _project(path: str) -> Path:
 
 
 def cmd_init(args) -> int:
+    from .identity import ensure_identity
+
     root = _project(args.path)
     sc = root / ".sopcontrol"
     if sc.exists():
@@ -49,9 +51,30 @@ def cmd_init(args) -> int:
         "controller_paths: []\n",
         encoding="utf-8",
     )
-    print(f"已在 {root} 初始化 .sopcontrol/（规则注册表 + 证据账本 + manifest）")
+    ident = ensure_identity(root)
+    print(f"已在 {root} 初始化 .sopcontrol/（规则注册表 + 证据账本 + manifest + 身份）")
+    print(f"  project_id: {ident.project_id}")
     print("下一步: sopctl rule add 登记规则，然后 sopctl audit")
     return 0
+
+
+def cmd_identity(args) -> int:
+    from .identity import ensure_identity, load_identity
+
+    root = _project(args.path)
+    if args.sub == "init":
+        ident = ensure_identity(root)
+        print(f"项目身份 → {ident.project_id}")
+        print(f"  root: {ident.root}")
+        return 0
+    if args.sub == "show":
+        ident = load_identity(root)
+        if ident is None:
+            print("尚无项目身份；运行 sopctl identity init", file=sys.stderr)
+            return 1
+        print(yaml.safe_dump(ident.model_dump(mode="json"), allow_unicode=True, sort_keys=False).strip())
+        return 0
+    return 2
 
 
 def cmd_rule_add(args) -> int:
@@ -333,6 +356,14 @@ def cmd_doctor(args) -> int:
         print(f"插件: OK（sensors={[s.sensor_id for s in SENSORS]}, detectors={[d.detector_id for d in DETECTORS]}）")
     except Exception as exc:  # 插件加载失败必须暴露，不允许静默降级
         problems.append(f"插件加载失败: {exc}")
+
+    from .identity import load_identity
+
+    ident = load_identity(root)
+    if ident:
+        print(f"项目身份: {ident.project_id}")
+    else:
+        print("项目身份: 未登记（sopctl identity init）")
 
     hook = root / ".git" / "hooks" / "pre-push"
     if hook.exists():
@@ -890,6 +921,15 @@ def build_parser() -> argparse.ArgumentParser:
     _task_cmd("show", "查看任务状态与 envelope 历史", task_id=True)
     _task_cmd("takeover", "接管包：新模型/新会话的最小接手信息（只读）", task_id=True)
     _task_cmd("list", "列出任务")
+
+    identity = sub.add_parser("identity", help="项目身份（Phase 6 种子：跨 harness 识别同一项目）")
+    identity_sub = identity.add_subparsers(dest="sub", required=True)
+    p = identity_sub.add_parser("init", help="创建或刷新 .sopcontrol/identity.yaml")
+    p.add_argument("path", nargs="?", default=".")
+    p.set_defaults(func=cmd_identity)
+    p = identity_sub.add_parser("show", help="显示项目身份")
+    p.add_argument("path", nargs="?", default=".")
+    p.set_defaults(func=cmd_identity)
 
     p = sub.add_parser(
         "intake",

@@ -8,7 +8,7 @@
 设计与调研手册见 [`docs/`](docs/)；建构决策记录见 [`DESIGN.md`](DESIGN.md)；
 已知绕过家族的诚实登记见 [`RESIDUAL_RISKS.md`](RESIDUAL_RISKS.md)。
 
-## 当前状态：B4 完成——三 harness 适配，两台真实在环验证
+## 当前状态：B4 完成 + 14.1 覆盖 14/15 + Phase 6 身份种子
 
 - **OpenCode（运行时拦截，已实测）**：`sopctl hook opencode` 安装 `.opencode/plugins` 插件，
   `tool.execute.before` 调 `sopctl harness-check` 决策。真实模型演习：Edit 控制器文件被当场
@@ -71,6 +71,7 @@ echo '{"tool_name":"Bash","tool_input":{"command":"git push"}}' | sopctl harness
 sopctl capability-eval --model demo --fixture fragile .   # 模型画像（不烧 token）
 sopctl intake . --conversation chat.txt                   # 对话意图（讨论≠改码）
 sopctl intent show .
+sopctl identity init .                                    # 项目身份（Phase 6 种子）
 ```
 
 ## 三个原子

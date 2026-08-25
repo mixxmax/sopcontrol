@@ -174,6 +174,12 @@ harness 画像与模型画像并列，不互相覆盖。
 **不做什么**：不自动开任务、不自动 accept 规则、不把「讨论」写成实施 envelope。
 清除 discuss_only 靠用户说出实施标记（或 `sopctl intent clear`）。
 
+## 15. Phase 6 种子：项目身份（2026-08-25 补）
+
+**不做全局 daemon。** `.sopcontrol/identity.yaml` 存 `project_id`（根路径规范化哈希）。
+`sopctl init` / `identity init` 写入；`doctor` 显示。跨 harness 识别的最小原子——
+Rulesync 式多平台投影与全局安装仍后置。路径变更导致 id 漂移见 R11。
+
 ## 14. 场景12/14 深化（2026-08-25 补）
 
 **场景12（无 hook）**：不假装运行时拦截。`HARNESS_PROFILES.codex.interception=none`
