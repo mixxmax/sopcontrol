@@ -72,8 +72,8 @@
 
 ## 状态（每次运行后更新）
 
-- 2026-08-25（质量收口 A）：B1 标题改正；corpus README 14.1 诚实分层；vertical-check
-  CLI/脚本差异写清；CASE-001/TCASE-013 显式场景2。
+- 2026-08-25（质量收口 B）：`audit --compact` / vertical-check 清 stale；投影并入 SKILL 要点。
+- 2026-08-25（质量收口 A）：B1 标题；corpus README 14.1 分层；vertical-check 差异；场景2。
 - 2026-08-25（第十轮）：小步 1–7。第九轮：垂直骨干役用闭环。14.1 有对应证据（含代理层）。
 
 ## Blockers

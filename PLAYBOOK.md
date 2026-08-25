@@ -55,8 +55,8 @@ Candidate 可先 `sopctl intake .` 或 `sopctl intake . --conversation chat.txt`
 ## 3. 日常循环
 
 ```bash
-# 观察断口
-sopctl audit .
+# 观察断口（--compact 用本轮证据替换账本，去掉 stale 噪音）
+sopctl audit . --compact
 sopctl explain MY-001 .
 
 # 开任务（弱模型画像会收紧预算/字段）

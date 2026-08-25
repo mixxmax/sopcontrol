@@ -72,3 +72,4 @@ def test_project_all_writes_agents_and_claude(tmp_path):
     assert "DEPLOY-001" in agents and SECTION_START in agents
     assert "DEPLOY-001" in claude and "原有 Claude 说明" in claude
     assert "discuss_only" in claude or "只讨论" in claude
+    assert "与控制器配合" in agents and "SKILL" in agents

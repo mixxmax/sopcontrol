@@ -141,7 +141,8 @@ def cmd_audit(args) -> int:
     from plugins import DETECTORS, SENSORS
 
     root = _project(args.path)
-    report = run_audit(root, SENSORS, DETECTORS, persist=True)
+    compact = bool(getattr(args, "compact", False))
+    report = run_audit(root, SENSORS, DETECTORS, persist=True, compact=compact)
 
     if args.json:
         print(json.dumps({
@@ -160,7 +161,8 @@ def cmd_audit(args) -> int:
     n_findings = len(report.findings)
     print(f"\n证据 {len(report.evidence)} 条，finding {n_findings} 条，判定 gap/fail {gaps} 项。")
     ledger = root / ".sopcontrol" / "evidence" / "ledger.jsonl"
-    print(f"账本: {ledger}（观察模式，未阻断任何操作；--strict 可作为 CI 门）")
+    mode = "compact 快照已替换账本" if compact else "观察模式追加账本"
+    print(f"账本: {ledger}（{mode}；--strict 可作为 CI 门）")
     if args.strict and gaps:
         return 1
     return 0
@@ -436,10 +438,10 @@ def cmd_vertical_check(args) -> int:
 
     from plugins import DETECTORS, SENSORS
 
-    report = run_audit(root, SENSORS, DETECTORS, persist=True)
+    report = run_audit(root, SENSORS, DETECTORS, persist=True, compact=True)
     fails = [v for v in report.verdicts if v.status == "fail"]
     gaps = [v for v in report.verdicts if v.status == "gap"]
-    print(f"audit: fail={len(fails)} gap={len(gaps)}")
+    print(f"audit: fail={len(fails)} gap={len(gaps)}（账本已 compact）")
     if fails:
         for v in fails:
             print(f"  FAIL {v.rule_id}: {v.reason[:100]}", file=sys.stderr)
@@ -1013,6 +1015,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("path", nargs="?", default=".")
     p.add_argument("--strict", action="store_true", help="存在 gap/fail 时退出码 1（CI 门）")
     p.add_argument("--json", action="store_true", help="输出 JSON 报告")
+    p.add_argument(
+        "--compact", action="store_true",
+        help="用本轮证据整轮替换账本，清除 stale 噪音（役用清理）",
+    )
     p.set_defaults(func=cmd_audit)
 
     p = sub.add_parser("doctor", help="安装自诊：注册表、账本完整性、插件可用性、终态门状态")

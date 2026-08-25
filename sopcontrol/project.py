@@ -70,6 +70,12 @@ def render_projection(
         "- 完成任务前运行 `sopctl gate`（若不在 PATH：`python -m sopcontrol.cli gate`）；"
         "fail 判定或账本篡改会阻断推送。",
         "- 用户若说「只讨论不修改」，不得改任何文件（会话意图 discuss_only）。",
+        "",
+        "## 与控制器配合（SKILL 要点）",
+        "- 先读本投影；规则/账本/任务变更只经 `sopctl`，禁止手改 `.sopcontrol/`。",
+        "- `task submit` 若契约有 MUST 字段，必须带齐 `--field key=value`（漏字段会被拒）。",
+        "- 不要用自报「已完成」代替 `task verify` / `gate`；已 `delivered` 的任务勿重做副作用。",
+        "- 不要卸 hook/插件（提权，需人工）。日用全序见仓库 `PLAYBOOK.md` / `SKILL.md`。",
         SECTION_END,
     ]
     return "\n".join(lines) + "\n"

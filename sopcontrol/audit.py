@@ -28,6 +28,7 @@ def run_audit(
     sensors: list,
     detectors: list,
     persist: bool = False,
+    compact: bool = False,
 ) -> AuditReport:
     root = Path(root)
     ctx = ProjectContext(root)
@@ -47,10 +48,14 @@ def run_audit(
 
     if persist:
         ledger = Ledger(root / ".sopcontrol" / "evidence" / "ledger.jsonl")
-        for ev in evidence:
-            ledger.append_evidence(ev)
-        for f in findings:
-            ledger.append_finding(f)
+        if compact:
+            # 役用清理：整轮快照替换，去掉文件变更后的 stale 噪音
+            ledger.replace_snapshot(evidence, findings)
+        else:
+            for ev in evidence:
+                ledger.append_evidence(ev)
+            for f in findings:
+                ledger.append_finding(f)
 
     return AuditReport(rules=rules, evidence=evidence, findings=findings, verdicts=verdicts)
 

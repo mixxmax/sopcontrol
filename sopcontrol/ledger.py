@@ -1,7 +1,7 @@
 """追加式账本：Evidence 与 Finding 的 append-only JSONL 存储。
 
 内容寻址去重：同一现场重复审计产生相同记录 id，追加时跳过，账本幂等。
-不提供任何更新或删除方法——这是宪法属性，不是待补功能。
+日常路径只追加；役用清理用 replace_snapshot 整轮替换（非逐条篡改）。
 """
 from __future__ import annotations
 
@@ -42,6 +42,12 @@ class Ledger:
 
     def append_finding(self, finding: Finding) -> str:
         return self._append(finding, "finding_id")
+
+    def replace_snapshot(self, evidence: list[Evidence], findings: list[Finding]) -> None:
+        """用本轮审计结果整体替换账本，去掉因文件变更累积的 stale 噪音。"""
+        lines = [e.model_dump_json() for e in evidence]
+        lines.extend(f.model_dump_json() for f in findings)
+        self.path.write_text(("\n".join(lines) + "\n") if lines else "", encoding="utf-8")
 
     def _records(self) -> Iterator[dict]:
         if not self.path.exists():
