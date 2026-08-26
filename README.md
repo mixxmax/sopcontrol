@@ -26,7 +26,8 @@
 - **模型能力握手**：`sopctl capability-eval --model X --fixture strong|fragile|weak` 写入
   `.sopcontrol/model-profile.yaml`；`task open` 按 tier 调节修复预算与写入粒度（弱模型更严）。
 
-B0–B3 能力见 git 历史；检测 8 模式仍为 grep 智力（边界见 RESIDUAL_RISKS.md）。
+B0–B3 能力见 git 历史；检测 10 模式（Python 以 AST 为准，JS/TS/Go/Rust 为词法剥离后
+的标识符级代理，边界见 RESIDUAL_RISKS.md）。
 
 - `sopctl task open/accept/submit/verify/deliver` —— 任务契约 → 受控执行 → 完成门 → 交付
 - 完成门只信独立审计（E3）：required_rules 全部 pass 才 verified；fail → blocked（人工）；
@@ -37,8 +38,8 @@ B0–B3 能力见 git 历史；检测 8 模式仍为 grep 智力（边界见 RES
 - `sopctl intent show|clear` —— 查看/解除讨论锁定（14.1 场景1）
 - `sopctl repair open <finding_id>` —— 有界修复：断口 → 指纹绑定修复任务（重复开单拒绝、
   同指纹熔断转人工、预算两轮；修复智能在脊柱之外，人在契约内完成最小修复）
-
-检测器仍为 grep 智力（边界见 RESIDUAL_RISKS.md）。
+- `sopctl repair apply <task_id>` —— 自动修复者 v0：在 git worktree 隔离内调模型改动，
+  回主树时按 `allowed_writes` 过滤、硬排除 `.sopcontrol/`，契约外改动随隔离树销毁
 
 ## 快速开始（垂直骨干 0.1.0）
 

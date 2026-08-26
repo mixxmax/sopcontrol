@@ -72,6 +72,11 @@
 
 ## 状态（每次运行后更新）
 
+- 2026-08-26（独立复查）：换会话独立复查 cdca464→e1ad148 共 22 笔提交。147 测试全绿、
+  gate/doctor/self-test 通过、边界 1–8 未见违反（外仓仅投影 AGENTS/CLAUDE 两文件与
+  `.sopcontrol/`，业务代码未动）。查出并修正两处文档漂移（README 声称 8 模式实为 10；
+  R9 仍写"暂未实现 worktree 隔离"而 repair apply 已实现）——即本产品要抓的 docs-code
+  drift 家族，出现在自己身上。
 - 2026-08-26（立等 6–8）：JobsFlow 真仓控制面狗粮（用户授权）；Claude live 仍 401；
   worktree + repair apply 自动修复者 v0。
 - 2026-08-26（立等续 1–5）：schema verdict；import_graph；cli_rules；project check；打包预习。
