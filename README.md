@@ -70,6 +70,7 @@ sopctl rule add --id PUSH-001 \
   --source-ref docs/sop.md --source-type document \
   --consumer-marker require_preview
 sopctl rule accept PUSH-001 /path/to/project
+sopctl rule attest PUSH-001 /path/to/project --bypass-note "……"  # 条件5/7：绑定源文档版本 + 绕过分析
 sopctl audit /path/to/project            # 观察模式：只建议，不阻断
 sopctl audit /path/to/project --strict   # CI 门：存在 gap/fail 时退出码 1
 sopctl explain PUSH-001 /path/to/project # 谁消费、证据是什么、为什么

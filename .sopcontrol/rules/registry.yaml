@@ -13,6 +13,14 @@ rules:
   consumer_markers:
   - finding_write_only_state
   legacy_markers: []
+  state_markers: []
+  guard_ids: []
+  source_hash: e853c96ba9559ad4
+  bypass_note: 可绕过路径：(1) 消费者标记 finding_write_only_state 是标识符代理，把生产代码里的符号改名即可让本规则'看起来'仍满足而实际未接线（R1，待调用图检测收口）；(2)
+    把消费者只放在测试路径可被 is_test_path 识破，但测试 helper 转调生产符号仍会被记成生产命中（R2）。可接受的理由：改名同时要改回归测试与语料期望，成本高于收益，且
+    audit 会在下一轮把标记从生产路径消失暴露成 documented 缺口。
+  attested_by: agent
+  attested_at: '2026-08-26T12:36:51.640416Z'
   supersedes: []
   tags: []
   created_at: '2026-08-23T15:52:09.408604Z'
@@ -31,6 +39,12 @@ rules:
   consumer_markers:
   - finding_state_in_parallel_files
   legacy_markers: []
+  state_markers: []
+  guard_ids: []
+  source_hash: e853c96ba9559ad4
+  bypass_note: 可绕过路径与 SELF-001 同源：finding_state_in_parallel_files 为标识符代理，重命名或把消费者移入测试路径可制造假阳性通过（R1/R2）。此外该模式只看文件级并存状态，同一文件内的双写不在其视野内。可接受的理由：并存状态的跨域语料用例已覆盖两个领域，误报会被零发现用例惩罚；同文件双写留给后续模式而非本条规则。
+  attested_by: agent
+  attested_at: '2026-08-26T12:36:52.436227Z'
   supersedes: []
   tags: []
   created_at: '2026-08-23T15:52:09.826104Z'

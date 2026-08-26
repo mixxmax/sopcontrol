@@ -56,6 +56,16 @@ sopctl rule accept MY-001 .
 
 Candidate 可先 `sopctl intake .` 或 `sopctl intake . --conversation chat.txt`，**晋升必须显式 accept/add**。
 
+想让规则有机会拿到 `enforced`（手册 6.5 七条件）还要补一次确认书：
+
+```bash
+sopctl rule attest MY-001 . --bypass-note "可绕过路径：直接调用底层 API 跳过 my_gate_function；已由 legacy_markers 覆盖"
+```
+
+它绑定 `--source-ref` 所指仓内文件的当前 hash。那份文档以后改一个字节，下轮 audit 就自动
+撤回 `enforced` 并要求复核——条件7 不靠谁记得来撤。`--bypass-note` 必填且不可为空，因为
+「这条规则能被怎么绕过」是分析结论、推导不出来；机制只能保证你想过，保证不了你想对。
+
 ## 3. 日常循环
 
 ```bash

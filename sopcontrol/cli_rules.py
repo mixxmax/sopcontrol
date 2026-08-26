@@ -9,7 +9,7 @@ from .conflict import find_conflicts
 from .model import Modality, RiskLevel, Rule, RuleStatus, SourceRef
 from .registry import Registry
 
-__all__ = ["cmd_rule_add", "cmd_rule_list", "cmd_rule_accept"]
+__all__ = ["cmd_rule_add", "cmd_rule_list", "cmd_rule_accept", "cmd_rule_attest"]
 
 
 
@@ -78,5 +78,25 @@ def cmd_rule_accept(args) -> int:
         args.rule_id, RuleStatus.accepted
     )
     print(f"{rule.rule_id} 已接受（accepted_at={rule.accepted_at}）；下一步 sopctl audit 检查吸收")
+    return 0
+
+
+
+def cmd_rule_attest(args) -> int:
+    from .attest import AttestError, record_attestation
+
+    root = _project(args.path)
+    try:
+        rule = record_attestation(
+            root, args.rule_id, bypass_note=args.bypass_note, by=args.by
+        )
+    except AttestError as exc:
+        print(f"错误: {exc}", file=sys.stderr)
+        return 2
+    print(
+        f"{rule.rule_id} 已确认：绑定 {rule.source.ref} @ {rule.source_hash}"
+        f"（by={rule.attested_by}）"
+    )
+    print("源文档一改，下轮 audit 自动撤销 enforced；届时需复核规则并重新 attest")
     return 0
 

@@ -62,6 +62,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("path", nargs="?", default=".")
     p.set_defaults(func=cmd_rule_accept)
 
+    p = rule_sub.add_parser(
+        "attest", help="记录规则确认书：绑定源文档版本 + bypass 分析（手册 6.5 条件5/7）"
+    )
+    p.add_argument("rule_id")
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--bypass-note", required=True, help="这条规则能被怎么绕过、为什么可接受")
+    p.add_argument("--by", default="user", help="确认人（默认 user；agent 自签不算人工确认）")
+    p.set_defaults(func=cmd_rule_attest)
+
     p = sub.add_parser("audit", help="运行传感器→检测器→判定，产出吸收矩阵")
     p.add_argument("path", nargs="?", default=".")
     p.add_argument("--strict", action="store_true", help="存在 gap/fail 时退出码 1（CI 门）")

@@ -6,7 +6,7 @@
 2. 每条决策分支带的 rule_ids 必须是已声明的 guard，且没有分支凭空捏造 id。
 3. allow 也要留痕：只记 deny 的日志只能证明「拦截器会拒绝」，证不了「拦截器跑过」。
 4. trace 随日志本身衰减：陈旧日志不得续命成「本轮生效」。
-5. 条件6 满足与否必须写进 reason，且满足了也不许颁 enforced（条件7 尚无机制）。
+5. 条件6 满足与否必须写进 reason，且单靠它不足以颁 enforced（还需条件5/7 的确认书）。
 
 第 5 条是本机制最危险的地方：一旦允许「条件6 齐了就 enforced」，就会出现
 自称治理成立而实际没有的状态——手册 16.4 点名的头号风险。
@@ -205,7 +205,7 @@ def test_naive_timestamp_fails_closed(tmp_path):
     assert ev is not None and ev.is_expired() is True
 
 
-# ---- 5. 判定：条件6 写进 reason，但不颁 enforced ------------------------
+# ---- 5. 判定：条件6 写进 reason，但单靠它不够 --------------------------
 
 def test_fresh_trace_guards_ignores_low_level_evidence():
     """E3 冒充 trace 不算：条件6 只认运行时事实。"""
@@ -239,10 +239,10 @@ def test_declared_guard_without_trace_points_at_installation():
 
 
 def test_trace_satisfies_condition_six_but_enforced_still_withheld(tmp_path):
-    """条件6 齐备也不颁 enforced：条件7（文档-实现一致）尚无机制。
+    """条件6 齐备仍不够：没有确认书（条件5/7）就停在 wired_and_tested。
 
-    这是本机制最容易出错的一步。放行等于自称治理成立而实际没有——
-    手册 16.4 的头号风险。reason 必须诚实说明还差哪一条。
+    这是本机制最容易出错的一步。凑齐一条就放行等于自称治理成立而实际没有——
+    手册 16.4 的头号风险。reason 必须同时说明已得到哪条、还缺哪条。
     """
     append_event(tmp_path, tool="Bash", decision="deny", rule_ids=[GUARD_PUSH_GATE])
     trace = trace_evidence(tmp_path)

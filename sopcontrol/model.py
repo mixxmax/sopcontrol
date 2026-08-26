@@ -65,7 +65,7 @@ class Absorption(str, Enum):
     compiled_unwired = "compiled_unwired"  # 有编译产物但入口未消费（v0 保留枚举，尚无检测器）
     wired = "wired"                        # 有生产消费者，无回归证据
     wired_and_tested = "wired_and_tested"  # 消费者与回归证据齐备
-    enforced = "enforced"                  # 手册 6.5 七条件齐备（含 trace）；v0 不颁发
+    enforced = "enforced"                  # 手册 6.5 七条件齐备（trace + 确认书）
 
 
 class RiskLevel(str, Enum):
@@ -97,6 +97,13 @@ class Rule(BaseModel):
     # trace 证据——手册 6.5 条件6 要的是「本轮这条规则真的被加载并决策过」，
     # 而「哪个拦截器算这条规则的执行者」只有规则作者知道，判定器不许猜。
     guard_ids: list[str] = Field(default_factory=list)
+    # 确认书（手册 6.5 条件5+7，由 sopctl rule attest 写入，见 attest.py）。
+    # source_hash 是 attest 当时源文档的内容 hash：文档一改就与现值不符，
+    # 条件7 自动不成立，不需要谁记得来撤销 enforced。
+    source_hash: str = ""
+    bypass_note: str = ""            # 「这条规则能被怎么绕过」——分析结论，无法自动推导
+    attested_by: str = ""
+    attested_at: Optional[datetime] = None
     supersedes: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=utcnow)

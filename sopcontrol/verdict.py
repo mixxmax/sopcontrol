@@ -89,6 +89,56 @@ def fresh_trace_guards(evidence: list[Evidence]) -> dict[str, dict]:
     return guards
 
 
+def fresh_attestations(evidence: list[Evidence]) -> dict[str, dict]:
+    """按 rule_id 索引本轮的规则确认书事实（手册 6.5 条件5 与条件7）。
+
+    判定器不读注册表、不算文件 hash：一致性比对已由 attest 模块铸成证据，
+    这里只读结论。纯函数属性不变。
+    """
+    out: dict[str, dict] = {}
+    for ev in evidence:
+        if ev.kind != "rule.attestation":
+            continue
+        info = ev.observed or {}
+        rid = info.get("rule_id")
+        if rid:
+            out[str(rid)] = info
+    return out
+
+
+def _attest_note(rule: Rule, attestations: dict[str, dict]) -> tuple[bool, str, str]:
+    """(条件5+7是否满足, 写进 reason 的说明, 未满足时的下一步)。
+
+    与 _trace_note 同构：没做确认书的规则不算「未通过」，但拿不到 enforced。
+    源文档改了则明确不一致——这正是条件7 想拦的那件事，此时必须重做确认。
+    """
+    info = attestations.get(rule.rule_id)
+    if not info:
+        return (
+            False,
+            "规则无确认书，条件5（bypass 分析）与条件7（文档-实现版本一致）无据可查",
+            f"运行 sopctl rule attest {rule.rule_id} --bypass-note '...' 记录绕过分析并绑定源文档版本",
+        )
+    if not info.get("matches"):
+        detail = info.get("detail") or "源文档与确认时不一致"
+        return (
+            False,
+            f"确认书失效：{detail}（条件7 不满足）",
+            f"复核规则是否仍忠于 {info.get('source_ref')} 的新版本，然后重新 sopctl rule attest {rule.rule_id}",
+        )
+    if not info.get("bypass_note"):
+        return (
+            False,
+            "确认书缺少 bypass 分析文字（条件5 不满足）",
+            f"重新 sopctl rule attest {rule.rule_id} 并写明可绕过路径",
+        )
+    return (
+        True,
+        f"确认书有效：源文档 {info.get('source_ref')} 版本一致且已有 bypass 分析（条件5、7 满足）",
+        "",
+    )
+
+
 def _trace_note(rule: Rule, trace_guards: dict[str, dict]) -> tuple[bool, str, str]:
     """(条件6是否满足, 写进 reason 的说明, 未满足时的下一步)。
 
@@ -168,6 +218,8 @@ def evaluate_rule(rule: Rule, evidence: list[Evidence], findings: list[Finding])
         declared_command=declared_test_command(evidence),
         trace_guards=fresh_trace_guards(evidence),
         trace_ids=[e.evidence_id for e in evidence if e.kind == "harness.trace"],
+        attestations=fresh_attestations(evidence),
+        attest_ids=[e.evidence_id for e in evidence if e.kind == "rule.attestation"],
     )
 
     legacy = legacy_evidence(rule, evidence)
@@ -195,6 +247,8 @@ def _absorption_verdict(
     declared_command: str | None = None,
     trace_guards: dict[str, dict] | None = None,
     trace_ids: list[str] | None = None,
+    attestations: dict[str, dict] | None = None,
+    attest_ids: list[str] | None = None,
 ) -> Verdict:
     if rule.state_markers and not rule.consumer_markers:
         unread = [
@@ -280,20 +334,45 @@ def _absorption_verdict(
                 finding_ids=fids,
             )
         trace_ok, trace_say, trace_next = _trace_note(rule, trace_guards or {})
-        # 条件6 齐了也还不能颁 enforced：条件7（文档-实现版本一致）尚无机制，
-        # 现在放行等于自称治理成立而实际没有——手册 16.4 点名的头号风险。
+        attest_ok, attest_say, attest_next = _attest_note(rule, attestations or {})
+        base_ids = ids + [test_run.evidence_id] + (trace_ids or []) + (attest_ids or [])
+        # 七条件齐备才颁 enforced：1/2/3 由本函数走到这里已证（有稳定 id、有生产
+        # 消费者、有确定性结果），4 是测试路径证据，6 是 trace，5/7 是确认书。
+        # 少一条就停在 wired_and_tested——宁可等级偏低，不可自称治理成立（16.4）。
+        if trace_ok and attest_ok:
+            return Verdict(
+                rule_id=rule.rule_id,
+                status="pass",
+                absorption=Absorption.enforced,
+                reason=(
+                    f"手册 6.5 七条件齐备：消费者与回归证据齐备 [{markers}]，"
+                    f"本轮测试命令真实通过（E4，{observed.get('duration_seconds')}s）；"
+                    f"{trace_say}；{attest_say}"
+                ),
+                next_action="无",
+                evidence_ids=base_ids,
+                finding_ids=fids,
+            )
+        # 只报缺什么会让 reason 失真：已经挣到的条件也要写出来，否则一条已有
+        # 运行时 trace 的规则和一条什么都没有的规则读起来一样，改进无从被看见。
+        earned = [say for ok, say in ((trace_ok, trace_say), (attest_ok, attest_say)) if ok]
+        missing = []
+        if not trace_ok:
+            missing.append(f"条件6（{trace_say}）")
+        if not attest_ok:
+            missing.append(f"条件5/7（{attest_say}）")
         return Verdict(
             rule_id=rule.rule_id,
             status="pass",
             absorption=Absorption.wired_and_tested,
             reason=(
                 f"消费者与回归证据齐备 [{markers}]，且本轮测试命令真实通过"
-                f"（E4，{observed.get('duration_seconds')}s）；{trace_say}；"
-                + ("enforced 仅剩条件7（文档-实现一致性）未机制化"
-                   if trace_ok else "enforced 还需条件6 与条件7（手册 6.5 七条件）")
+                f"（E4，{observed.get('duration_seconds')}s）；"
+                + "".join(f"{s}；" for s in earned)
+                + f"enforced 还缺：{'；'.join(missing)}"
             ),
-            next_action=trace_next or "无",
-            evidence_ids=ids + [test_run.evidence_id] + (trace_ids or []),
+            next_action=trace_next or attest_next or "无",
+            evidence_ids=base_ids,
             finding_ids=fids,
         )
 

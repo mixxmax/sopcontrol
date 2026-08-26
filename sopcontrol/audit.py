@@ -7,6 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from .attest import attestation_evidence
 from .context import ProjectContext
 from .ledger import Ledger
 from .model import Evidence, Finding, Rule, Verdict
@@ -44,6 +45,10 @@ def run_audit(
     decl = declaration_evidence(root)
     if decl is not None:
         evidence.append(decl)
+    # 确认书的版本比对每轮重算（手册 6.5 条件5/7）：源文档改一个字节，上一轮的
+    # 「文档-实现一致」就不再算数。放在这里而不是传感器里，因为它要读注册表，
+    # 而传感器只看项目文件。
+    evidence.extend(attestation_evidence(root, rules))
     for sensor in sensors:
         evidence.extend(sensor.observe(ctx))
     # 过期证据不参与当轮判定（Haft 式衰减；v0 尚无传感器设置 valid_until，机制就位）
