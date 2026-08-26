@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .attest import attestation_evidence
+from .bootstrap import maturity_evidence
 from .context import ProjectContext
 from .ledger import Ledger
 from .model import Evidence, Finding, Rule, Verdict
@@ -49,6 +50,9 @@ def run_audit(
     # 「文档-实现一致」就不再算数。放在这里而不是传感器里，因为它要读注册表，
     # 而传感器只看项目文件。
     evidence.extend(attestation_evidence(root, rules))
+    # 成熟度（手册 7.3）与确认书同处一层：都要读 .sopcontrol 自身状态，传感器看不见。
+    # 每轮重算而不是缓存——装了钩子、声明了验收命令，下一轮就该反映出来。
+    evidence.append(maturity_evidence(root, rules))
     for sensor in sensors:
         evidence.extend(sensor.observe(ctx))
     # 过期证据不参与当轮判定（Haft 式衰减；v0 尚无传感器设置 valid_until，机制就位）

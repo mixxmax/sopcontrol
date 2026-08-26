@@ -30,7 +30,15 @@ def render_projection(
     tasks: list | None = None,
     *,
     refresh_hint: str = "sopctl project codex",
+    maturity=None,
 ) -> str:
+    """maturity 是 bootstrap.MaturityReport 或 None。
+
+    为什么要进投影：模型看不见控制器内部状态，只看这一节。项目站在 L1 还是 L4
+    决定了「没被拦下」意味着什么——L1 时门只会建议，此时把沉默当许可就是误读。
+    只写等级与下一级缺口两行；五项秩序明细留给 `sopctl bootstrap`，投影是
+    上下文预算，不是报告。
+    """
     lines = [
         SECTION_START,
         "# SOP Control 规则投影（自动生成，勿手改）",
@@ -39,6 +47,16 @@ def render_projection(
         "本节只是指导——真正的拦截在 git pre-push 钩子、CI gate、运行时 hook 与 `sopctl gate`。",
         "",
     ]
+    if maturity is not None:
+        lines.append(f"## 控制成熟度：{maturity.level} {maturity.level_desc}")
+        lines.append(
+            f"- 未达下一级 {maturity.next_rung}：{maturity.next_action}"
+            if maturity.next_rung
+            else "- 五项基本秩序全部有机制。"
+        )
+        lines.append("- 明细与依据: `sopctl bootstrap`。低于 L3 时门以建议为主，"
+                     "沉默不等于许可。")
+        lines.append("")
     hard = [r for r in rules if r.status in _ACTIVE and r.modality.value in _HARD]
     if hard:
         lines.append("## 必须遵守的规则")
@@ -81,6 +99,20 @@ def render_projection(
     return "\n".join(lines) + "\n"
 
 
+def _load_maturity(root: Path):
+    """读当前成熟度；读不出来就返回 None（投影退化为无该节，而不是报错）。
+
+    写入与校验必须走同一个函数，否则 check_projections 会把「写的时候带了等级、
+    校验的时候没带」永久报成 stale。
+    """
+    from .bootstrap import assess_maturity
+
+    try:
+        return assess_maturity(Path(root))
+    except OSError:
+        return None
+
+
 def merge_section(path: Path, section: str) -> Path:
     """把投影小节合并进目标文件：只替换自身标记区间。"""
     if path.exists():
@@ -100,19 +132,26 @@ def merge_section(path: Path, section: str) -> Path:
     return path
 
 
-def write_projection(root: Path, target: str = "codex") -> Path:
-    """按 harness 目标写入投影文件。"""
-    if target not in PROJECTION_TARGETS:
-        raise ValueError(f"未知投影目标 {target!r}；可选: {', '.join(PROJECTION_TARGETS)}")
-    filename, hint = PROJECTION_TARGETS[target]
+def _projection_inputs(root: Path):
+    """投影的全部输入源。写和查必须走同一条路径，否则 check 会报永久漂移。"""
     rules = Registry(Path(root) / ".sopcontrol" / "rules" / "registry.yaml").load()
+    from .bootstrap import assess_maturity
     from .task import TaskStore
 
     try:
         tasks = TaskStore(root).list_all()
     except Exception:
         tasks = None
-    section = render_projection(rules, tasks, refresh_hint=hint)
+    return rules, tasks, assess_maturity(root, rules)
+
+
+def write_projection(root: Path, target: str = "codex") -> Path:
+    """按 harness 目标写入投影文件。"""
+    if target not in PROJECTION_TARGETS:
+        raise ValueError(f"未知投影目标 {target!r}；可选: {', '.join(PROJECTION_TARGETS)}")
+    filename, hint = PROJECTION_TARGETS[target]
+    rules, tasks, maturity = _projection_inputs(root)
+    section = render_projection(rules, tasks, refresh_hint=hint, maturity=maturity)
     return merge_section(Path(root) / filename, section)
 
 
@@ -120,34 +159,21 @@ def write_all_projections(root: Path) -> list[Path]:
     """同步写入 AGENTS.md 与 CLAUDE.md（codex/opencode 共用 AGENTS.md，只写一次）。"""
     written: list[Path] = []
     seen: set[str] = set()
-    for name, (filename, hint) in PROJECTION_TARGETS.items():
+    rules, tasks, maturity = _projection_inputs(root)
+    section = render_projection(
+        rules, tasks, refresh_hint="sopctl project all", maturity=maturity
+    )
+    for _name, (filename, _hint) in PROJECTION_TARGETS.items():
         if filename in seen:
             continue
         seen.add(filename)
-        # 用通用刷新提示
-        rules = Registry(Path(root) / ".sopcontrol" / "rules" / "registry.yaml").load()
-        from .task import TaskStore
-
-        try:
-            tasks = TaskStore(root).list_all()
-        except Exception:
-            tasks = None
-        section = render_projection(
-            rules, tasks, refresh_hint="sopctl project all"
-        )
         written.append(merge_section(Path(root) / filename, section))
     return written
 
 
 def _expected_section(root: Path, refresh_hint: str) -> str:
-    rules = Registry(Path(root) / ".sopcontrol" / "rules" / "registry.yaml").load()
-    from .task import TaskStore
-
-    try:
-        tasks = TaskStore(root).list_all()
-    except Exception:
-        tasks = None
-    return render_projection(rules, tasks, refresh_hint=refresh_hint)
+    rules, tasks, maturity = _projection_inputs(root)
+    return render_projection(rules, tasks, refresh_hint=refresh_hint, maturity=maturity)
 
 
 def _disk_section(path: Path) -> str | None:

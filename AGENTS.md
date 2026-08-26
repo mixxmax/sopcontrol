@@ -4,6 +4,10 @@
 权威源: `.sopcontrol/rules/registry.yaml`；规则变更后运行 `sopctl project all` 刷新本节。
 本节只是指导——真正的拦截在 git pre-push 钩子、CI gate、运行时 hook 与 `sopctl gate`。
 
+## 控制成熟度：L2 Validate：schema/test 不通过则不宣称完成
+- 未达下一级 L3：补齐 ORDER-2：装了运行时拦截或 git 钩子，且至少一条生效规则声明了 guard_ids
+- 明细与依据: `sopctl bootstrap`。低于 L3 时门以建议为主，沉默不等于许可。
+
 ## 必须遵守的规则
 - [SELF-001][MUST] 检测模式 write_only_state 必须在生产代码接线并具备回归测试 （生产消费者标记: finding_write_only_state）
 - [SELF-002][MUST] 检测模式 state_in_parallel_files 必须在生产代码接线并具备回归测试 （生产消费者标记: finding_state_in_parallel_files）

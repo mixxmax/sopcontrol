@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .bootstrap import MATURITY_KIND, maturity_evidence
 from .context import file_hash
 from .model import Evidence
 from .testrun import TEST_RUN_KIND, source_digest
@@ -15,9 +16,19 @@ from .testrun import TEST_RUN_KIND, source_digest
 def is_input_stale(root: Path, ev: Evidence) -> bool:
     """subject 对应文件不存在或内容 hash ≠ input_hash → stale。
 
-    E4 测试运行证据例外：它的 input_hash 是被测源码集合的指纹，不是 subject
-    单文件的 hash，所以按源码集合重算。源码改一个字节，上一轮的绿就不再算数。
+    两类证据的 input_hash 不是「subject 单文件的 hash」，各自按自己的输入重算：
+
+    E4 测试运行：指纹是被测源码集合。源码改一个字节，上一轮的绿就不再算数。
+    成熟度结论：指纹是结论自身（subject 是 .sopcontrol/ 目录，没有单一文件可比）。
+        重算一遍当前状态，答案变了就 stale——装了钩子、声明了验收命令之后，
+        旧的「未达 L2」必须退场。注意不能只因 subject 不是文件就判 stale：
+        那会让派生结论一落盘即过期，永远进不了任何消费者的视野。
     """
+    if ev.kind == MATURITY_KIND:
+        try:
+            return maturity_evidence(root).input_hash != ev.input_hash
+        except OSError:
+            return True
     path = Path(root) / ev.subject
     if not path.is_file():
         return True

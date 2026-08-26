@@ -192,6 +192,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.set_defaults(func=cmd_intake)
 
+    p = sub.add_parser(
+        "bootstrap",
+        help="Bootstrap/Shadow（手册第7章）：五项秩序体检 + L0–L4 成熟度 + 最小项目宪法候选",
+    )
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument(
+        "--write", action="store_true",
+        help="把宪法候选落盘到 .sopcontrol/constitution.yaml（status=proposed，不进注册表）",
+    )
+    p.add_argument("--json", action="store_true", help="输出 JSON")
+    p.set_defaults(func=cmd_bootstrap)
+
     intent = sub.add_parser("intent", help="会话意图：查看/清除 discuss_only 锁定")
     intent_sub = intent.add_subparsers(dest="sub", required=True)
     p = intent_sub.add_parser("show", help="显示当前会话意图")

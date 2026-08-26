@@ -3,8 +3,6 @@ claude:
   terminal: git pre-push 钩子 + CI gate
   live_verified: false
   note: 本环境 claude API key 无效（401），协议契约由测试覆盖
-  live_probe_at: 2026-08-26 01:06
-  live_probe_note: 2026-08-26 再测：API 401 invalid key；适配器保留不修钥匙
 opencode:
   interception: 'runtime: .opencode/plugins tool.execute.before（抛错阻断）'
   terminal: git pre-push 钩子 + CI gate

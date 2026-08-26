@@ -85,6 +85,60 @@ def cmd_intake(args) -> int:
 
 
 
+def cmd_bootstrap(args) -> int:
+    """Bootstrap/Shadow（手册第 7 章）：报成熟度 + 扫最小项目宪法。
+
+    刻意只写 constitution.yaml，不碰 registry：7.2 明说这些候选「在初期是
+    proposed，不会自动成为永久硬门」。要变成门，得人看过再 sopctl rule add。
+    """
+    from .bootstrap import assess_maturity, save_constitution, scan_constitution
+
+    root = _project(args.path)
+    report = assess_maturity(root)
+
+    if getattr(args, "json", False):
+        payload = {
+            "level": report.level,
+            "level_desc": report.level_desc,
+            "next_rung": report.next_rung,
+            "next_action": report.next_action,
+            "reason": report.reason,
+            "orders": report.orders,
+            "constitution": scan_constitution(root),
+        }
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+
+    print(f"成熟度: {report.level} {report.level_desc}")
+    print(f"理由: {report.reason}")
+    print()
+    print("五项基本秩序（手册 7.1；影子模式，只报告不拦截）")
+    for o in report.orders:
+        mark = "✓" if o["satisfied"] else "✗"
+        print(f"  {mark} [{o['rung']}] {o['order_id']} {o['statement']}")
+        print(f"      {o['detail']}")
+    if report.next_rung:
+        print()
+        print(f"下一级 {report.next_rung}: {report.next_action}")
+
+    candidates = scan_constitution(root)
+    print()
+    print(f"最小项目宪法（手册 7.2）：{len(candidates)} 条候选，全部 status=proposed")
+    for c in candidates:
+        print(f"  {c['candidate_id']} [{c['category']}] {c['value'][:70]}")
+        print(f"      ← {c['source']}")
+
+    if getattr(args, "write", False):
+        path = save_constitution(root, candidates)
+        print()
+        print(f"已写入 {path}（proposed，不是硬门）")
+        print("晋升方式: sopctl rule add --statement '...'（逐条人工确认后进注册表）")
+    else:
+        print()
+        print("只读预览。加 --write 落盘到 .sopcontrol/constitution.yaml")
+    return 0
+
+
 def cmd_intent(args) -> int:
     """查看或清除会话意图（discuss_only 锁定）。"""
     from .intent import clear_session_intent, load_session_intent
