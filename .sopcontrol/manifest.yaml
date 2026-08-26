@@ -3,3 +3,4 @@
 controller_paths:
 - sopcontrol
 - plugins
+test_command: ".venv/bin/python -m pytest -q"

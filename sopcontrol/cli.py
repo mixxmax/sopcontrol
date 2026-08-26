@@ -90,6 +90,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("path", nargs="?", default=".")
     p.set_defaults(func=cmd_gate)
 
+    p = sub.add_parser(
+        "test-command",
+        help="声明项目测试命令（完成门据此真跑测试产出 E4 证据；不带 --set 则显示当前值）",
+    )
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--set", dest="set_command", help="设为该命令，如 '.venv/bin/python -m pytest -q'")
+    p.add_argument("--clear", action="store_true", help="清除声明（回到不产 E4 的 E3 语义）")
+    p.set_defaults(func=cmd_test_command)
+
     hook = sub.add_parser("hook", help="git 终态门钩子")
     hook_sub = hook.add_subparsers(dest="sub", required=True)
     p = hook_sub.add_parser("install", help="安装 pre-push 终态门")
@@ -291,4 +300,11 @@ def main(argv=None) -> int:
     except (RegistryError, RepairError) as exc:
         print(f"错误: {exc}", file=sys.stderr)
         return 2
+
+
+# 投影模板与 AGENTS.md 把 `python -m sopcontrol.cli gate` 写成 sopctl 不在 PATH 时的
+# 备用入口。没有这个 guard，该命令只是导入模块然后静默退出 0——门没跑却报告通过，
+# 正是手册 16.4 说的治理幻觉。缺它比没有门更糟。
+if __name__ == "__main__":  # pragma: no cover - 入口
+    sys.exit(main())
 

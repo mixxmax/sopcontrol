@@ -12,7 +12,8 @@ from .ledger import Ledger
 from .model import Evidence, Finding, Rule, Verdict
 from .registry import Registry
 from .task import TaskRecord, TransitionDecision, evaluate_transition
-from .verdict import evaluate_all
+from .testrun import declaration_evidence
+from .verdict import evaluate_all, latest_test_run
 
 
 @dataclass
@@ -29,12 +30,20 @@ def run_audit(
     detectors: list,
     persist: bool = False,
     compact: bool = False,
+    extra_evidence: list[Evidence] | None = None,
 ) -> AuditReport:
+    """extra_evidence：不由传感器产生、由调用方铸好送进来的证据（如完成门的 E4 测试运行）。"""
     root = Path(root)
     ctx = ProjectContext(root)
     rules = Registry(root / ".sopcontrol" / "rules" / "registry.yaml").load()
 
-    evidence: list[Evidence] = []
+    evidence: list[Evidence] = list(extra_evidence or [])
+    # 「项目声明了测试命令」这一事实每轮都送进判定器（零成本，不跑命令）：
+    # 没有它，判定器分不清「没声明」和「本轮没跑」，就会对已声明的项目给出
+    # 「去声明 test_command」这种错误建议。
+    decl = declaration_evidence(root)
+    if decl is not None:
+        evidence.append(decl)
     for sensor in sensors:
         evidence.extend(sensor.observe(ctx))
     # 过期证据不参与当轮判定（Haft 式衰减；v0 尚无传感器设置 valid_until，机制就位）
@@ -96,17 +105,39 @@ def dirty_controller_changes(root: Path, task: TaskRecord) -> list[str]:
     return touched if proc.stdout.strip() else []
 
 
+def collect_test_run(root: Path) -> list[Evidence]:
+    """完成门的 E4 步骤：项目声明了 test_command 就真跑一遍，否则返回空列表。
+
+    失败不抛异常——跑挂了要留成 passed=False 的证据让判定器降级，而不是让整个
+    完成门崩掉（崩掉会被 run_gate 的 fail-closed 兜成 block，看不出是测试没过）。
+    """
+    from .testrun import run_test_command
+
+    try:
+        ev = run_test_command(Path(root))
+    except Exception:  # noqa: BLE001 — 测试运行器本身出问题不该炸掉完成门
+        return []
+    return [ev] if ev is not None else []
+
+
 def run_task_verify(root: Path, sensors: list, detectors: list, task: TaskRecord) -> TransitionDecision:
-    """完成门编排：独立审计 → 规则判定 → 纯函数迁移决策。不信任务自报。"""
-    report = run_audit(root, sensors, detectors, persist=True)
+    """完成门编排：真跑测试(E4) → 独立审计 → 规则判定 → 纯函数迁移决策。不信任务自报。
+
+    E4 只在完成门产生：普通 audit 不该每次扫描都付一次测试时间（testrun.should_run
+    另有递归自锁，避免测试子进程里再套一层完成门）。
+    """
+    report = run_audit(root, sensors, detectors, persist=True, extra_evidence=collect_test_run(root))
     ledger = Ledger(Path(root) / ".sopcontrol" / "evidence" / "ledger.jsonl")
     tampered = ledger.path.exists() and not ledger.verify()
     controller_dirty = dirty_controller_changes(Path(root), task)
     verdicts = {v.rule_id: v.status for v in report.verdicts}
+    # 迁移门是纯函数，拿不到账本；E4 事实由这里从本轮证据里摘成普通数据递进去
+    ev = latest_test_run(report.evidence)
     return evaluate_transition(
         task, "verify",
         rule_verdicts=verdicts,
         known_rule_ids={r.rule_id for r in report.rules},
         ledger_tampered=tampered,
         controller_dirty=controller_dirty,
+        test_run=dict(ev.observed or {}) if ev is not None else None,
     )

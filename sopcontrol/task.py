@@ -155,6 +155,7 @@ def evaluate_transition(
     known_rule_ids: Optional[set[str]] = None,
     ledger_tampered: bool = False,
     controller_dirty: Optional[list[str]] = None,
+    test_run: Optional[dict] = None,
 ) -> TransitionDecision:
     """纯函数迁移门：无 I/O。所有拒绝必须给出理由与下一步（手册 11.2）。"""
     status = task.status
@@ -247,6 +248,28 @@ def evaluate_transition(
                 ),
                 next_action="先 git commit 这些变更建立基线，再重新 verify；或人工裁决",
             )
+        # E4 是本任务自己的事实，与规则判定独立：项目声明的测试命令跑挂了，
+        # 无论契约规则是否 pass 都不得放行。否则「没有规则消费 E4」就成了绕过口子。
+        if test_run is not None and not test_run.get("passed"):
+            cmd = test_run.get("command") or "test_command"
+            tail = str(test_run.get("output_tail") or "").strip().splitlines()
+            detail = (
+                f"测试未通过（E4 实测）：{cmd} 退出码 {test_run.get('exit_code')}"
+                + (f"；末行: {tail[-1][:80]}" if tail else "")
+            )
+            new_count = task.repair_count + 1
+            if new_count > task.contract.max_repairs:
+                return TransitionDecision(
+                    allowed=True, to_status=TaskStatus.failed_unverified, repair_count=new_count,
+                    reason=f"{detail}；修复预算耗尽（{task.repair_count} 轮未收敛）——转终态（14.1 场景11 熔断）",
+                    next_action="人工介入分析测试失败根因后另开任务",
+                )
+            return TransitionDecision(
+                allowed=True, to_status=TaskStatus.repair_required, repair_count=new_count,
+                reason=f"第 {new_count} 轮修复：{detail}",
+                next_action="修复测试失败后 task submit 重新提交（完成门不接受红着的测试）",
+            )
+
         verdicts = rule_verdicts or {}
         for rule_id in task.contract.required_rules:
             if rule_id not in verdicts:
@@ -277,9 +300,17 @@ def evaluate_transition(
                 reason=f"第 {new_count} 轮修复：规则 {', '.join(gaps)} 未达标（gap/unknown）",
                 next_action="最小范围修复后 task submit 重新提交（不重做整个任务）",
             )
+        # 证据等级如实报告：跑过测试就说 E4，没跑就说 E3。少报和多报一样是治理幻觉。
+        if test_run is not None:
+            basis = (
+                f"E4 实测：本轮执行 {test_run.get('command') or 'test_command'} 通过"
+                f"（{test_run.get('duration_seconds')}s）+ E3 独立审计"
+            )
+        else:
+            basis = "E3 独立审计；本轮未执行测试命令（项目未声明 test_command 或未走完成门）"
         return TransitionDecision(
             allowed=True, to_status=TaskStatus.verified, repair_count=task.repair_count,
-            reason=f"完成门通过：全部必需规则 [{', '.join(task.contract.required_rules)}] 判定 pass（E3 独立审计）",
+            reason=f"完成门通过：全部必需规则 [{', '.join(task.contract.required_rules)}] 判定 pass（{basis}）",
             next_action="task deliver 交付",
         )
 

@@ -88,6 +88,82 @@ def test_verifier_self_approval_guard():
     assert clean.to_status == TaskStatus.verified
 
 
+def _pending_task() -> TaskRecord:
+    task = make_task()
+    task.status = TaskStatus.verification_pending
+    return task
+
+
+def test_failing_test_run_blocks_even_when_rules_pass():
+    """E4 是独立事实：没有任何规则消费它，跑挂的测试也必须拦住完成门。"""
+    decision = evaluate_transition(
+        _pending_task(), "verify",
+        rule_verdicts={"R-1": "pass"},
+        test_run={
+            "command": ".venv/bin/pytest -q",
+            "passed": False,
+            "exit_code": 1,
+            "output_tail": "1 failed, 3 passed in 0.20s",
+        },
+    )
+    assert decision.to_status == TaskStatus.repair_required
+    assert decision.repair_count == 1
+    assert "E4" in decision.reason and ".venv/bin/pytest -q" in decision.reason
+    assert "1 failed" in decision.reason
+
+
+def test_failing_test_run_exhausts_repair_budget():
+    task = _pending_task()
+    task.repair_count = task.contract.max_repairs
+    decision = evaluate_transition(
+        task, "verify",
+        rule_verdicts={"R-1": "pass"},
+        test_run={"command": "pytest", "passed": False, "exit_code": 1},
+    )
+    assert decision.to_status == TaskStatus.failed_unverified
+    assert "预算耗尽" in decision.reason
+
+
+def test_passing_test_run_reports_e4_not_e3():
+    decision = evaluate_transition(
+        _pending_task(), "verify",
+        rule_verdicts={"R-1": "pass"},
+        test_run={
+            "command": ".venv/bin/pytest -q",
+            "passed": True,
+            "exit_code": 0,
+            "duration_seconds": 1.57,
+        },
+    )
+    assert decision.to_status == TaskStatus.verified
+    assert "E4" in decision.reason and ".venv/bin/pytest -q" in decision.reason
+    # E4 与 E3 并存是对的（实测 + 独立审计）；不许出现的是「本轮没跑测试」这句
+    assert "未执行测试命令" not in decision.reason
+
+
+def test_absent_test_run_stays_honest_about_e3():
+    """没跑测试就不许自称 E4——少报可以，虚报不行。"""
+    decision = evaluate_transition(
+        _pending_task(), "verify", rule_verdicts={"R-1": "pass"},
+    )
+    assert decision.to_status == TaskStatus.verified
+    assert "E3" in decision.reason
+    assert "E4" not in decision.reason
+
+
+def test_e4_gate_stays_pure(monkeypatch):
+    def no_open(*args, **kwargs):
+        raise AssertionError("迁移门不得做任何 I/O（宪法：纯函数）")
+
+    monkeypatch.setattr(builtins, "open", no_open)
+    decision = evaluate_transition(
+        _pending_task(), "verify",
+        rule_verdicts={"R-1": "pass"},
+        test_run={"command": "pytest", "passed": False, "exit_code": 2},
+    )
+    assert decision.to_status == TaskStatus.repair_required
+
+
 def test_path_normalization_rejects_escape_attempts():
     for bad in ["/etc/passwd", "../outside.py", "src/../../escape.py"]:
         assert path_allowed(bad, ["src"]) is False

@@ -44,6 +44,35 @@ def marker_hit(ev: Evidence, markers: list[str]) -> bool:
     return False
 
 
+def latest_test_run(evidence: list[Evidence]) -> Evidence | None:
+    """本轮的 E4 测试运行证据（手册 4.3）；没有就是 None，判定退回 E3 语义。
+
+    判定器不知道测试怎么跑的、也不去跑——它只读这条已铸好的证据，纯函数属性不变。
+    """
+    runs = [e for e in evidence if e.kind == "test_run.result" and e.level >= 4]
+    if not runs:
+        return None
+    # 同轮多条（例如多套命令）取最保守的：任一失败即视为未通过
+    for ev in runs:
+        if not (ev.observed or {}).get("passed"):
+            return ev
+    return runs[0]
+
+
+def declared_test_command(evidence: list[Evidence]) -> str | None:
+    """项目声明的测试命令（E3，由 audit 每轮铸入）；没有就是 None。
+
+    有它才能区分「没声明所以永不产 E4」和「声明了但本轮没跑」——两者的下一步
+    完全不同，混起来会对已声明的项目一直劝它去声明。
+    """
+    for ev in evidence:
+        if ev.kind == "test_run.declared":
+            cmd = (ev.observed or {}).get("command")
+            if cmd:
+                return str(cmd)
+    return None
+
+
 def consumer_evidence(rule: Rule, evidence: list[Evidence]) -> tuple[list[Evidence], list[Evidence]]:
     """返回 (生产路径消费者证据, 测试路径消费者证据)。语料/文档不算接线。"""
     prod, test = [], []
@@ -94,7 +123,12 @@ def evaluate_rule(rule: Rule, evidence: list[Evidence], findings: list[Finding])
         )
 
     prod, test = consumer_evidence(rule, evidence)
-    base = _absorption_verdict(rule, prod, test, fids, related_findings=related)
+    base = _absorption_verdict(
+        rule, prod, test, fids,
+        related_findings=related,
+        test_run=latest_test_run(evidence),
+        declared_command=declared_test_command(evidence),
+    )
 
     legacy = legacy_evidence(rule, evidence)
     if legacy:
@@ -117,6 +151,8 @@ def _absorption_verdict(
     fids: list[str],
     *,
     related_findings: list[Finding] | None = None,
+    test_run: Evidence | None = None,
+    declared_command: str | None = None,
 ) -> Verdict:
     if rule.state_markers and not rule.consumer_markers:
         unread = [
@@ -179,13 +215,67 @@ def _absorption_verdict(
             finding_ids=fids,
         )
 
+    ids = [e.evidence_id for e in prod + test]
+
+    # E4 闸门：测试路径引用了消费者标记只是 E3——证明有人写了名字，没证明它跑得过。
+    # 项目声明了 test_command 时，完成门会铸一条 E4 证据；此处按其退出码分流。
+    if test_run is not None:
+        observed = test_run.observed or {}
+        if not observed.get("passed"):
+            code = observed.get("exit_code")
+            cmd = observed.get("command", "?")
+            why = "超时未结束" if observed.get("timed_out") else f"退出码 {code}"
+            return Verdict(
+                rule_id=rule.rule_id,
+                status="gap",
+                absorption=Absorption.wired,
+                reason=(
+                    f"消费者与测试引用齐备 [{markers}]，但本轮测试命令未通过"
+                    f"（{cmd} → {why}）：回归证据不成立"
+                ),
+                next_action=f"修复失败的测试后重跑完成门；命令：{cmd}",
+                evidence_ids=ids + [test_run.evidence_id],
+                finding_ids=fids,
+            )
+        return Verdict(
+            rule_id=rule.rule_id,
+            status="pass",
+            absorption=Absorption.wired_and_tested,
+            reason=(
+                f"消费者与回归证据齐备 [{markers}]，且本轮测试命令真实通过"
+                f"（E4，{observed.get('duration_seconds')}s）；enforced 还需运行时 trace 证据（手册 6.5 七条件）"
+            ),
+            next_action="无",
+            evidence_ids=ids + [test_run.evidence_id],
+            finding_ids=fids,
+        )
+
+    # 没有 E4 有两种原因，给出的下一步完全不同：声明过（本轮是普通 audit，没跑）
+    # vs 没声明（这个项目永远不会产 E4）。混为一谈会对已声明的项目重复劝说去声明。
+    if declared_command is not None:
+        return Verdict(
+            rule_id=rule.rule_id,
+            status="pass",
+            absorption=Absorption.wired_and_tested,
+            reason=(
+                f"消费者与回归证据齐备 [{markers}]；本轮未执行测试命令（普通 audit 不跑），"
+                f"回归性仅由测试路径引用推断（E3）；enforced 还需要运行时 trace 证据（手册 6.5 七条件）"
+            ),
+            next_action=f"跑完成门（sopctl task verify）以真实执行 {declared_command} 换取 E4 证据",
+            evidence_ids=ids,
+            finding_ids=fids,
+        )
+
     return Verdict(
         rule_id=rule.rule_id,
         status="pass",
         absorption=Absorption.wired_and_tested,
-        reason=f"消费者与回归证据齐备 [{markers}]；enforced 还需要运行时 trace 证据（手册 6.5 七条件），v0 不颁发",
-        next_action="无",
-        evidence_ids=[e.evidence_id for e in prod + test],
+        reason=(
+            f"消费者与回归证据齐备 [{markers}]；项目未声明 test_command，永不产 E4，"
+            f"回归性仅由测试路径引用推断；enforced 还需要运行时 trace 证据（手册 6.5 七条件）"
+        ),
+        next_action="声明 .sopcontrol/manifest.yaml 的 test_command（sopctl test-command --set ...），让完成门用真实退出码换 E4 证据",
+        evidence_ids=ids,
         finding_ids=fids,
     )
 

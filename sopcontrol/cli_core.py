@@ -197,13 +197,65 @@ def cmd_init(args) -> int:
     (sc / "manifest.yaml").write_text(
         "# controller_paths：本仓库中构成控制器/验证器自身的路径前缀。\n"
         "# 列出的路径在本项目任务里被改动时，必须先提交基线才能通过完成门（手册 9.3）。\n"
-        "controller_paths: []\n",
+        "controller_paths: []\n"
+        "\n"
+        "# test_command：完成门会真的执行它，用退出码铸 E4 证据（手册 4.3）。\n"
+        "# 留空 = 不跑 = 判定只有 E3（「有人写了测试文件名」），吸收等级停在 wired。\n"
+        "# 用 sopctl test-command 设置，例如：sopctl test-command --set '.venv/bin/pytest -q'\n"
+        "test_command: ''\n",
         encoding="utf-8",
     )
     ident = ensure_identity(root)
     print(f"已在 {root} 初始化 .sopcontrol/（规则注册表 + 证据账本 + manifest + 身份）")
     print(f"  project_id: {ident.project_id}")
     print("下一步: sopctl rule add 登记规则，然后 sopctl audit")
+    return 0
+
+
+
+def cmd_test_command(args) -> int:
+    """查看/设置 manifest.test_command——完成门据此产 E4 证据（手册 4.3）。
+
+    存在的意义是让「E4 要不要跑」成为项目显式声明的数据：未声明就不跑，
+    判定退回 E3 语义并如实标注为未验证，而不是假装绿。
+    """
+    from .testrun import load_test_command
+
+    root = _project(args.path)
+    manifest = root / ".sopcontrol" / "manifest.yaml"
+    if not manifest.is_file():
+        print(f"错误: {manifest} 不存在；先运行 sopctl init", file=sys.stderr)
+        return 2
+
+    new = getattr(args, "set_command", None)
+    if getattr(args, "clear", False):
+        new = ""
+    if new is None:
+        current = load_test_command(root)
+        if current:
+            print(f"test_command: {current}")
+            print("完成门会执行它并铸 E4 证据；退出码非 0 → 吸收等级降回 wired")
+        else:
+            print("test_command: 未声明")
+            print("完成门不跑测试，吸收等级最高停在 wired（只有 E3：测试文件里出现过标记）")
+            print("设置: sopctl test-command --set '.venv/bin/pytest -q'")
+        return 0
+
+    lines = manifest.read_text(encoding="utf-8").splitlines()
+    rendered = "test_command: " + json.dumps(new, ensure_ascii=False)
+    for i, line in enumerate(lines):
+        if line.startswith("test_command:"):
+            lines[i] = rendered
+            break
+    else:
+        lines.append(rendered)
+    manifest.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    if new:
+        print(f"已设置 test_command: {new}")
+        print("下次 sopctl task verify 会真的执行它；通过才颁发 wired_and_tested")
+    else:
+        print("已清空 test_command：完成门不再跑测试，吸收等级停在 wired")
     return 0
 
 
