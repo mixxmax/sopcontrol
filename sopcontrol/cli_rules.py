@@ -41,6 +41,8 @@ def cmd_rule_add(args) -> int:
         risk=RiskLevel(args.risk),
         source=SourceRef(type=args.source_type, ref=args.source_ref),
         consumer_markers=list(args.consumer_marker or []),
+        legacy_markers=list(getattr(args, "legacy_marker", None) or []),
+        state_markers=list(getattr(args, "state_marker", None) or []),
         guard_ids=guard_ids,
         tags=list(args.tag or []),
     )

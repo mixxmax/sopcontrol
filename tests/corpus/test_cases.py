@@ -15,6 +15,17 @@ def test_corpus_is_nonempty():
     assert CASES, "语料为空——fail-on-empty 守卫（OPA --fail-on-empty 同款教训）"
 
 
+def test_case_ids_are_unique():
+    """重复 case_id 会虚报覆盖率：语料就是测试集，条数是「补了多少对照」的唯一度量。
+
+    重复项每条都会通过（同夹具同规则同期望），于是分母悄悄变大而判断力没变——
+    这正是 16.4 治理幻觉在语料层的形态：指标涨了，控制力没涨。
+    """
+    ids = [c["case_id"] for c in CASES]
+    dupes = sorted({i for i in ids if ids.count(i) > 1})
+    assert not dupes, f"重复的 case_id: {dupes}"
+
+
 def run_case(fixture: str):
     return run_audit(ROOT / "corpus" / "fixtures" / fixture, SENSORS, DETECTORS)
 

@@ -52,9 +52,37 @@ def test_write_only_state_detected(tmp_path):
 
 
 def test_state_in_parallel_files_detected(tmp_path):
+    # 两个生产文件都在改这份状态：一处首次绑定，一处原地改写 → 真源不明
     build(tmp_path, {
         "src/app.py": "order_state = {}\n",
-        "src/report.py": "from app import order_state\n",
+        "src/report.py": "from app import order_state\n\n\ndef mark(k):\n    order_state[k] = 'seen'\n",
+    })
+    assert patterns_for(tmp_path) == {("state_in_parallel_files", "gap")}
+
+
+def test_layered_state_not_flagged(tmp_path):
+    """一处定义、一处读取是规则要求的单一真源，不得当成双处维护。
+
+    过度告警和漏报同罪：把正确分层报成 gap，用户就会开始绕过控制器。
+    """
+    build(tmp_path, {
+        "src/app.py": "order_state = {}\n",
+        "src/report.py": "from app import order_state\n\n\ndef view():\n    return dict(order_state)\n",
+    })
+    assert patterns_for(tmp_path) == set()
+
+
+def test_mutation_counts_as_maintenance(tmp_path):
+    """列表/字典方法调用也是维护——`d.setdefault(...).append(...)` 在 AST 里是 Load。
+
+    少了这一条，双处维护只要不用裸赋值就能躲过检测（漏报方向的反例）。
+    """
+    build(tmp_path, {
+        "src/app.py": "order_state = {}\n",
+        "src/report.py": (
+            "from app import order_state\n\n\n"
+            "def note(k):\n    order_state.setdefault(k, []).append(1)\n"
+        ),
     })
     assert patterns_for(tmp_path) == {("state_in_parallel_files", "gap")}
 

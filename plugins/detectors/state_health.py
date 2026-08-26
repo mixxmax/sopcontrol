@@ -24,6 +24,33 @@ def _occurrences(rule: Rule, evidence: list[Evidence]) -> tuple[list[str], list[
     return prod, test
 
 
+def _write_sites(rule: Rule, evidence: list[Evidence]) -> set[str] | None:
+    """哪些生产文件真的**维护**这个状态；无 name_flows 证据时返回 None。
+
+    「出现在两个文件」和「在两个文件被维护」是两件事：在 models.py 定义、在
+    service.py 读取，正是规则要求的唯一状态源，报 gap 等于惩罚正确的分层。
+    维护 = 首次绑定（writes）或原地改写（mutates，如 `d["k"]=v`、`.append()`）；
+    后者少算就会漏掉 5.8 最常见的那种双处维护——共享字典被第二个模块直接改。
+    返回 None 表示该语言表面没有读写流证据（Go/Rust/TS 目前如此），此时退回
+    出现次数——宁可保留既有告警，也不假装自己看得见。
+    """
+    seen_flows = False
+    writers: set[str] = set()
+    for ev in evidence:
+        if ev.kind != "ast_scan.name_flows":
+            continue
+        obs = ev.observed or {}
+        if not isinstance(obs, dict):
+            continue
+        seen_flows = True
+        if not is_production_path(ev.subject):
+            continue
+        touched = list(obs.get("writes") or []) + list(obs.get("mutates") or [])
+        if any(str(w) in rule.state_markers for w in touched):
+            writers.add(ev.subject)
+    return writers if seen_flows else None
+
+
 def finding_write_only_state(rule_id: str, markers: str, prod0: str) -> Finding:
     """SELF-001 生产消费者：具名函数供 AST 引用（字符串 pattern_id 不算接线）。"""
     return Finding(
@@ -123,7 +150,13 @@ class StateHealthDetector:
             elif len(prod) == 1 and not test:
                 findings.append(finding_write_only_state(rule.rule_id, markers, prod[0]))
             elif len(prod) >= 2:
-                findings.append(finding_state_in_parallel_files(rule.rule_id, markers, prod))
+                # 有读写流证据时只认多处写入；没有时退回出现次数（见 _write_sites）
+                writers = _write_sites(rule, evidence)
+                maintained = sorted(writers) if writers is not None else prod
+                if len(maintained) >= 2:
+                    findings.append(
+                        finding_state_in_parallel_files(rule.rule_id, markers, maintained)
+                    )
 
             unread, write_files = _unread_schema_fields(rule, evidence)
             if unread:

@@ -1,0 +1,8 @@
+# controller_paths：本仓库中构成控制器/验证器自身的路径前缀。
+# 列出的路径在本项目任务里被改动时，必须先提交基线才能通过完成门（手册 9.3）。
+controller_paths: []
+
+# test_command：完成门会真的执行它，用退出码铸 E4 证据（手册 4.3）。
+# 留空 = 不跑 = 判定只有 E3（「有人写了测试文件名」），吸收等级停在 wired。
+# 用 sopctl test-command 设置，例如：sopctl test-command --set '.venv/bin/pytest -q'
+test_command: ''

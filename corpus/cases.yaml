@@ -54,7 +54,7 @@ cases:
   rule_id: ROLLBACK-001
   expected_verdict: {status: pass, absorption: wired_and_tested}
   expected_findings: []
-  ground_truth: 正向对照（CI 域）
+  ground_truth: 正向对照（CI 域）；兼作 comment_only_reference 负向对照第二域——rollback_guard 在 rollback.py 真调用，ops_notes.py 只在注释提及，跨文件散文提及不得判成断口（healthy-billing/BILL-001 是第一域）
 
 - case_id: CASE-008
   fixture: ci-deploy
@@ -134,7 +134,7 @@ cases:
   rule_id: GATE-001
   expected_verdict: {status: pass, absorption: wired_and_tested}
   expected_findings: []
-  ground_truth: TypeScript 表面正向对照——js_scan 识别真实 request_gate 引用（含测试）
+  ground_truth: TypeScript 表面正向对照——js_scan 识别真实 request_gate 引用（含测试）；兼作 comment_only_reference 负向对照（notes.ts 只在注释提及 request_gate，真引用在 gate.ts）——变异验证：去掉 referenced_anywhere 即报警
 
 - case_id: CASE-018
   fixture: web-gate
@@ -191,7 +191,7 @@ cases:
   rule_id: GO-001
   expected_verdict: {status: pass, absorption: wired_and_tested}
   expected_findings: []
-  ground_truth: Go 表面正向对照——go_scan 识别 AdmitRequest（含测试）
+  ground_truth: Go 表面正向对照——go_scan 识别 AdmitRequest（含测试）；兼作 comment_only_reference 负向对照（notes.go 只在注释提及 AdmitRequest）——变异验证：去掉 referenced_anywhere 即报警
 
 - case_id: CASE-025
   fixture: go-gateway
@@ -216,7 +216,7 @@ cases:
   rule_id: RS-001
   expected_verdict: {status: pass, absorption: wired_and_tested}
   expected_findings: []
-  ground_truth: Rust 表面正向对照——rust_scan 识别 admit_request（含测试）
+  ground_truth: Rust 表面正向对照——rust_scan 识别 admit_request（含测试）；兼作 comment_only_reference 负向对照（notes.rs 只在注释提及 admit_request）——变异验证：去掉 referenced_anywhere 即报警
 
 - case_id: CASE-028
   fixture: rust-gate
@@ -253,3 +253,70 @@ cases:
   - {pattern_id: write_only_state, severity: info}
   - {pattern_id: schema_field_unread, severity: gap}
   ground_truth: schema_field_unread 第二领域（CI）；verdict gap
+
+# 以下 healthy-billing 全部是负向对照（零 finding）：每条都是检测模式「做对了」的版本。
+# 过度告警与漏报对称——在正确代码上报警会让人开始绕过控制器，最后连真告警也没人看。
+- case_id: CASE-032
+  fixture: healthy-billing
+  rule_id: BILL-001
+  expected_verdict: {status: pass, absorption: wired_and_tested}
+  expected_findings: []
+  ground_truth: comment_only_reference 负向对照——charge_gate 在 service.py 真调用，dashboard.py 只在注释提及；注释提及本身不是罪
+
+- case_id: CASE-033
+  fixture: healthy-billing
+  rule_id: BILL-002
+  expected_verdict: {status: pass, absorption: wired_and_tested}
+  expected_findings: []
+  ground_truth: documented_rule_no_consumer / documented_rule_untested 负向对照——生产调用与回归断言齐备
+
+- case_id: CASE-034
+  fixture: healthy-billing
+  rule_id: BILL-003
+  expected_verdict: {status: pass, absorption: wired_and_tested}
+  expected_findings: []
+  ground_truth: state_in_parallel_files 负向对照——invoice_state 在 billing.py 定义并写入、reporting.py 只读；正确分层不得判成双处维护
+
+- case_id: CASE-035
+  fixture: healthy-billing
+  rule_id: BILL-004
+  expected_verdict: {status: pass, absorption: wired_and_tested}
+  expected_findings: []
+  ground_truth: write_only_state / schema_field_unread 负向对照——audit_field 生产写入、下游读取，读写流闭合
+
+- case_id: CASE-036
+  fixture: healthy-billing
+  rule_id: BILL-005
+  expected_verdict: {status: pass, absorption: wired_and_tested}
+  expected_findings: []
+  ground_truth: legacy_entry_alive 负向对照——旧入口被测试以真实 import 引用（不是 hasattr 字符串，否则本条是空对照）；把这种引用判成旧链存活等于惩罚拆除者
+
+# 负向对照的第二领域（边界4：跨域成立才算成立）。夹具选 ci-deploy 而非再造新域，
+# 是因为对照必须长在有真告警的域里：混在一堆真断口中间还能保持沉默，才证明沉默
+# 不是因为这个夹具太干净。两条都做过变异验证——退回修复前的判定逻辑即报警。
+- case_id: CASE-037
+  fixture: ci-deploy
+  rule_id: DEPLOY-012
+  expected_verdict: {status: unknown, absorption: null}
+  expected_findings: []
+  ground_truth: state_in_parallel_files 负向对照第二域——channel_registry 在 registry.py 写、routing.py 只读；只数「出现在几个文件」的检测器会在这里误报（healthy-billing/BILL-003 是第一域）
+
+# legacy_entry_alive 与「读写闭合」的负向对照第二域，同样长在有真断口的 shop-checkout：
+# 隔壁 reporting.py 有双处维护、test_receipt.py 有测试 helper，检测器在这些真告警中间
+# 仍对 settlement.py 保持沉默，沉默才是判断而非夹具干净。
+# CASE-036 起初是空的：旧符号只写在 hasattr 的字符串里，而字符串本来就不构成引用，
+# 沉默只证明「没找到」。两处夹具都已改成 ImportFrom 真引用，变异验证（取消
+# legacy_evidence 的生产路径过滤）现在两域都报警。
+- case_id: CASE-038
+  fixture: shop-checkout
+  rule_id: REFUND-010
+  expected_verdict: {status: pass, absorption: wired_and_tested}
+  expected_findings: []
+  ground_truth: legacy_entry_alive 负向对照第二域——direct_settle 已从生产拆除，只被「断言其不存在」的测试真实 import；判成旧链存活等于惩罚拆除者（healthy-billing/BILL-005 是第一域）
+
+- case_id: CASE-039
+  fixture: shop-checkout
+  rule_id: REFUND-011
+  expected_verdict: {status: unknown, absorption: null}
+  expected_findings: []
+  ground_truth: schema_field_unread 负向对照第二域——settle_audit 在 settlement.py 写、settlement_view.py 读，跨文件读写闭合；只在写入者本文件找读取的检测器会在这里误报（healthy-billing/BILL-004 是第一域）

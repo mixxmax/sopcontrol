@@ -9,8 +9,20 @@ rules:
   source:
     type: document
     ref: docs/sop.md
+    observed_at: null
   consumer_markers:
   - confirm_refund
+  legacy_markers: []
+  state_markers: []
+  guard_ids: []
+  source_hash: ''
+  bypass_note: ''
+  attested_by: ''
+  attested_at: null
+  supersedes: []
+  tags: []
+  created_at: '2026-08-26T14:19:28.325826Z'
+  accepted_at: null
 - rule_id: REFUND-002
   statement: 大额退款必须携带 risk_review 审核结果
   modality: MUST
@@ -21,8 +33,20 @@ rules:
   source:
     type: document
     ref: docs/sop.md
+    observed_at: null
   consumer_markers:
   - risk_review
+  legacy_markers: []
+  state_markers: []
+  guard_ids: []
+  source_hash: ''
+  bypass_note: ''
+  attested_by: ''
+  attested_at: null
+  supersedes: []
+  tags: []
+  created_at: '2026-08-26T14:19:28.325839Z'
+  accepted_at: null
 - rule_id: REFUND-003
   statement: 退款异常必须当日上报值班负责人
   modality: MUST
@@ -33,6 +57,19 @@ rules:
   source:
     type: document
     ref: docs/sop.md
+    observed_at: null
+  consumer_markers: []
+  legacy_markers: []
+  state_markers: []
+  guard_ids: []
+  source_hash: ''
+  bypass_note: ''
+  attested_by: ''
+  attested_at: null
+  supersedes: []
+  tags: []
+  created_at: '2026-08-26T14:19:28.325845Z'
+  accepted_at: null
 - rule_id: REFUND-004
   statement: 退款流水必须写入 audit_log
   modality: MUST
@@ -43,8 +80,20 @@ rules:
   source:
     type: document
     ref: docs/sop.md
+    observed_at: null
   consumer_markers:
   - audit_log
+  legacy_markers: []
+  state_markers: []
+  guard_ids: []
+  source_hash: ''
+  bypass_note: ''
+  attested_by: ''
+  attested_at: null
+  supersedes: []
+  tags: []
+  created_at: '2026-08-26T14:19:28.325851Z'
+  accepted_at: null
 - rule_id: REFUND-005
   statement: 退款状态必须以唯一状态源维护
   modality: MUST
@@ -55,8 +104,20 @@ rules:
   source:
     type: document
     ref: docs/sop.md
+    observed_at: null
+  consumer_markers: []
+  legacy_markers: []
   state_markers:
   - refund_state
+  guard_ids: []
+  source_hash: ''
+  bypass_note: ''
+  attested_by: ''
+  attested_at: null
+  supersedes: []
+  tags: []
+  created_at: '2026-08-26T14:19:28.325857Z'
+  accepted_at: null
 - rule_id: REFUND-006
   statement: 对账状态必须单一真源，不得双处维护
   modality: MUST
@@ -67,8 +128,20 @@ rules:
   source:
     type: document
     ref: docs/sop.md
+    observed_at: null
+  consumer_markers: []
+  legacy_markers: []
   state_markers:
   - ledger_status
+  guard_ids: []
+  source_hash: ''
+  bypass_note: ''
+  attested_by: ''
+  attested_at: null
+  supersedes: []
+  tags: []
+  created_at: '2026-08-26T14:19:28.325862Z'
+  accepted_at: null
 - rule_id: REFUND-007
   statement: 每日摘要必须落盘归档
   modality: MUST
@@ -79,8 +152,20 @@ rules:
   source:
     type: document
     ref: docs/sop.md
+    observed_at: null
+  consumer_markers: []
+  legacy_markers: []
   state_markers:
   - daily_digest
+  guard_ids: []
+  source_hash: ''
+  bypass_note: ''
+  attested_by: ''
+  attested_at: null
+  supersedes: []
+  tags: []
+  created_at: '2026-08-26T14:19:28.325868Z'
+  accepted_at: null
 - rule_id: REFUND-008
   statement: 退款凭证必须经 receipt_guard 校验
   modality: MUST
@@ -91,8 +176,20 @@ rules:
   source:
     type: document
     ref: docs/sop.md
+    observed_at: null
   consumer_markers:
   - receipt_guard
+  legacy_markers: []
+  state_markers: []
+  guard_ids: []
+  source_hash: ''
+  bypass_note: ''
+  attested_by: ''
+  attested_at: null
+  supersedes: []
+  tags: []
+  created_at: '2026-08-26T14:19:28.325874Z'
+  accepted_at: null
 - rule_id: REFUND-009
   statement: 报表 schema_extra_field 必须被下游读取
   modality: MUST
@@ -103,5 +200,66 @@ rules:
   source:
     type: document
     ref: docs/sop.md
+    observed_at: null
+  consumer_markers: []
+  legacy_markers: []
   state_markers:
   - schema_extra_field
+  guard_ids: []
+  source_hash: ''
+  bypass_note: ''
+  attested_by: ''
+  attested_at: null
+  supersedes: []
+  tags: []
+  created_at: '2026-08-26T14:19:28.325879Z'
+  accepted_at: null
+- rule_id: REFUND-010
+  statement: 结算必须经 settle_gate，旧直结入口必须已拆除
+  modality: MUST
+  status: accepted
+  scope: project
+  owner: user
+  risk: medium
+  source:
+    type: document
+    ref: docs/sop.md
+    observed_at: null
+  consumer_markers:
+  - settle_gate
+  legacy_markers:
+  - direct_settle
+  state_markers: []
+  guard_ids: []
+  source_hash: ''
+  bypass_note: ''
+  attested_by: ''
+  attested_at: null
+  supersedes: []
+  tags: []
+  created_at: '2026-08-26T14:19:28.309260Z'
+  accepted_at: null
+- rule_id: REFUND-011
+  statement: 结算审计字段 settle_audit 必须被下游读取
+  modality: MUST
+  status: accepted
+  scope: project
+  owner: user
+  risk: medium
+  source:
+    type: document
+    ref: docs/sop.md
+    observed_at: null
+  consumer_markers: []
+  legacy_markers: []
+  state_markers:
+  - settle_audit
+  guard_ids: []
+  source_hash: ''
+  bypass_note: ''
+  attested_by: ''
+  attested_at: null
+  supersedes: []
+  tags: []
+  created_at: '2026-08-26T14:19:28.648649Z'
+  accepted_at: null

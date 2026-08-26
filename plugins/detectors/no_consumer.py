@@ -21,14 +21,21 @@ class NoConsumerDetector:
     def detect(self, rules: list[Rule], evidence: list[Evidence]) -> list[Finding]:
         findings: list[Finding] = []
         id_evidence = [e for e in evidence if e.kind == "code_scan.identifiers"]
-        structured_by_subject = {
-            e.subject: e
-            for e in evidence
+        structured = [
+            e for e in evidence
             if e.kind in (
                 "ast_scan.references", "js_scan.references",
                 "go_scan.references", "rust_scan.references",
             )
-        }
+        ]
+        structured_by_subject = {e.subject: e for e in structured}
+        # 全仓真实引用过的名字。comment_only_reference 的语义是「只存在于注释」，
+        # 而注释所在文件本身并不构成范围：在 gate.py 里真调用、在 notes.py 里
+        # 顺手提一句，是文档习惯，不是断口。少了这个集合就会惩罚写注释的人。
+        referenced_anywhere: set[str] = set()
+        for ev in structured:
+            for name in ev.observed or []:
+                referenced_anywhere.add(str(name))
         for rule in rules:
             if rule.status not in GOVERNANCE_ACTIVE or rule.modality not in HARD_MODALITIES:
                 continue
@@ -79,7 +86,14 @@ class NoConsumerDetector:
                         evidence_ids=[e.evidence_id for e in prod],
                     )
                 )
-            # 注释/字符串里的标记不算消费者：grep 命中但结构化扫描未命中
+            # 注释/字符串里的标记不算消费者：grep 命中但结构化扫描未命中。
+            # 但「某文件的注释提到它」不等于「它只存在于注释」——真引用在别处时，
+            # 文档性提及是好习惯，报 gap 就是惩罚写注释的人（过度告警同样是错报）。
+            referenced_anywhere = {
+                name
+                for ev in structured_by_subject.values()
+                for name in (ev.observed or [])
+            }
             for grep_ev in id_evidence:
                 if not grep_ev.subject.endswith(
                     (".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".go", ".rs")
@@ -91,7 +105,9 @@ class NoConsumerDetector:
                 struct_names = struct_ev.observed if struct_ev else []
                 ghost = [
                     m for m in rule.consumer_markers
-                    if m in (grep_ev.observed or []) and m not in (struct_names or [])
+                    if m in (grep_ev.observed or [])
+                    and m not in (struct_names or [])
+                    and m not in referenced_anywhere
                 ]
                 if ghost:
                     findings.append(

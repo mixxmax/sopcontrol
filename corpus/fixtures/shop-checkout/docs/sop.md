@@ -4,3 +4,5 @@
 - 大额退款必须携带 risk_review 审核结果。
 - 退款流水必须写入 audit_log。
 - 退款凭证必须经 receipt_guard 校验。
+- 结算必须经 settle_gate，旧直结入口必须已拆除。
+- 结算审计字段 settle_audit 必须被下游读取。

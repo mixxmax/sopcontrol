@@ -1,0 +1,124 @@
+rules:
+- rule_id: BILL-001
+  statement: 所有扣费必须经 charge_gate
+  modality: MUST
+  status: accepted
+  scope: billing.charge
+  owner: user
+  risk: medium
+  source:
+    type: document
+    ref: docs/sop.md
+    observed_at: null
+  consumer_markers:
+  - charge_gate
+  legacy_markers: []
+  state_markers: []
+  guard_ids: []
+  source_hash: ''
+  bypass_note: ''
+  attested_by: ''
+  attested_at: null
+  supersedes: []
+  tags: []
+  created_at: '2026-08-26T13:46:27.012427Z'
+  accepted_at: null
+- rule_id: BILL-002
+  statement: 凭证必须经 receipt_check 校验
+  modality: MUST
+  status: accepted
+  scope: billing.receipt
+  owner: user
+  risk: medium
+  source:
+    type: document
+    ref: docs/sop.md
+    observed_at: null
+  consumer_markers:
+  - receipt_check
+  legacy_markers: []
+  state_markers: []
+  guard_ids: []
+  source_hash: ''
+  bypass_note: ''
+  attested_by: ''
+  attested_at: null
+  supersedes: []
+  tags: []
+  created_at: '2026-08-26T13:46:27.360119Z'
+  accepted_at: null
+- rule_id: BILL-003
+  statement: 发票状态必须单一真源
+  modality: MUST
+  status: accepted
+  scope: billing.state
+  owner: user
+  risk: medium
+  source:
+    type: document
+    ref: docs/sop.md
+    observed_at: null
+  consumer_markers:
+  - charge_gate
+  legacy_markers: []
+  state_markers:
+  - invoice_state
+  guard_ids: []
+  source_hash: ''
+  bypass_note: ''
+  attested_by: ''
+  attested_at: null
+  supersedes: []
+  tags: []
+  created_at: '2026-08-26T13:46:27.694515Z'
+  accepted_at: null
+- rule_id: BILL-004
+  statement: 审计字段必须被下游读取
+  modality: MUST
+  status: accepted
+  scope: billing.audit
+  owner: user
+  risk: medium
+  source:
+    type: document
+    ref: docs/sop.md
+    observed_at: null
+  consumer_markers:
+  - record_audit
+  legacy_markers: []
+  state_markers:
+  - audit_field
+  guard_ids: []
+  source_hash: ''
+  bypass_note: ''
+  attested_by: ''
+  attested_at: null
+  supersedes: []
+  tags: []
+  created_at: '2026-08-26T13:46:27.992431Z'
+  accepted_at: null
+- rule_id: BILL-005
+  statement: 扣费只能经 charge_gate，旧直写入口必须已拆除
+  modality: MUST
+  status: accepted
+  scope: billing.legacy
+  owner: product
+  risk: high
+  source:
+    type: document
+    ref: docs/sop.md
+    observed_at: null
+  consumer_markers:
+  - charge_gate
+  legacy_markers:
+  - legacy_direct_charge
+  state_markers: []
+  guard_ids: []
+  source_hash: ''
+  bypass_note: ''
+  attested_by: ''
+  attested_at: null
+  supersedes: []
+  tags: []
+  created_at: '2026-08-26T13:47:27.121323Z'
+  accepted_at: null
