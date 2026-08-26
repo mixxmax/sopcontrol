@@ -17,6 +17,7 @@ from .worktree import (
     create_repair_worktree,
     list_changed_files,
     remove_repair_worktree,
+    resolves_inside,
     worktree_path,
 )
 
@@ -133,10 +134,12 @@ def apply_repair(
             raise RepairError(f"暂不支持 harness={harness!r}（当前：opencode）")
 
         changed = list_changed_files(work)
+        # 三层：契约范围（纯字符串）→ 控制器目录（大小写不敏感）→ symlink 解析后仍在树内。
+        # 前两层拦不住 `src/link -> /etc` 这类逃逸，最后一层必须碰文件系统，只能在这里做。
         allowed = [
             p for p in changed
             if path_allowed(p, task.contract.allowed_writes)
-            and not p.startswith(".sopcontrol/")
+            and resolves_inside(work, p)
         ]
         rejected = [p for p in changed if p not in allowed]
         copied = copy_paths_to_main(work, root, allowed)

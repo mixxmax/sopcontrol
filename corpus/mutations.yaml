@@ -1,0 +1,93 @@
+# 变异验证声明：每条负向对照必须能被证伪。
+#
+# 负向对照（expected_findings: []）断言的是「检测器在正确代码上保持沉默」。但沉默有
+# 两种来源：一种是判断——检测器看懂了这段代码是对的；另一种是无能——检测器压根没看
+# 见这里。两者在测试输出里长得一模一样，都是绿的。
+#
+# 区分办法只有一个：把当初那个修复退回去，看沉默会不会变成告警。以前这句话写在
+# cases.yaml 的 ground_truth 散文里（「变异验证：去掉 referenced_anywhere 即报警」），
+# 而散文没有人在跑——指标涨了，控制力没涨，正是 16.4 治理幻觉在语料层的形态。
+#
+# 这个文件把那句散文变成断言：每条 mutation 描述一次退回，must_fire 列出退回后**必须**
+# 报警的对照。变异器实现在 tests/corpus/mutations.py（要改模块属性，只能是代码）；
+# tests/corpus/test_mutations.py 逐条执行，并守卫「每条负向对照都被至少一次变异覆盖」。
+mutations:
+- mutation_id: MUT-001
+  fix: is_test_path 识别同置测试命名（Go 的 foo_test.go、JS/TS 的 foo.test.ts）
+  revert: 清空 _COLOCATED_TEST_SUFFIXES——只认 tests/ 目录
+  breaks: 同置的回归文件被读成生产文件，于是「有测试」被判成无回归证据
+  must_fire:
+  - {case_id: CASE-042, pattern_id: documented_rule_untested}
+  - {case_id: CASE-043, pattern_id: documented_rule_untested}
+
+- mutation_id: MUT-002
+  fix: 只把根级 spec/ 当测试根；嵌套 src/spec/ 是生产代码（OpenAPI / JSON Schema 一类）
+  revert: 把 spec 放回 _TEST_DIR_HINTS——任意深度的 spec/ 都算测试
+  breaks: 唯一的生产消费者被判没，于是「接了线也测了」被读成只有测试 helper
+  must_fire:
+  - {case_id: CASE-040, pattern_id: test_helper_only}
+  - {case_id: CASE-041, pattern_id: test_helper_only}
+
+- mutation_id: MUT-003
+  fix: comment_only_reference 以全仓真实引用集合为范围（referenced_anywhere）
+  revert: 让 referenced_anywhere 返回空集——只看当前文件有没有结构化引用
+  breaks: 真引用在别处、本文件只在注释提一句的写法被判成假消费者，惩罚写注释的人
+  must_fire:
+  - {case_id: CASE-007, pattern_id: comment_only_reference}
+  - {case_id: CASE-017, pattern_id: comment_only_reference}
+  - {case_id: CASE-024, pattern_id: comment_only_reference}
+  - {case_id: CASE-027, pattern_id: comment_only_reference}
+  - {case_id: CASE-032, pattern_id: comment_only_reference}
+
+- mutation_id: MUT-004
+  fix: 只声明 state_markers 的规则交给 state_health，不在 no_consumer 判未声明消费者
+  revert: 取消该豁免（state_rule_handled_elsewhere 恒假）
+  breaks: 每条状态类规则都额外挨一条 consumer_markers_undefined，等于要求为状态规则编造入口名
+  must_fire:
+  - {case_id: CASE-037, pattern_id: consumer_markers_undefined}
+  - {case_id: CASE-039, pattern_id: consumer_markers_undefined}
+
+- mutation_id: MUT-005
+  fix: legacy_evidence 只认生产路径上的旧入口（测试/语料里出现不算绕过）
+  revert: 去掉生产路径过滤——任何文件提到旧标记都算旧链存活
+  breaks: 「断言旧符号已不存在」的拆除测试被判成旧链存活，惩罚拆除者
+  must_fire:
+  - {case_id: CASE-036, pattern_id: legacy_entry_alive}
+  - {case_id: CASE-038, pattern_id: legacy_entry_alive}
+
+- mutation_id: MUT-006
+  fix: state_in_parallel_files 只认多处**写入**（_write_sites 读 name_flows）
+  revert: 让 _write_sites 恒返回 None——退回只数「出现在几个文件」
+  breaks: 一处定义写入、一处只读的正确分层被判成双处维护，真源不明
+  must_fire:
+  - {case_id: CASE-034, pattern_id: state_in_parallel_files}
+  - {case_id: CASE-035, pattern_id: state_in_parallel_files}
+  - {case_id: CASE-037, pattern_id: state_in_parallel_files}
+
+- mutation_id: MUT-007
+  fix: schema_field_unread 的读取范围是全仓生产+测试路径，不限写入者本文件
+  revert: 只在写入该字段的文件内部找读取
+  breaks: 跨文件的读写闭合（A 写 B 读）被判成字段无人读取
+  # CASE-035（healthy-billing/audit_field）不在此列：它的写侧同文件也读该字段，
+  # 因此「读取只在本文件找」对它无害——它守的是别的东西（写出即有人读），
+  # 不是跨文件范围。把它写进来会得到一条永远沉默的 must_fire，正是本文件要防的假绿。
+  must_fire:
+  - {case_id: CASE-039, pattern_id: schema_field_unread}
+  - {case_id: CASE-044, pattern_id: schema_field_unread}
+
+- mutation_id: MUT-008
+  fix: is_test_path 认 tests/ 目录，回归证据与生产接线分开计
+  revert: 清空 _TEST_DIR_HINTS——测试目录不再被识别
+  breaks: 全部回归证据消失，正向对照退化成「接了线但没测」
+  must_fire:
+  - {case_id: CASE-002, pattern_id: documented_rule_untested}
+  - {case_id: CASE-033, pattern_id: documented_rule_untested}
+
+- mutation_id: MUT-009
+  fix: module_names 按 stem ∪ 父目录名对齐（传感器只记裸顶层名，包内文件靠包名认出）
+  revert: 只返回 {stem}——包内生产文件在 import 闭包里对不上名字
+  breaks: 正确 import 了生产实现的回归测试被判成到不了消费者，误报可达性缺口
+  # 这条守的是过度告警方向：reachability 一旦把对的代码判成不可达，用户就会绕开控制器。
+  must_fire:
+  - {case_id: CASE-040, pattern_id: test_cannot_reach_consumer}
+  - {case_id: CASE-041, pattern_id: test_cannot_reach_consumer}

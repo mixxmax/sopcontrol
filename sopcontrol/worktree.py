@@ -52,6 +52,34 @@ def remove_repair_worktree(root: Path, task_id: str) -> None:
     _run(["git", "worktree", "prune"], root)
 
 
+def resolves_inside(base: Path, relpath: str) -> bool:
+    """relpath 解析后是否仍落在 base 之内（symlink 逃逸检查，R8）。
+
+    纯字符串前缀比对拦不住 symlink：允许写 `src/` 时，`src/link -> /etc` 让
+    `src/link/passwd` 字面上完全合规，实际写的是仓库外的文件。这一层必须碰文件系统，
+    所以放在采集边界，不放进 task.path_allowed（迁移门受纯函数宪法守卫）。
+
+    末节点和每一层父目录都要查：只查父目录会漏掉「末节点自己就是 symlink」
+    （`src/evil.py -> /etc/passwd`，copy2 跟着链接写到仓库外）；只 resolve 末节点
+    又会漏掉「中间某一层是 symlink」。路径尚不存在（新建文件）时按最近的已存在祖先判断。
+
+    悬空 symlink 要单独认：它 exists() 为假但确实会被写穿，所以先问 is_symlink()。
+    """
+    base = Path(base).resolve()
+    target = base / relpath
+    while True:
+        if target.is_symlink() or target.exists():
+            try:
+                target.resolve().relative_to(base)
+            except ValueError:
+                return False
+            return True
+        parent = target.parent
+        if parent == target:
+            return False
+        target = parent
+
+
 def list_changed_files(work: Path) -> list[str]:
     """相对 work 根的已改/未跟踪文件。"""
     proc = _run(["git", "status", "--porcelain"], work)

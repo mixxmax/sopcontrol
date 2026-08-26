@@ -130,10 +130,34 @@ def normalize_relpath(path: str) -> str:
     return str(p)
 
 
+CONTROLLER_DIR = ".sopcontrol"
+
+
+def is_controller_path(path: str) -> bool:
+    """路径是否触碰控制器状态目录（信任根）。
+
+    比较大小写不敏感且按路径分量做：在 macOS / Windows 上 `.SOPCONTROL/rules/registry.yaml`
+    和 `.sopcontrol/rules/registry.yaml` 是同一个文件，只按字面比较的守卫会漏放（R8）。
+    Linux 上大小写确实不同名，此时多拒一个不存在的路径是 fail-closed，可以接受——
+    守卫宁可多拦，不可漏放。
+    """
+    norm = path.strip().replace("\\", "/")
+    return any(part.casefold() == CONTROLLER_DIR for part in norm.split("/") if part)
+
+
 def path_allowed(changed: str, allowed_writes: list[str]) -> bool:
+    """契约范围判定（纯函数，大小写敏感）。
+
+    这里刻意不做大小写归一：allow-list 比对不上只会多拒一个改动（fail-closed，
+    最坏是误报），而归一化在 Linux 上会把契约外的 `SRC/` 放进 `src` 的范围里，
+    那是 fail-open。symlink 逃逸需要碰文件系统，不在纯函数里解决，见
+    worktree.resolves_inside 与两处采集边界。
+    """
     try:
         norm = normalize_relpath(changed)
     except ValueError:
+        return False
+    if is_controller_path(norm):
         return False
     for allow in allowed_writes:
         try:

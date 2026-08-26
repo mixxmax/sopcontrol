@@ -320,3 +320,62 @@ cases:
   expected_verdict: {status: unknown, absorption: null}
   expected_findings: []
   ground_truth: schema_field_unread 负向对照第二域——settle_audit 在 settlement.py 写、settlement_view.py 读，跨文件读写闭合；只在写入者本文件找读取的检测器会在这里误报（healthy-billing/BILL-004 是第一域）
+
+# test_helper_only 与 documented_rule_untested 的负向对照（此前两个模式一条对照都没有）。
+# 二者其实是同一个缺陷的两个方向——is_test_path 按路径名猜测（RESIDUAL_RISKS R2）：
+#   · 嵌套 spec/ 被当成测试根 → 真的生产消费者被判没 → test_helper_only 误报
+#   · 同置测试文件（foo_test.go / foo.test.ts）被当成生产 → 回归被判没 → untested 误报
+# 四条都做过变异验证：退回修复前的路径判断，四条全部报警。
+- case_id: CASE-040
+  fixture: shop-checkout
+  rule_id: REFUND-012
+  expected_verdict: {status: pass, absorption: wired_and_tested}
+  expected_findings: []
+  ground_truth: test_helper_only 负向对照第一域——validate_refund_shape 的生产实现住在 src/spec/ 里（OpenAPI 式的生产包，不是 RSpec 测试根）；把嵌套 spec/ 一律当测试会把唯一生产消费者判没，于是"接了线也测了"被读成"只有测试 helper"
+
+- case_id: CASE-041
+  fixture: ci-deploy
+  rule_id: DEPLOY-013
+  expected_verdict: {status: pass, absorption: wired_and_tested}
+  expected_findings: []
+  ground_truth: test_helper_only 负向对照第二域（CI）——load_deploy_manifest 住在 scripts/spec/；与 CASE-040 同一判断的跨域验证
+
+- case_id: CASE-042
+  fixture: web-gate
+  rule_id: GATE-003
+  expected_verdict: {status: pass, absorption: wired_and_tested}
+  expected_findings: []
+  ground_truth: documented_rule_untested 负向对照第一域——回归写在 src/limiter.test.ts（JS/TS 生态的同置约定）；只认 tests/ 目录会把它读成生产文件，于是"有回归"被判成"无回归证据"，惩罚按生态惯例组织测试的人
+
+- case_id: CASE-043
+  fixture: go-gateway
+  rule_id: GO-003
+  expected_verdict: {status: pass, absorption: wired_and_tested}
+  expected_findings: []
+  ground_truth: documented_rule_untested 负向对照第二域——Go 强制 limiter_test.go 与 limiter.go 同目录，语言本身不允许另建 tests/；这条对照守住的是"路径启发式不能与语言惯例冲突"
+
+- case_id: CASE-044
+  fixture: ci-deploy
+  rule_id: DEPLOY-014
+  expected_verdict: {status: unknown, absorption: null}
+  expected_findings: []
+  ground_truth: schema_field_unread 负向对照第二域（CI）——rollout_audit 在 rollout.py 写、rollout_report.py 读，写侧完全不读它；只在写入者本文件里找读取的检测器会误报，催人把报表逻辑塞回业务文件才承认字段被用了。第一域见 shop-checkout/REFUND-011（settle_audit）
+
+# test_cannot_reach_consumer：R1 收口的正向用例（此前只有标识符代理，从不检查可达性）。
+# 两条夹具是同一个断口的两种自然写法——替身与同名重定义——都能让测试全绿而生产代码
+# 一行没跑。判定器据此把测试信用收回到 wired，而不是继续颁 wired_and_tested。
+- case_id: CASE-045
+  fixture: ci-deploy
+  rule_id: DEPLOY-015
+  expected_verdict: {status: gap, absorption: wired}
+  expected_findings:
+  - {pattern_id: test_cannot_reach_consumer, severity: gap}
+  ground_truth: R1 第一域（CI）——record_audit_entry 的回归全打在 Mock 替身上，tests/test_audit_log.py 的 import 闭包永远到不了 scripts/audit_log.py；标识符出现在测试里不等于生产代码被执行过
+
+- case_id: CASE-046
+  fixture: jobflow-preview
+  rule_id: PUSH-005
+  expected_verdict: {status: gap, absorption: wired}
+  expected_findings:
+  - {pattern_id: test_cannot_reach_consumer, severity: gap}
+  ground_truth: R1 第二域（求职）——archive_material 在测试里被就地重定义成同名替身，连 Mock 都不需要；改名或删 import 都不会让这条测试变红，正是 SELF-001 bypass_note 登记的绕过路径

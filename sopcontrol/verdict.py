@@ -311,6 +311,32 @@ def _absorption_verdict(
             finding_ids=fids,
         )
 
+    # 可达性收口（R1）：测试文件里出现消费者标记，只证明有人写了这个名字。
+    # reachability 检测器若判定该测试的 import 闭包到不了定义标记的生产文件，
+    # 这份「回归证据」就建立在标识符巧合上——把生产端改名、或删掉那行 import，
+    # 测试照旧全绿而规则照旧自称测过了。此处把测试信用收回，退回 wired：
+    # 标识符是可达性的代理，代理不成立时不能替代可达性本身。
+    unreachable = [
+        f for f in (related_findings or [])
+        if f.pattern_id == "test_cannot_reach_consumer"
+    ]
+    if unreachable:
+        return Verdict(
+            rule_id=rule.rule_id,
+            status="gap",
+            absorption=Absorption.wired,
+            reason=(
+                f"生产消费者已接线 [{markers}]，但测试路径的回归证据不可达："
+                f"{unreachable[0].summary}"
+            ),
+            next_action=(
+                f"让 {rule.rule_id} 的回归测试真实 import 生产实现"
+                f"（而非替身或同名符号），使覆盖真的经过生产代码"
+            ),
+            evidence_ids=[e.evidence_id for e in prod],
+            finding_ids=fids,
+        )
+
     ids = [e.evidence_id for e in prod + test]
 
     # E4 闸门：测试路径引用了消费者标记只是 E3——证明有人写了名字，没证明它跑得过。

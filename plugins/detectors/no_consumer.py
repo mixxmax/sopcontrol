@@ -15,6 +15,33 @@ GOVERNANCE_ACTIVE = {
 }
 
 
+def referenced_anywhere(structured: list[Evidence]) -> set[str]:
+    """全仓真实引用过的名字。
+
+    comment_only_reference 的语义是「只存在于注释」，而注释所在文件本身并不构成
+    范围：在 gate.py 里真调用、在 notes.py 里顺手提一句，是文档习惯，不是断口。
+    少了这个集合就会惩罚写注释的人——过度告警与漏报对称。
+
+    提成模块级函数是为了让变异验证能替换它：负向对照必须能被证伪，
+    「退回修复前的判定即报警」若只写在 ground_truth 散文里，就没人在跑。
+    """
+    names: set[str] = set()
+    for ev in structured:
+        for name in ev.observed or []:
+            names.add(str(name))
+    return names
+
+
+def state_rule_handled_elsewhere(rule: Rule) -> bool:
+    """只声明了 state_markers 的规则交给 state_health，不在这里判「未声明消费者」。
+
+    少了这个豁免，每条状态类规则都会额外挨一条 consumer_markers_undefined——
+    规则本来就不靠具名消费者执行，报它等于要求用户为状态规则编造一个入口名。
+    与 referenced_anywhere 同理提成模块级函数：负向对照要能被证伪。
+    """
+    return not rule.consumer_markers and bool(rule.state_markers)
+
+
 class NoConsumerDetector:
     detector_id = "no_consumer"
 
@@ -29,17 +56,11 @@ class NoConsumerDetector:
             )
         ]
         structured_by_subject = {e.subject: e for e in structured}
-        # 全仓真实引用过的名字。comment_only_reference 的语义是「只存在于注释」，
-        # 而注释所在文件本身并不构成范围：在 gate.py 里真调用、在 notes.py 里
-        # 顺手提一句，是文档习惯，不是断口。少了这个集合就会惩罚写注释的人。
-        referenced_anywhere: set[str] = set()
-        for ev in structured:
-            for name in ev.observed or []:
-                referenced_anywhere.add(str(name))
+        real_refs = referenced_anywhere(structured)
         for rule in rules:
             if rule.status not in GOVERNANCE_ACTIVE or rule.modality not in HARD_MODALITIES:
                 continue
-            if not rule.consumer_markers and rule.state_markers:
+            if state_rule_handled_elsewhere(rule):
                 continue  # 状态类规则由 state_health 检测器评估
             if not rule.consumer_markers:
                 findings.append(
@@ -89,11 +110,6 @@ class NoConsumerDetector:
             # 注释/字符串里的标记不算消费者：grep 命中但结构化扫描未命中。
             # 但「某文件的注释提到它」不等于「它只存在于注释」——真引用在别处时，
             # 文档性提及是好习惯，报 gap 就是惩罚写注释的人（过度告警同样是错报）。
-            referenced_anywhere = {
-                name
-                for ev in structured_by_subject.values()
-                for name in (ev.observed or [])
-            }
             for grep_ev in id_evidence:
                 if not grep_ev.subject.endswith(
                     (".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".go", ".rs")
@@ -107,7 +123,7 @@ class NoConsumerDetector:
                     m for m in rule.consumer_markers
                     if m in (grep_ev.observed or [])
                     and m not in (struct_names or [])
-                    and m not in referenced_anywhere
+                    and m not in real_refs
                 ]
                 if ghost:
                     findings.append(

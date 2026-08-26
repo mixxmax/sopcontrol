@@ -312,3 +312,75 @@ rules:
   tags: []
   created_at: '2026-08-26T14:13:36.191461Z'
   accepted_at: null
+- rule_id: DEPLOY-013
+  statement: 部署清单必须经 load_deploy_manifest 载入，并有回归覆盖
+  modality: MUST
+  status: accepted
+  scope: deploy.manifest
+  owner: platform
+  risk: medium
+  source:
+    type: document
+    ref: docs/runbook.md
+    observed_at: null
+  consumer_markers:
+  - load_deploy_manifest
+  legacy_markers: []
+  state_markers: []
+  guard_ids: []
+  source_hash: ''
+  bypass_note: ''
+  attested_by: ''
+  attested_at: null
+  supersedes: []
+  tags: []
+  created_at: '2026-08-26T14:51:21.387920Z'
+  accepted_at: null
+- rule_id: DEPLOY-014
+  statement: 灰度审计字段 rollout_audit 必须被下游读取
+  modality: MUST
+  status: accepted
+  scope: project
+  owner: user
+  risk: medium
+  source:
+    type: document
+    ref: docs/runbook.md
+    observed_at: null
+  consumer_markers: []
+  legacy_markers: []
+  state_markers:
+  - rollout_audit
+  guard_ids: []
+  source_hash: ''
+  bypass_note: ''
+  attested_by: ''
+  attested_at: null
+  supersedes: []
+  tags: []
+  created_at: '2026-08-26T15:29:53.170757Z'
+  accepted_at: null
+- rule_id: DEPLOY-015
+  statement: 部署审计条目必须经 record_audit_entry 落盘
+  modality: MUST
+  status: accepted
+  scope: project
+  owner: user
+  risk: medium
+  source:
+    type: document
+    ref: docs/runbook.md
+    observed_at: null
+  consumer_markers:
+  - record_audit_entry
+  legacy_markers: []
+  state_markers: []
+  guard_ids: []
+  source_hash: ''
+  bypass_note: ''
+  attested_by: ''
+  attested_at: null
+  supersedes: []
+  tags: []
+  created_at: '2026-08-26T16:08:48.864354Z'
+  accepted_at: null

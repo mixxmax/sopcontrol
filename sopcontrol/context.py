@@ -11,17 +11,33 @@ EXCLUDED_DIRS = {
     "__pycache__", ".venv", ".pytest_cache", "dist", "build",
 }
 
-_TEST_DIR_HINTS = {"tests", "test", "spec", "__tests__"}
+_TEST_DIR_HINTS = {"tests", "test", "__tests__"}
 # 语料/文档不是生产消费者——模式名写在 patterns.yaml 不算接线（自应用役用教训）
 _META_ROOTS = frozenset({"corpus", "docs"})
+
+# 与测试文件同置的命名约定。Go 强制 `foo_test.go` 与 `foo.go` 同目录，JS/TS 生态
+# 普遍把 `foo.test.ts` 放在被测文件旁边——只认 `tests/` 目录会把这些回归文件读成
+# 生产消费者，于是「有测试」被判成「无回归证据」。R2 的一个方向。
+_COLOCATED_TEST_SUFFIXES = (
+    "_test.py", "_test.go", "_test.rs", "_test.ts", "_test.js",
+    ".test.ts", ".test.tsx", ".test.js", ".test.jsx", ".test.mjs", ".test.cjs",
+    ".spec.ts", ".spec.tsx", ".spec.js", ".spec.jsx", ".spec.mjs", ".spec.cjs",
+)
 
 
 def is_test_path(relpath: str) -> bool:
     parts = PurePosixPath(relpath).parts
     if any(p.lower() in _TEST_DIR_HINTS for p in parts[:-1]):
         return True
+    # 「spec」两义：根级 spec/ 是 RSpec/Jasmine 的测试根，嵌套 spec/ 基本都是
+    # OpenAPI / JSON Schema 一类的生产代码（src/spec/loader.py）。一律当测试
+    # 会把真的生产消费者判没，于是 test_helper_only 在正确代码上报警。
+    if len(parts) > 1 and parts[0].lower() == "spec":
+        return True
     name = parts[-1].lower()
-    return name.startswith("test_") or name.endswith("_test.py") or "conftest" in name
+    if name.startswith("test_") or "conftest" in name:
+        return True
+    return name.endswith(_COLOCATED_TEST_SUFFIXES)
 
 
 def is_meta_path(relpath: str) -> bool:

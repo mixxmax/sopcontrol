@@ -9,8 +9,20 @@ rules:
   source:
     type: document
     ref: docs/sop.md
+    observed_at: null
   consumer_markers:
   - AdmitRequest
+  legacy_markers: []
+  state_markers: []
+  guard_ids: []
+  source_hash: ''
+  bypass_note: ''
+  attested_by: ''
+  attested_at: null
+  supersedes: []
+  tags: []
+  created_at: '2026-08-26T14:50:43.874922Z'
+  accepted_at: null
 - rule_id: GO-002
   statement: 审计钩子必须经 RegisterAuditHook 注册
   modality: MUST
@@ -21,5 +33,41 @@ rules:
   source:
     type: document
     ref: docs/sop.md
+    observed_at: null
   consumer_markers:
   - RegisterAuditHook
+  legacy_markers: []
+  state_markers: []
+  guard_ids: []
+  source_hash: ''
+  bypass_note: ''
+  attested_by: ''
+  attested_at: null
+  supersedes: []
+  tags: []
+  created_at: '2026-08-26T14:50:43.874936Z'
+  accepted_at: null
+- rule_id: GO-003
+  statement: 限流必须经 EnforceRateLimit 生产入口，并有回归覆盖
+  modality: MUST
+  status: accepted
+  scope: go.limit
+  owner: platform
+  risk: medium
+  source:
+    type: document
+    ref: docs/sop.md
+    observed_at: null
+  consumer_markers:
+  - EnforceRateLimit
+  legacy_markers: []
+  state_markers: []
+  guard_ids: []
+  source_hash: ''
+  bypass_note: ''
+  attested_by: ''
+  attested_at: null
+  supersedes: []
+  tags: []
+  created_at: '2026-08-26T14:50:43.868531Z'
+  accepted_at: null

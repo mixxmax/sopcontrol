@@ -106,3 +106,19 @@ patterns:
   domains: [e-commerce, job-search]
   status: proven-on-2-domains
   severity: info
+
+- pattern_id: test_cannot_reach_consumer
+  statement: 测试路径引用了消费者标记，但其 import 闭包到不了定义该标记的生产文件
+  detection: import_graph.imports 传递闭合 × 命中标记的生产文件（两侧都有 Python 证据时才发声）
+  fixtures:
+  - ci-deploy/DEPLOY-015
+  - jobflow-preview/PUSH-005
+  domains: [ci-deploy, job-search]
+  status: proven-on-2-domains
+  severity: gap
+  note: |
+    R1 收口——判定器此前用「测试里出现了这个标识符」代理「测试跑到了这段生产代码」，
+    而代理从不检查可达性：把生产端改名或删掉那行 import，测试照旧全绿，规则照旧
+    停在 wired_and_tested。这正是 SELF-001 bypass_note 自己登记的绕过路径。
+    沉默边界：只在两侧都有 Python 证据、测试文件确实留下 import 证据时判定，
+    否则「查不到邻接」分不清是真没导入还是没解析成功——与 _write_sites 同源取舍。

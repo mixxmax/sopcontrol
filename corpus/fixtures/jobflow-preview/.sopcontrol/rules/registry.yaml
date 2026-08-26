@@ -9,10 +9,21 @@ rules:
   source:
     type: document
     ref: docs/tracker-sop.md
+    observed_at: null
   consumer_markers:
   - require_preview
+  legacy_markers: []
+  state_markers: []
+  guard_ids: []
+  source_hash: ''
+  bypass_note: ''
+  attested_by: ''
+  attested_at: null
+  supersedes: []
   tags:
   - jobflow-historical
+  created_at: '2026-08-26T16:08:49.683482Z'
+  accepted_at: null
 - rule_id: PUSH-002
   statement: 岗位入表必须经统一 gateway 入口，旧直写路径不得存活
   modality: MUST
@@ -23,12 +34,22 @@ rules:
   source:
     type: document
     ref: docs/tracker-sop.md
+    observed_at: null
   consumer_markers:
   - workflow_gateway
   legacy_markers:
   - direct_write
+  state_markers: []
+  guard_ids: []
+  source_hash: ''
+  bypass_note: ''
+  attested_by: ''
+  attested_at: null
+  supersedes: []
   tags:
   - jobflow-historical
+  created_at: '2026-08-26T16:08:49.683510Z'
+  accepted_at: null
 - rule_id: PUSH-003
   statement: 预览快照必须作为可消费状态维护
   modality: MUST
@@ -39,8 +60,20 @@ rules:
   source:
     type: document
     ref: docs/tracker-sop.md
+    observed_at: null
+  consumer_markers: []
+  legacy_markers: []
   state_markers:
   - preview_state
+  guard_ids: []
+  source_hash: ''
+  bypass_note: ''
+  attested_by: ''
+  attested_at: null
+  supersedes: []
+  tags: []
+  created_at: '2026-08-26T16:08:49.683525Z'
+  accepted_at: null
 - rule_id: PUSH-004
   statement: 材料归档通道必须保持可用
   modality: MUST
@@ -51,3 +84,40 @@ rules:
   source:
     type: document
     ref: docs/tracker-sop.md
+    observed_at: null
+  consumer_markers: []
+  legacy_markers: []
+  state_markers: []
+  guard_ids: []
+  source_hash: ''
+  bypass_note: ''
+  attested_by: ''
+  attested_at: null
+  supersedes: []
+  tags: []
+  created_at: '2026-08-26T16:08:49.683539Z'
+  accepted_at: null
+- rule_id: PUSH-005
+  statement: 材料归档必须经 archive_material 通道
+  modality: MUST
+  status: accepted
+  scope: project
+  owner: user
+  risk: medium
+  source:
+    type: document
+    ref: docs/tracker-sop.md
+    observed_at: null
+  consumer_markers:
+  - archive_material
+  legacy_markers: []
+  state_markers: []
+  guard_ids: []
+  source_hash: ''
+  bypass_note: ''
+  attested_by: ''
+  attested_at: null
+  supersedes: []
+  tags: []
+  created_at: '2026-08-26T16:08:49.664122Z'
+  accepted_at: null

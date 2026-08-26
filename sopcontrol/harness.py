@@ -21,6 +21,37 @@ PROTECTED_HINTS = (".opencode/plugins/sopcontrol", ".claude/settings.json")
 
 PUSH_RE = re.compile(r"(^|&&|;|\|\||\|)\s*git push\b")
 
+
+def touches_protected_path(file_path: str) -> bool:
+    """写入路径是否落在控制器状态目录内（大小写不敏感，按路径分量比对）。
+
+    macOS 与 Windows 的文件系统大小写不敏感：`.SOPCONTROL/rules/registry.yaml`
+    写的就是 `.sopcontrol/rules/registry.yaml`，只按字面相等比对的守卫会直接放行，
+    信任根就此可写（R8 的 fail-open 方向）。Linux 上两者确实是不同文件，多拒一个
+    不存在的路径属于 fail-closed，守卫宁可多拦不可漏放。
+    """
+    parts = file_path.replace("\\", "/").split("/")
+    return any(p.casefold() == PROTECTED_DIR for p in parts if p)
+
+
+def touches_protected_install(file_path: str) -> bool:
+    """写入路径是否触碰 sopctl 自己安装的拦截组件（同样大小写不敏感）。"""
+    norm = file_path.replace("\\", "/").casefold()
+    return any(hint in norm for hint in PROTECTED_HINTS)
+
+
+def command_touches_controller(command: str) -> bool:
+    """bash 命令是否绕开 sopctl 直接动控制器状态或拦截组件（大小写不敏感）。
+
+    与写入口同一个理由：`cat > .SOPCONTROL/rules/registry.yaml` 在 macOS 上
+    写的就是信任根。放行条件仍是命令走 sopctl。
+    """
+    norm = command.replace("\\", "/").casefold()
+    if "sopctl" in norm:
+        return False
+    return PROTECTED_DIR in norm or any(hint in norm for hint in PROTECTED_HINTS)
+
+
 # 内置 guard 的稳定 ID（手册 6.5 条件1）。稳定 ID 不是装饰：trace 事件靠它指认
 # 「本轮是哪条拦截规则做了决策」，registry 里的规则也靠它声明自己由哪个 guard 执行。
 # 改名等于换了一条规则，会让引用它的 registry 规则失去 trace——所以这些字面量只增不改。
@@ -117,13 +148,13 @@ def check_tool_call(
             tool_input.get("file_path") or tool_input.get("filePath")
             or tool_input.get("path") or ""
         )
-        if file_path and any(part == PROTECTED_DIR for part in file_path.replace("\\", "/").split("/")):
+        if file_path and touches_protected_path(file_path):
             return _deny(
                 f"控制器文件 {file_path} 不允许经普通写入口修改：规则/账本/任务只能通过 "
                 f"sopctl 命令变更（信任根，手册 9.3）；规则变更请走 sopctl rule 流程",
                 GUARD_CONTROLLER_WRITE,
             )
-        if file_path and any(hint in file_path.replace("\\", "/") for hint in PROTECTED_HINTS):
+        if file_path and touches_protected_install(file_path):
             return _deny(
                 f"{file_path} 是 sopctl 安装的拦截组件：移除自身项圈属于提权动作，"
                 f"需要人工执行（手册 12.2）",
@@ -144,11 +175,7 @@ def check_tool_call(
                 GUARD_NO_VERIFY,
             )
 
-        touches_controller = (
-            (PROTECTED_DIR in command or any(hint in command for hint in PROTECTED_HINTS))
-            and "sopctl" not in command
-        )
-        if touches_controller:
+        if command_touches_controller(command):
             return _deny(
                 f"命令直接触碰控制器状态或拦截组件（{PROTECTED_DIR}/、opencode 插件、claude 钩子配置）"
                 f"但未走 sopctl：一切经 sopctl 子命令；移除拦截组件需人工执行",

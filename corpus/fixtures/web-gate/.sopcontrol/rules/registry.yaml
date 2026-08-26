@@ -9,8 +9,20 @@ rules:
   source:
     type: document
     ref: docs/sop.md
+    observed_at: null
   consumer_markers:
   - request_gate
+  legacy_markers: []
+  state_markers: []
+  guard_ids: []
+  source_hash: ''
+  bypass_note: ''
+  attested_by: ''
+  attested_at: null
+  supersedes: []
+  tags: []
+  created_at: '2026-08-26T14:50:43.498474Z'
+  accepted_at: null
 - rule_id: GATE-002
   statement: 审计钩子必须经 audit_hook 注册，注释提及不算接线
   modality: MUST
@@ -21,5 +33,41 @@ rules:
   source:
     type: document
     ref: docs/sop.md
+    observed_at: null
   consumer_markers:
   - audit_hook
+  legacy_markers: []
+  state_markers: []
+  guard_ids: []
+  source_hash: ''
+  bypass_note: ''
+  attested_by: ''
+  attested_at: null
+  supersedes: []
+  tags: []
+  created_at: '2026-08-26T14:50:43.498570Z'
+  accepted_at: null
+- rule_id: GATE-003
+  statement: 限流必须经 enforce_rate_limit 生产入口，并有回归覆盖
+  modality: MUST
+  status: accepted
+  scope: web.limit
+  owner: platform
+  risk: medium
+  source:
+    type: document
+    ref: docs/sop.md
+    observed_at: null
+  consumer_markers:
+  - enforce_rate_limit
+  legacy_markers: []
+  state_markers: []
+  guard_ids: []
+  source_hash: ''
+  bypass_note: ''
+  attested_by: ''
+  attested_at: null
+  supersedes: []
+  tags: []
+  created_at: '2026-08-26T14:50:43.486164Z'
+  accepted_at: null
