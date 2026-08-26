@@ -93,6 +93,10 @@ class Rule(BaseModel):
     consumer_markers: list[str] = Field(default_factory=list)
     legacy_markers: list[str] = Field(default_factory=list)  # 受控入口之外的旧路径符号；存活即可绕过
     state_markers: list[str] = Field(default_factory=list)   # 状态/字段符号；由 state_health 模式评估
+    # 执行这条规则的运行时 guard id（harness.GUARD_IDS 之一）。声明了才可能拿到
+    # trace 证据——手册 6.5 条件6 要的是「本轮这条规则真的被加载并决策过」，
+    # 而「哪个拦截器算这条规则的执行者」只有规则作者知道，判定器不许猜。
+    guard_ids: list[str] = Field(default_factory=list)
     supersedes: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=utcnow)

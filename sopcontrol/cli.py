@@ -49,6 +49,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--source-type", default="document", help="user_conversation/document/corpus/constitution/manual_seed")
     p.add_argument("--source-ref", required=True, help="出处，如 docs/sop.md 或对话引用")
     p.add_argument("--consumer-marker", action="append", help="什么符号/入口算生产消费者，可重复")
+    p.add_argument("--guard-id", action="append", help="哪个运行时 guard 执行本规则（可重复；必须是拦截器已声明的 id）")
     p.add_argument("--tag", action="append")
     p.set_defaults(func=cmd_rule_add)
 

@@ -15,9 +15,22 @@ __all__ = ["cmd_rule_add", "cmd_rule_list", "cmd_rule_accept"]
 
 def cmd_rule_add(args) -> int:
     from .conflict import find_conflicts
+    from .harness import GUARD_IDS
 
     root = _project(args.path)
     reg = Registry(root / ".sopcontrol" / "rules" / "registry.yaml")
+
+    # guard 名写错不能静默收下：拦截器永远不会用这个名字留痕，规则就永远卡在
+    # 「声明了 guard 却拿不到 trace」，而错因是一个字母。当场拒比事后查判定便宜。
+    guard_ids = list(getattr(args, "guard_id", None) or [])
+    unknown = [g for g in guard_ids if g not in GUARD_IDS]
+    if unknown:
+        print(
+            f"错误: 未知 guard id {unknown}；拦截器已声明的是 {sorted(GUARD_IDS)}",
+            file=sys.stderr,
+        )
+        return 2
+
     rule = Rule(
         rule_id=args.id,
         statement=args.statement,
@@ -28,6 +41,7 @@ def cmd_rule_add(args) -> int:
         risk=RiskLevel(args.risk),
         source=SourceRef(type=args.source_type, ref=args.source_ref),
         consumer_markers=list(args.consumer_marker or []),
+        guard_ids=guard_ids,
         tags=list(args.tag or []),
     )
     if rule.status == RuleStatus.accepted:

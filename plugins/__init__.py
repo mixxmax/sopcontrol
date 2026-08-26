@@ -8,9 +8,11 @@ from plugins.sensors.go_scan import GoScanSensor
 from plugins.sensors.import_graph import ImportGraphSensor
 from plugins.sensors.js_scan import JsScanSensor
 from plugins.sensors.rust_scan import RustScanSensor
+from plugins.sensors.trace_scan import TraceScanSensor
 
 SENSORS = [
     CodeScanSensor(), DocScanSensor(), AstScanSensor(),
     JsScanSensor(), GoScanSensor(), RustScanSensor(), ImportGraphSensor(),
+    TraceScanSensor(),
 ]
 DETECTORS = [NoConsumerDetector(), StateHealthDetector()]

@@ -13,13 +13,32 @@ from __future__ import annotations
 import re
 from typing import Literal, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 PROTECTED_DIR = ".sopcontrol"
 # 控制器自身安装物：agent 卸掉自己的项圈 = 提权，一律拒绝（人工可手工移除）
 PROTECTED_HINTS = (".opencode/plugins/sopcontrol", ".claude/settings.json")
 
 PUSH_RE = re.compile(r"(^|&&|;|\|\||\|)\s*git push\b")
+
+# 内置 guard 的稳定 ID（手册 6.5 条件1）。稳定 ID 不是装饰：trace 事件靠它指认
+# 「本轮是哪条拦截规则做了决策」，registry 里的规则也靠它声明自己由哪个 guard 执行。
+# 改名等于换了一条规则，会让引用它的 registry 规则失去 trace——所以这些字面量只增不改。
+GUARD_INTENT = "GUARD-INTENT-DISCUSS-ONLY"
+GUARD_CONTROLLER_WRITE = "GUARD-CONTROLLER-WRITE"
+GUARD_SELF_UNINSTALL = "GUARD-SELF-UNINSTALL"
+GUARD_NO_VERIFY = "GUARD-NO-VERIFY"
+GUARD_CONTROLLER_BASH = "GUARD-CONTROLLER-BASH"
+GUARD_PUSH_GATE = "GUARD-PUSH-GATE"
+
+GUARD_IDS = frozenset({
+    GUARD_INTENT,
+    GUARD_CONTROLLER_WRITE,
+    GUARD_SELF_UNINSTALL,
+    GUARD_NO_VERIFY,
+    GUARD_CONTROLLER_BASH,
+    GUARD_PUSH_GATE,
+})
 
 # 能力画像（手册 5.9）：不同 harness 得到不同控制强度，如实记录，不假装一致
 HARNESS_PROFILES = {
@@ -48,8 +67,13 @@ HARNESS_PROFILES = {
 class HookDecision(BaseModel):
     permissionDecision: Literal["allow", "deny", "ask"]
     reason: str
+    # 本次决策实际咨询过的 guard；调用方据此落 trace（手册 6.5 条件6）。
+    # 「咨询过」不等于「拒绝了」：放行也要记，否则日志只能证明拦截器会拒绝，
+    # 不能证明它在每次工具调用上都真的被加载运行了。
+    rule_ids: list[str] = Field(default_factory=list)
 
     def claude_payload(self) -> dict:
+        """Claude Code PreToolUse 协议要求的形状；rule_ids 不进协议载荷（对方 schema 不认）。"""
         return {
             "hookSpecificOutput": {
                 "hookEventName": "PreToolUse",
@@ -59,12 +83,12 @@ class HookDecision(BaseModel):
         }
 
 
-def _deny(reason: str) -> HookDecision:
-    return HookDecision(permissionDecision="deny", reason=reason)
+def _deny(reason: str, *rule_ids: str) -> HookDecision:
+    return HookDecision(permissionDecision="deny", reason=reason, rule_ids=list(rule_ids))
 
 
-def _allow(reason: str) -> HookDecision:
-    return HookDecision(permissionDecision="allow", reason=reason)
+def _allow(reason: str, *rule_ids: str) -> HookDecision:
+    return HookDecision(permissionDecision="allow", reason=reason, rule_ids=list(rule_ids))
 
 
 def check_tool_call(
@@ -86,7 +110,8 @@ def check_tool_call(
             return _deny(
                 "当前会话意图为 discuss_only（用户明确只讨论不修改）：拒绝写文件。"
                 "讨论不是实施授权（14.1 场景1）；若要改代码请先解除讨论锁定"
-                "（说出实施意图或 sopctl intent clear）"
+                "（说出实施意图或 sopctl intent clear）",
+                GUARD_INTENT,
             )
         file_path = str(
             tool_input.get("file_path") or tool_input.get("filePath")
@@ -95,20 +120,29 @@ def check_tool_call(
         if file_path and any(part == PROTECTED_DIR for part in file_path.replace("\\", "/").split("/")):
             return _deny(
                 f"控制器文件 {file_path} 不允许经普通写入口修改：规则/账本/任务只能通过 "
-                f"sopctl 命令变更（信任根，手册 9.3）；规则变更请走 sopctl rule 流程"
+                f"sopctl 命令变更（信任根，手册 9.3）；规则变更请走 sopctl rule 流程",
+                GUARD_CONTROLLER_WRITE,
             )
         if file_path and any(hint in file_path.replace("\\", "/") for hint in PROTECTED_HINTS):
             return _deny(
                 f"{file_path} 是 sopctl 安装的拦截组件：移除自身项圈属于提权动作，"
-                f"需要人工执行（手册 12.2）"
+                f"需要人工执行（手册 12.2）",
+                GUARD_SELF_UNINSTALL,
             )
-        return _allow("普通文件写入，不在受控清单")
+        # 放行也带 guard：这三条 guard 每次写入都真的过了一遍，trace 记的是「被咨询」
+        return _allow(
+            "普通文件写入，不在受控清单",
+            GUARD_INTENT, GUARD_CONTROLLER_WRITE, GUARD_SELF_UNINSTALL,
+        )
 
     if tool == "bash":
         command = str(tool_input.get("command") or "")
 
         if "--no-verify" in command:
-            return _deny("拒绝 --no-verify：绕过验证钩子属于已登记绕过家族 R6，一律阻断")
+            return _deny(
+                "拒绝 --no-verify：绕过验证钩子属于已登记绕过家族 R6，一律阻断",
+                GUARD_NO_VERIFY,
+            )
 
         touches_controller = (
             (PROTECTED_DIR in command or any(hint in command for hint in PROTECTED_HINTS))
@@ -117,26 +151,38 @@ def check_tool_call(
         if touches_controller:
             return _deny(
                 f"命令直接触碰控制器状态或拦截组件（{PROTECTED_DIR}/、opencode 插件、claude 钩子配置）"
-                f"但未走 sopctl：一切经 sopctl 子命令；移除拦截组件需人工执行"
+                f"但未走 sopctl：一切经 sopctl 子命令；移除拦截组件需人工执行",
+                GUARD_CONTROLLER_BASH,
             )
 
         if PUSH_RE.search(command):
             if gate_status is None:
-                return _deny("git push 未经过终点门评估（上下文缺失）：fail-closed 拒绝；请经 sopctl hook 安装的入口执行")
+                return _deny(
+                    "git push 未经过终点门评估（上下文缺失）：fail-closed 拒绝；请经 sopctl hook 安装的入口执行",
+                    GUARD_PUSH_GATE,
+                )
             if gate_status == "block":
                 return _deny(
-                    "终点门阻断：存在 fail 判定或账本损坏，禁止推送。运行 sopctl gate 查看具体规则与理由"
+                    "终点门阻断：存在 fail 判定或账本损坏，禁止推送。运行 sopctl gate 查看具体规则与理由",
+                    GUARD_PUSH_GATE,
                 )
             if gate_status == "warn":
                 return HookDecision(
                     permissionDecision="ask",
                     reason="终点门警告：存在 gap（规则未接线或未测试）。建议先 sopctl gate 复核；确要推送请人工确认",
+                    rule_ids=[GUARD_PUSH_GATE],
                 )
             if gate_status == "clean":
-                return _allow("终点门通过：无 fail 判定，账本完整")
+                return _allow("终点门通过：无 fail 判定，账本完整", GUARD_PUSH_GATE)
 
-        return _allow("不在受控动作清单（观察模式）")
+        # 走到这里说明命令过了 no-verify 与控制器两道 guard，两者都该记入 trace
+        return _allow(
+            "不在受控动作清单（观察模式）",
+            GUARD_NO_VERIFY,
+            GUARD_CONTROLLER_BASH,
+        )
 
+    # 非写、非 bash：没有任何 guard 参与判断，rule_ids 为空（不虚报咨询过）
     return _allow(f"工具 {tool or '未知'} 不在受控范围（观察模式）")
 
 

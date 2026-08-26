@@ -73,6 +73,44 @@ def declared_test_command(evidence: list[Evidence]) -> str | None:
     return None
 
 
+def fresh_trace_guards(evidence: list[Evidence]) -> dict[str, dict]:
+    """本轮仍新鲜的运行时 trace 里，哪些 guard 真的作出过决策（手册 6.5 条件6）。
+
+    判定器不读日志文件、也不判断新鲜度：过期的 trace 证据在 run_audit 的
+    is_expired 过滤里就被丢掉了，能走到这里的就是有效的。纯函数属性不变。
+    """
+    guards: dict[str, dict] = {}
+    for ev in evidence:
+        if ev.kind != "harness.trace" or ev.level < 4:
+            continue
+        for gid, info in ((ev.observed or {}).get("guards") or {}).items():
+            if isinstance(info, dict):
+                guards[str(gid)] = info
+    return guards
+
+
+def _trace_note(rule: Rule, trace_guards: dict[str, dict]) -> tuple[bool, str, str]:
+    """(条件6是否满足, 写进 reason 的说明, 未满足时的下一步)。
+
+    没绑 guard 的规则不算「未通过」——绝大多数规则靠代码接线而非运行时拦截执行，
+    强求它们产 trace 会把判定变成噪音。但没绑就永远拿不到 enforced，这是诚实的代价。
+    """
+    if not rule.guard_ids:
+        return False, "规则未绑定运行时 guard，拿不到 trace 证据", "若该规则由拦截器执行，为其声明 guard_ids"
+    missing = [g for g in rule.guard_ids if g not in trace_guards]
+    if missing:
+        return (
+            False,
+            f"声明的 guard [{', '.join(missing)}] 在本轮 trace 中无决策记录",
+            f"确认拦截器已安装并被真实调用（sopctl hook ...），使 {missing[0]} 留下运行时事件",
+        )
+    parts = [
+        f"{g}×{trace_guards[g].get('count', '?')}"
+        for g in rule.guard_ids
+    ]
+    return True, f"运行时 trace 证明 [{', '.join(parts)}] 本轮真实决策（E4，条件6 满足）", ""
+
+
 def consumer_evidence(rule: Rule, evidence: list[Evidence]) -> tuple[list[Evidence], list[Evidence]]:
     """返回 (生产路径消费者证据, 测试路径消费者证据)。语料/文档不算接线。"""
     prod, test = [], []
@@ -128,6 +166,8 @@ def evaluate_rule(rule: Rule, evidence: list[Evidence], findings: list[Finding])
         related_findings=related,
         test_run=latest_test_run(evidence),
         declared_command=declared_test_command(evidence),
+        trace_guards=fresh_trace_guards(evidence),
+        trace_ids=[e.evidence_id for e in evidence if e.kind == "harness.trace"],
     )
 
     legacy = legacy_evidence(rule, evidence)
@@ -153,6 +193,8 @@ def _absorption_verdict(
     related_findings: list[Finding] | None = None,
     test_run: Evidence | None = None,
     declared_command: str | None = None,
+    trace_guards: dict[str, dict] | None = None,
+    trace_ids: list[str] | None = None,
 ) -> Verdict:
     if rule.state_markers and not rule.consumer_markers:
         unread = [
@@ -237,16 +279,21 @@ def _absorption_verdict(
                 evidence_ids=ids + [test_run.evidence_id],
                 finding_ids=fids,
             )
+        trace_ok, trace_say, trace_next = _trace_note(rule, trace_guards or {})
+        # 条件6 齐了也还不能颁 enforced：条件7（文档-实现版本一致）尚无机制，
+        # 现在放行等于自称治理成立而实际没有——手册 16.4 点名的头号风险。
         return Verdict(
             rule_id=rule.rule_id,
             status="pass",
             absorption=Absorption.wired_and_tested,
             reason=(
                 f"消费者与回归证据齐备 [{markers}]，且本轮测试命令真实通过"
-                f"（E4，{observed.get('duration_seconds')}s）；enforced 还需运行时 trace 证据（手册 6.5 七条件）"
+                f"（E4，{observed.get('duration_seconds')}s）；{trace_say}；"
+                + ("enforced 仅剩条件7（文档-实现一致性）未机制化"
+                   if trace_ok else "enforced 还需条件6 与条件7（手册 6.5 七条件）")
             ),
-            next_action="无",
-            evidence_ids=ids + [test_run.evidence_id],
+            next_action=trace_next or "无",
+            evidence_ids=ids + [test_run.evidence_id] + (trace_ids or []),
             finding_ids=fids,
         )
 
@@ -259,7 +306,7 @@ def _absorption_verdict(
             absorption=Absorption.wired_and_tested,
             reason=(
                 f"消费者与回归证据齐备 [{markers}]；本轮未执行测试命令（普通 audit 不跑），"
-                f"回归性仅由测试路径引用推断（E3）；enforced 还需要运行时 trace 证据（手册 6.5 七条件）"
+                f"回归性仅由测试路径引用推断（E3）；enforced 还需 E4 回归与条件6/7（手册 6.5 七条件）"
             ),
             next_action=f"跑完成门（sopctl task verify）以真实执行 {declared_command} 换取 E4 证据",
             evidence_ids=ids,

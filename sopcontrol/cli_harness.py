@@ -94,12 +94,18 @@ def cmd_capability_eval(args) -> int:
 
 
 def cmd_harness_check(args) -> int:
-    """harness 工具调用决策：stdin JSON 或 --payload；stdout 出决策 JSON。"""
+    """harness 工具调用决策：stdin JSON 或 --payload；stdout 出决策 JSON。
+
+    落 trace 在这一层而不在 check_tool_call 里：决策函数是纯的（宪法测试守卫），
+    写盘只能由调用方做。这条 I/O 换来手册 6.5 条件6 的运行时证据。
+    """
     from .harness import check_tool_call, gate_status_for_push
     from .intent import load_session_intent
+    from .trace import append_event
 
     root = _project(args.path)
     raw = args.payload if args.payload else (sys.stdin.read() or "{}")
+    tool = "unparsed"
     try:
         payload = json.loads(raw)
     except json.JSONDecodeError as exc:
@@ -108,6 +114,7 @@ def cmd_harness_check(args) -> int:
             reason=f"harness check 无法解析输入（{exc}）：解析失败 fail-closed",
         )
     else:
+        tool = str(payload.get("tool_name") or "?")
         gate_status = None
         command = str((payload.get("tool_input") or {}).get("command") or "")
         if PUSH_RE.search(command):
@@ -115,6 +122,13 @@ def cmd_harness_check(args) -> int:
         session = load_session_intent(root)
         decision = check_tool_call(payload, gate_status, session_intent=session.intent)
 
+    append_event(
+        root,
+        tool=tool,
+        decision=decision.permissionDecision,
+        rule_ids=decision.rule_ids,
+        detail=decision.reason,
+    )
     print(json.dumps(decision.claude_payload(), ensure_ascii=False))
     return 0
 
@@ -149,7 +163,7 @@ def cmd_harness_profile(args) -> int:
 
 
 def cmd_hook_claude(args) -> int:
-    """把 sopctl harness check 装进项目 .claude/settings.json 的 PreToolUse（合并，不覆盖他人配置）。"""
+    """把 sopctl harness-check 装进项目 .claude/settings.json 的 PreToolUse（合并，不覆盖他人配置）。"""
     root = _project(args.path)
     settings_path = root / ".claude" / "settings.json"
     settings_path.parent.mkdir(parents=True, exist_ok=True)
@@ -162,7 +176,10 @@ def cmd_hook_claude(args) -> int:
             print(f"错误: {settings_path} 不是合法 JSON，拒绝合并（请手工整合）", file=sys.stderr)
             return 2
 
-    command = f'"{sys.executable}" -m sopcontrol.cli harness check'
+    # 子命令名必须与 build_parser 一致（harness-check，连字符）。曾经写成两段 "harness check"，
+    # argparse 直接 exit 2、钩子拿不到决策——而 Claude Code 本地无 key 测不出来，
+    # 于是这个坏掉的安装器一直「看起来装好了」。tests/harness 现在拿真 parser 校验它。
+    command = f'"{sys.executable}" -m sopcontrol.cli harness-check'
     pre = data.setdefault("hooks", {}).setdefault("PreToolUse", [])
     entry = {"matcher": "Bash|Write|Edit|MultiEdit", "hooks": [{"type": "command", "command": command}]}
 
