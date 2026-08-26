@@ -72,6 +72,21 @@
 
 ## 状态（每次运行后更新）
 
+- 2026-08-26（横向扩展前收口，d44b387）：六件评估工作 + R8 全部闭环，302 测试全绿，
+  gate / project check 通过。件5 把变异验证从手工习惯变成机制（`corpus/mutations.yaml`
+  + `tests/corpus/test_mutations.py`：每个负向对照必须在还原修复后变红，否则语料本身
+  不算证据）；件6 把检测深度从标识符代理推到可达性（`plugins/detectors/reachability.py`
+  接 import_graph，MUT-009 守住 R1 重命名绕过）。R8 实测出三个洞不是一个：本机文件系统
+  大小写不敏感，`.SOPCONTROL/` 写的就是信任根而字面比对的守卫直接放行（harness 写入门、
+  bash 门、repair 过滤三处 fail-open）；allowed_writes 目录里的 symlink 能把写落到树外，
+  且 copy2 跟链接所以末节点自己是软链接也算逃逸。按纯函数宪法分三层修：`task.py`
+  按分量 casefold（allow-list 刻意保持大小写敏感——归一化在 Linux 上会把 `SRC/` 放进
+  `src` 范围，那才是 fail-open）、`worktree.resolves_inside` 碰文件系统、接在
+  `repair.apply_repair` 的合并边界。
+  用本产品的变异纪律验自己的修复，抓到两次假绿：`resolves_inside` 原先从 parent 起走，
+  漏了「末节点自己是 symlink」（真 bug，还原后测试仍绿才暴露）；删掉 repair.py 里的
+  接线后全套仍绿——守卫单测通过不等于守卫装上了，正是本产品要抓的 compiled_unwired
+  出现在自己身上。补 `test_apply_repair_rejects_symlink_escaping_worktree` 后该变异转红。
 - 2026-08-26（独立复查）：换会话独立复查 cdca464→e1ad148 共 22 笔提交。147 测试全绿、
   gate/doctor/self-test 通过、边界 1–8 未见违反（外仓仅投影 AGENTS/CLAUDE 两文件与
   `.sopcontrol/`，业务代码未动）。查出并修正两处文档漂移（README 声称 8 模式实为 10；

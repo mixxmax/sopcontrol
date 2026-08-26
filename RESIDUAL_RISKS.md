@@ -52,12 +52,27 @@ status 改成 verified 绕过完成门——revision 只防并发覆盖，不防
 是完成门验证时重跑独立审计（篡改状态不改变事实），以及 B1 终点门；彻底方案是
 任务文件 hash 链或由控制器持有任务状态（B3/B4 评估）。
 
-## R8 allowed_writes 是字符串前缀匹配（B2 起）
+## R8 allowed_writes 路径匹配（B2 起，2026-08-26 加固）
 
-不解析 symlink、不区分大小写（大小写敏感文件系统上 `Src/` ≠ `src/`）、不识别
-路径别名。对"合作操作员 + 受控 agent"的既定威胁模型足够；对抗性场景需 B2+
-的路径规范化强化。范围检查只约束声明路径，submit 不验证文件真实被改——
-完成门靠独立审计兜底。
+原始缺口是三个，其中两个方向是 fail-open（漏放），已修：
+
+- **大小写**：macOS / Windows 文件系统大小写不敏感，`.SOPCONTROL/rules/registry.yaml`
+  写的就是信任根本身，而字面 `== ".sopcontrol"` 的守卫直接放行。三处 deny 判定
+  （`harness` 写入门、`harness` bash 门、`repair` 合并回主树的过滤）已改为按路径
+  分量做 casefold 比对。
+- **symlink 逃逸**：允许写 `src/` 时，`src/link -> /etc` 让 `src/link/passwd` 字面
+  完全合规；末节点自己是 symlink 也一样（`shutil.copy2` 跟随链接）。`worktree.
+  resolves_inside` 解析每一层并要求仍落在隔离树内，接在 `repair.apply_repair`
+  的合并边界上。因为需要碰文件系统，它不能放进 `task.path_allowed`（迁移门受
+  纯函数宪法守卫）。悬空 symlink 单独认：`exists()` 为假但确实会被写穿。
+
+**刻意不改的一个**：allow-list 比对保持大小写敏感。比对不上只是多拒一个改动
+（fail-closed，最坏是误报）；而归一化会在大小写敏感的文件系统上把契约外的
+`SRC/` 放进 `src` 的范围，那才是 fail-open。守卫的两侧不对称——deny 归一化，
+allow 不归一化。宪法测试 `test_allow_list_stays_case_sensitive` 锁住这个判决。
+
+**仍存的边界**：不识别硬链接与 bind mount 等其他路径别名；范围检查只约束声明
+路径，submit 不验证文件真实被改——完成门靠独立审计兜底。
 
 ## R11 项目身份随绝对路径漂移（Phase 6 种子）
 
