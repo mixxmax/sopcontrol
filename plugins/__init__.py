@@ -10,9 +10,9 @@ from plugins.sensors.js_scan import JsScanSensor
 from plugins.sensors.rust_scan import RustScanSensor
 from plugins.sensors.trace_scan import TraceScanSensor
 
-# Go 表面的视力取决于 tree-sitter 是否可用：在则 AST 级（go_ast_scan，grounding
-# 标 structural），不在则退回词法代理（go_scan，grounding 如实标 lexical）。
-# 判定依据强度按证据 kind 自曝，降级对用户可见而不是静默丢失（16.4）。
+# Go/TS 表面的视力取决于 tree-sitter 是否可用：在则 AST 级（go_ast_scan/ts_ast_scan，
+# grounding 标 structural），不在则退回词法代理（go_scan/js_scan，grounding 如实标
+# lexical）。判定依据强度按证据 kind 自曝，降级对用户可见而不是静默丢失（16.4）。
 try:
     from plugins.sensors.go_ast_scan import GoAstScanSensor
 
@@ -22,9 +22,18 @@ except ImportError:
 
     _GO_SENSOR = GoScanSensor()
 
+try:
+    from plugins.sensors.ts_ast_scan import TsAstScanSensor
+
+    _JS_SENSOR = TsAstScanSensor()
+except ImportError:
+    from plugins.sensors.js_scan import JsScanSensor
+
+    _JS_SENSOR = JsScanSensor()
+
 SENSORS = [
     CodeScanSensor(), DocScanSensor(), AstScanSensor(),
-    JsScanSensor(), _GO_SENSOR, RustScanSensor(), ImportGraphSensor(),
+    _JS_SENSOR, _GO_SENSOR, RustScanSensor(), ImportGraphSensor(),
     TraceScanSensor(),
 ]
 DETECTORS = [NoConsumerDetector(), StateHealthDetector(), ReachabilityDetector()]

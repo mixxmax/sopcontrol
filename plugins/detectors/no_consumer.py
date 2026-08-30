@@ -53,7 +53,7 @@ class NoConsumerDetector:
             if e.kind in (
                 "ast_scan.references", "js_scan.references",
                 "go_scan.references", "rust_scan.references",
-                "go_ast.references",
+                "go_ast.references", "ts_ast.references",
             )
         ]
         structured_by_subject = {e.subject: e for e in structured}

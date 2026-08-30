@@ -139,7 +139,7 @@ cases:
   fixture: web-gate
   rule_id: GATE-001
   expected_verdict: {status: pass, absorption: wired_and_tested}
-  expected_grounding: lexical
+  expected_grounding: structural
   expected_findings: []
   ground_truth: TypeScript 表面正向对照——js_scan 识别真实 request_gate 引用（含测试）；兼作 comment_only_reference 负向对照（notes.ts 只在注释提及 request_gate，真引用在 gate.ts）——变异验证：去掉 referenced_anywhere 即报警
 
@@ -363,7 +363,7 @@ cases:
   fixture: web-gate
   rule_id: GATE-003
   expected_verdict: {status: pass, absorption: wired_and_tested}
-  expected_grounding: lexical
+  expected_grounding: structural
   expected_findings: []
   ground_truth: documented_rule_untested 负向对照第一域——回归写在 src/limiter.test.ts（JS/TS 生态的同置约定）；只认 tests/ 目录会把它读成生产文件，于是"有回归"被判成"无回归证据"，惩罚按生态惯例组织测试的人
 
@@ -411,3 +411,11 @@ cases:
   expected_findings:
   - {pattern_id: test_cannot_reach_consumer, severity: gap}
   ground_truth: R1 在 Go 表面的形态——src/api/charge_test.go（package api）自定义同名替身 PostCharge，编译通过、测试全绿，生产实现 gateway.PostCharge 从未被 import；go_ast 的包/import 证据让「同包互见 + import 闭包」能识破它（Go 深度化首个用例）
+
+- case_id: CASE-048
+  fixture: web-gate
+  rule_id: GATE-004
+  expected_verdict: {status: pass, absorption: wired_and_tested}
+  expected_grounding: lexical
+  expected_findings: []
+  ground_truth: .js 家族按设计永留词法层（tree-sitter 只覆盖 .ts/.tsx）——语料必须永远保留一个「pass 但只是搜到了标识符」的正向对照，看守词法自曝这条输出层防线不被 TS 升级顺带抹掉

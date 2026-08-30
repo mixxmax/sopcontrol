@@ -110,14 +110,23 @@ def test_go_pass_discloses_structural():
     assert "判定依据" in verdict.reason and "结构化" in verdict.reason
 
 
-def test_ts_pass_still_discloses_lexical_proxy():
-    """TS 夹具尚无结构化扫描器——pass 必须继续自曝词法代理，不许蹭 Go 的升级。
+def test_ts_pass_discloses_structural():
+    """TS 夹具的 pass 在 ts_ast 深度化后自曝结构化依据（go_ast 模板复制）。"""
+    report = run_case("web-gate")
+    verdict = next(v for v in report.verdicts if v.rule_id == "GATE-001")
+    assert verdict.status == "pass"
+    assert verdict.grounding == "structural"
+    assert "判定依据" in verdict.reason and "结构化" in verdict.reason
 
-    治理幻觉的输出层形态：Go 升级后若 TS 的 pass 顶着一模一样的脸，用户就
+
+def test_js_pass_still_discloses_lexical_proxy():
+    """.js 家族按设计永留词法层——语料里保留的唯一词法正向对照（GATE-004）。
+
+    治理幻觉的输出层形态：若 .js 的 pass 顶着与 .ts/.py 一样的脸，用户就
     分不清哪个验证了代码结构、哪个只是标识符在剥掉注释的文本里出现过。
     """
     report = run_case("web-gate")
-    verdict = next(v for v in report.verdicts if v.rule_id == "GATE-001")
+    verdict = next(v for v in report.verdicts if v.rule_id == "GATE-004")
     assert verdict.status == "pass"
     assert verdict.grounding == "lexical"
     assert "词法代理" in verdict.reason and "未验证调用关系" in verdict.reason

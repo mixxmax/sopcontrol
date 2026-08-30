@@ -33,6 +33,7 @@ from plugins.sensors.import_graph import (
     index_by_module,
     module_names,
 )
+from plugins.sensors.ts_ast_scan import build_ts_adjacency, ts_import_closure
 
 GOVERNANCE_ACTIVE = {
     RuleStatus.accepted,
@@ -113,6 +114,25 @@ def _go_marker_files(
     return prod, test
 
 
+def _ts_marker_files(
+    rule: Rule, evidence: list[Evidence]
+) -> tuple[list[Evidence], list[Evidence]]:
+    """(生产侧, 测试侧) 命中标记的 TS AST 证据（go_ast 模板的 TS 复制）。"""
+    prod, test = [], []
+    for ev in evidence:
+        if ev.kind != "ts_ast.references":
+            continue
+        if not ev.subject.endswith((".ts", ".tsx")):
+            continue
+        if not marker_hit(ev, rule.consumer_markers):
+            continue
+        if is_test_path(ev.subject):
+            test.append(ev)
+        elif is_production_path(ev.subject):
+            prod.append(ev)
+    return prod, test
+
+
 class ReachabilityDetector:
     detector_id = "reachability"
 
@@ -120,6 +140,7 @@ class ReachabilityDetector:
         findings: list[Finding] = []
         findings.extend(self._detect_python(rules, evidence))
         findings.extend(self._detect_go(rules, evidence))
+        findings.extend(self._detect_ts(rules, evidence))
         return findings
 
     def _detect_python(self, rules: list[Rule], evidence: list[Evidence]) -> list[Finding]:
@@ -158,6 +179,55 @@ class ReachabilityDetector:
                         s for s in prod_subjects
                         if modules & module_names(s)
                     }
+                if hit:
+                    reaching.append(ev.subject)
+            if reaching:
+                continue
+            findings.append(
+                finding_test_cannot_reach_consumer(
+                    rule,
+                    sorted(e.subject for e in visible),
+                    sorted(prod_subjects),
+                    [e.evidence_id for e in prod + visible],
+                )
+            )
+        return findings
+
+    def _detect_ts(self, rules: list[Rule], evidence: list[Evidence]) -> list[Finding]:
+        """TS 分支（go_ast 模板复制）：import 闭包经 ts_import_closure 走 Python 机器。
+
+        沉默边界与 Python/Go 分支对称：只有留下了 import 证据的测试文件才判
+        （没证据 ≠ 到不了）；缺生产侧/测试侧由 no_consumer 的 documented_* 负责。
+        """
+        adjacency = build_ts_adjacency(evidence)
+        if not adjacency:
+            return []  # 无 ts_ast.imports（无 TS 项目或 tree-sitter 未装）：不假装看得见
+        ts_files = sorted(
+            {
+                e.subject for e in evidence
+                if e.kind == "ts_ast.references"
+                and e.subject.endswith((".ts", ".tsx"))
+            }
+            | set(adjacency)
+        )
+        by_module = index_by_module(ts_files)
+
+        findings: list[Finding] = []
+        for rule in _governed_consumer_rules(rules):
+            prod, test = _ts_marker_files(rule, evidence)
+            if not prod or not test:
+                continue  # 缺一侧由 no_consumer 的 documented_* 模式负责，不重复告警
+            prod_subjects = {e.subject for e in prod}
+            visible = [e for e in test if e.subject in adjacency]
+            if not visible:
+                continue
+            reaching = []
+            for ev in visible:
+                modules, files = ts_import_closure(ev.subject, adjacency, by_module)
+                hit = prod_subjects & files
+                if not hit:
+                    # 文件级没连上时退一步看顶层名（与 Python 分支同款兜底）
+                    hit = {s for s in prod_subjects if modules & module_names(s)}
                 if hit:
                     reaching.append(ev.subject)
             if reaching:

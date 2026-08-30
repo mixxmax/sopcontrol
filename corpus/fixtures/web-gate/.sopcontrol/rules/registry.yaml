@@ -71,3 +71,27 @@ rules:
   tags: []
   created_at: '2026-08-26T14:50:43.486164Z'
   accepted_at: null
+- rule_id: GATE-004
+  statement: 旧链清理必须走 legacy_gate 受控入口（.js 遗留文件按设计永留词法层，判定须自曝）
+  modality: MUST
+  status: accepted
+  scope: web.legacy
+  owner: platform
+  risk: medium
+  source:
+    type: document
+    ref: docs/sop.md
+    observed_at: null
+  consumer_markers:
+  - legacy_gate
+  legacy_markers: []
+  state_markers: []
+  guard_ids: []
+  source_hash: ''
+  bypass_note: ''
+  attested_by: ''
+  attested_at: null
+  supersedes: []
+  tags: []
+  created_at: '2026-08-30T13:31:44.566969Z'
+  accepted_at: null

@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-08-30T08:12:59.108732+00:00",
-  "git_head": "243ce0e",
+  "generated_at": "2026-08-30T13:38:25.570067+00:00",
+  "git_head": "adcfeae",
   "totals": {
-    "cases": 47,
-    "verdict_match": 47,
-    "findings_match": 47,
+    "cases": 48,
+    "verdict_match": 48,
+    "findings_match": 48,
     "accuracy": 1.0
   },
   "by_fixture": {
@@ -24,9 +24,9 @@
       "findings_match": 16
     },
     "web-gate": {
-      "cases": 3,
-      "verdict_match": 3,
-      "findings_match": 3
+      "cases": 4,
+      "verdict_match": 4,
+      "findings_match": 4
     },
     "go-gateway": {
       "cases": 4,
@@ -50,8 +50,8 @@
       "verdict_match": 10
     },
     "no_finding_expected": {
-      "cases": 18,
-      "verdict_match": 18
+      "cases": 19,
+      "verdict_match": 19
     },
     "comment_only_reference": {
       "cases": 8,
@@ -96,14 +96,14 @@
   },
   "absorption_distribution": {
     "documented": 14,
-    "wired_and_tested": 17,
+    "wired_and_tested": 18,
     "unknown": 11,
     "wired": 5
   },
   "grounding_distribution": {
     "none": 23,
-    "structural": 21,
-    "lexical": 3
+    "structural": 23,
+    "lexical": 2
   },
   "case_results": [
     {
@@ -385,12 +385,12 @@
       "expected": {
         "status": "pass",
         "absorption": "wired_and_tested",
-        "grounding": "lexical"
+        "grounding": "structural"
       },
       "actual": {
         "status": "pass",
         "absorption": "wired_and_tested",
-        "grounding": "lexical"
+        "grounding": "structural"
       },
       "verdict_match": true,
       "findings_match": true
@@ -810,12 +810,12 @@
       "expected": {
         "status": "pass",
         "absorption": "wired_and_tested",
-        "grounding": "lexical"
+        "grounding": "structural"
       },
       "actual": {
         "status": "pass",
         "absorption": "wired_and_tested",
-        "grounding": "lexical"
+        "grounding": "structural"
       },
       "verdict_match": true,
       "findings_match": true
@@ -904,10 +904,27 @@
       },
       "verdict_match": true,
       "findings_match": true
+    },
+    {
+      "case_id": "CASE-048",
+      "fixture": "web-gate",
+      "rule_id": "GATE-004",
+      "expected": {
+        "status": "pass",
+        "absorption": "wired_and_tested",
+        "grounding": "lexical"
+      },
+      "actual": {
+        "status": "pass",
+        "absorption": "wired_and_tested",
+        "grounding": "lexical"
+      },
+      "verdict_match": true,
+      "findings_match": true
     }
   ],
   "mutations": {
-    "declared_mutations": 10,
+    "declared_mutations": 11,
     "enforcement_command": "python -m pytest tests/corpus/test_mutations.py -q",
     "exit_code": 0,
     "passed": true,
@@ -962,7 +979,7 @@
   "external_datapoint": {
     "root": "/tmp/jf-audit",
     "rules": 1,
-    "evidence_count": 3686,
+    "evidence_count": 4089,
     "findings": [
       {
         "pattern_id": "documented_rule_no_consumer",

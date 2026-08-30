@@ -37,6 +37,7 @@ dependencies = [
     # 并在 grounding 自曝 lexical，不静默丢视力。
     "tree-sitter>=0.26,<0.27",
     "tree-sitter-go>=0.25,<0.26",
+    "tree-sitter-typescript>=0.23,<0.24",
 ]
 
 [project.optional-dependencies]

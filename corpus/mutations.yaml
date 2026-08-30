@@ -82,6 +82,7 @@ mutations:
   must_fire:
   - {case_id: CASE-002, pattern_id: documented_rule_untested}
   - {case_id: CASE-033, pattern_id: documented_rule_untested}
+  - {case_id: CASE-048, pattern_id: documented_rule_untested}
 
 - mutation_id: MUT-009
   fix: module_names 按 stem ∪ 父目录名对齐（传感器只记裸顶层名，包内文件靠包名认出）
@@ -102,3 +103,14 @@ mutations:
   must_fire:
   - {case_id: CASE-024, pattern_id: test_cannot_reach_consumer}
   - {case_id: CASE-043, pattern_id: test_cannot_reach_consumer}
+
+- mutation_id: MUT-011
+  fix: ts_import_closure 用归一 import 顶层名走 Python 闭包机器（go_ast 模板 TS 复制）
+  revert: 闭包恒返回空集——TS 测试文件永远到不了生产实现
+  breaks: 正确 import 的 TS 回归测试被判成到不了消费者，误报可达性缺口
+  # 与 MUT-010 同守过度告警方向，守的是 TS 分支。致盲点用具名薄包装
+  # ts_import_closure 而非 import_closure 本体——patch 后者会把 Python 语料
+  # 一起打瞎，变异就分不清守的是哪一侧。
+  must_fire:
+  - {case_id: CASE-017, pattern_id: test_cannot_reach_consumer}
+  - {case_id: CASE-042, pattern_id: test_cannot_reach_consumer}

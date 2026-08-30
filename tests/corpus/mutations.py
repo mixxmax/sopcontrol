@@ -128,6 +128,17 @@ def mut_010_go_closure_blind(mp) -> None:
     )
 
 
+def mut_011_ts_closure_blind(mp) -> None:
+    """ts_import_closure 恒返回空集 → 正确 import 的 TS 回归全部判成不可达。
+
+    TS 分支的过度告警守卫（对称于 MUT-010 之于 Go）：import 证据瞎了，
+    web-gate 的正向对照会全部误报 test_cannot_reach_consumer。致盲点用具名
+    薄包装 ts_import_closure——patch import_closure 本体会连 Python 语料
+    一起打瞎，变异就分不清守的是哪一侧。
+    """
+    _patch_everywhere(mp, "ts_import_closure", lambda start, adjacency, by_module: (set(), set()))
+
+
 MUTATORS = {
     "MUT-001": mut_001_forget_colocated_tests,
     "MUT-002": mut_002_spec_dir_is_test,
@@ -139,4 +150,5 @@ MUTATORS = {
     "MUT-008": mut_008_no_test_dirs,
     "MUT-009": mut_009_stem_only_module_names,
     "MUT-010": mut_010_go_closure_blind,
+    "MUT-011": mut_011_ts_closure_blind,
 }

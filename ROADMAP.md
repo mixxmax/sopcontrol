@@ -72,6 +72,12 @@
 
 ## 状态（每次运行后更新）
 
+- 2026-08-30（Phase 6 开批·TS 深度化）：go_ast 模板复制到 TS——ts_ast_scan
+  （tree-sitter-typescript，.ts/.tsx 结构化 + import 归一顶层名复用 Python 闭包
+  机器），MUT-011 守过报方向；web-gate grounding lexical→structural（基线：
+  cases 47→48、structural 21→23、lexical 3→2 = rust 1 + 新增 .js 词法对照
+  CASE-048——.js 家族按设计永留词法层，语料永远看守词法自曝）。试跑抓到真 bug：
+  export_statement 的函数体字符串曾被当模块说明符（改取 source 字段）。
 - 2026-08-30（首个 enforced，垂直最后一步）：CTRL-001（.sopcontrol 写保护，
   AGENTS.md 硬约束规则化）走完手册 6.5 七条件——真实 opencode 会话（deepseek-v4-pro）
   经插件咨询 GUARD-CONTROLLER-WRITE 落盘 trace.jsonl（条件6/E4）、docs/ctrl-001.md

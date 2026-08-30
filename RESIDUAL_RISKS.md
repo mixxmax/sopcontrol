@@ -86,9 +86,13 @@ allow 不归一化。宪法测试 `test_allow_list_stays_case_sensitive` 锁住�
 lexical）。同包互见 + import 末段匹配包名的闭包近似：import 路径末段 ≠ 包声明名
 时闭合走不通，方向是过报（test_cannot_reach_consumer 误响）而非漏报。
 
-**JS/TS/Rust 仍词法**：`js_scan` / `rust_scan` 不解析完整语法：嵌套模板、正则
-字面量、raw string、宏展开等可能残留或误剥。语料覆盖基本注释/字符串；命中后再
-补夹具。Go 模板（go_ast_scan + reachability Go 分支 + MUT-010）可复制。
+**TS 已结构化（2026-08-30）**：`ts_ast_scan`（tree-sitter-typescript）覆盖
+.ts/.tsx（结构化引用 + import 归一顶层名），reachability TS 分支复用 Python 闭包
+机器（MUT-011 守过报方向）。**.js/.jsx/.mjs/.cjs 按设计永留词法层**（语料 CASE-048
+永久看守词法自曝）；解析失败的 .ts 回退词法并如实标 lexical。
+
+**Rust 仍词法**：`rust_scan` 不解析完整语法：宏展开、raw string 等可能残留或误剥。
+语料覆盖基本注释/字符串。Go/TS 模板可复制（tree-sitter-rust）。
 
 ## R9 修复智能在脊柱之外（B3 起，2026-08-26 更新）
 
