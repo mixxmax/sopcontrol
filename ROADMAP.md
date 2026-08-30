@@ -72,6 +72,14 @@
 
 ## 状态（每次运行后更新）
 
+- 2026-08-30（Phase 6 件5 收尾·Rust 深度化）：rust_ast_scan（tree-sitter-rust，
+  结构化引用 + use/mod 模块边）。rust-gate 的同名替身（tests/gate_test.rs 零 use）
+  被 test_cannot_reach_consumer 识破转 gap/wired（CASE-027 翻转），经 use 闭合的
+  真回归通过（新增 CASE-049）；MUT-012 守过报方向。词法判定归零至 .js 对照 1 条
+  （基线：cases 49、structural 25、lexical 1、变异 12）。协作记录：本任务由 2h
+  自动化会话开工（rust-gate 注册表/替身夹具/CASE-027 翻转/传感器与接线），主会话
+  接手补完——修正 module_edges 的 mod_item 节点类型 bug（mod 边从未被提取）+
+  补单元测试 + 基线/文档/提交收尾。
 - 2026-08-30（Phase 6 开批·TS 深度化）：go_ast 模板复制到 TS——ts_ast_scan
   （tree-sitter-typescript，.ts/.tsx 结构化 + import 归一顶层名复用 Python 闭包
   机器），MUT-011 守过报方向；web-gate grounding lexical→structural（基线：

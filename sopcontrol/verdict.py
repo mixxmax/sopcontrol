@@ -27,7 +27,7 @@ HARD_MODALITIES = {Modality.MUST, Modality.MUST_NOT}
 _STRUCTURED_KINDS = frozenset({
     "ast_scan.references", "js_scan.references",
     "go_scan.references", "rust_scan.references",
-    "go_ast.references", "ts_ast.references",
+    "go_ast.references", "ts_ast.references", "rust_ast.references",
 })
 _STRUCTURED_SUFFIXES = (
     ".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".go", ".rs",
@@ -38,7 +38,7 @@ _STRUCTURED_SUFFIXES = (
 # 结构化 = 解析器产出，见过代码结构；词法 = 标识符出现在剥掉注释的文本里。
 # 判定器不验证调用关系（零 I/O），但它知道每条证据出自哪类扫描器——
 # 把这一点如实带上，pass 才能自曝「我凭什么」，渲染层不必猜。
-STRUCTURAL_EVIDENCE_KINDS = frozenset({"ast_scan.references", "go_ast.references", "ts_ast.references"})
+STRUCTURAL_EVIDENCE_KINDS = frozenset({"ast_scan.references", "go_ast.references", "ts_ast.references", "rust_ast.references"})
 LEXICAL_EVIDENCE_KINDS = frozenset({
     "js_scan.references", "go_scan.references",
     "rust_scan.references", "code_scan.identifiers",

@@ -31,9 +31,18 @@ except ImportError:
 
     _JS_SENSOR = JsScanSensor()
 
+try:
+    from plugins.sensors.rust_ast_scan import RustAstScanSensor
+
+    _RUST_SENSOR = RustAstScanSensor()
+except ImportError:
+    from plugins.sensors.rust_scan import RustScanSensor
+
+    _RUST_SENSOR = RustScanSensor()
+
 SENSORS = [
     CodeScanSensor(), DocScanSensor(), AstScanSensor(),
-    _JS_SENSOR, _GO_SENSOR, RustScanSensor(), ImportGraphSensor(),
+    _JS_SENSOR, _GO_SENSOR, _RUST_SENSOR, ImportGraphSensor(),
     TraceScanSensor(),
 ]
 DETECTORS = [NoConsumerDetector(), StateHealthDetector(), ReachabilityDetector()]

@@ -33,6 +33,7 @@ from plugins.sensors.import_graph import (
     index_by_module,
     module_names,
 )
+from plugins.sensors.rust_ast_scan import build_rust_adjacency, rust_import_closure
 from plugins.sensors.ts_ast_scan import build_ts_adjacency, ts_import_closure
 
 GOVERNANCE_ACTIVE = {
@@ -133,6 +134,23 @@ def _ts_marker_files(
     return prod, test
 
 
+def _rust_marker_files(
+    rule: Rule, evidence: list[Evidence]
+) -> tuple[list[Evidence], list[Evidence]]:
+    """(生产侧, 测试侧) 命中标记的 Rust AST 证据（go_ast 模板的 Rust 复制）。"""
+    prod, test = [], []
+    for ev in evidence:
+        if ev.kind != "rust_ast.references" or not ev.subject.endswith(".rs"):
+            continue
+        if not marker_hit(ev, rule.consumer_markers):
+            continue
+        if is_test_path(ev.subject):
+            test.append(ev)
+        elif is_production_path(ev.subject):
+            prod.append(ev)
+    return prod, test
+
+
 class ReachabilityDetector:
     detector_id = "reachability"
 
@@ -141,6 +159,7 @@ class ReachabilityDetector:
         findings.extend(self._detect_python(rules, evidence))
         findings.extend(self._detect_go(rules, evidence))
         findings.extend(self._detect_ts(rules, evidence))
+        findings.extend(self._detect_rust(rules, evidence))
         return findings
 
     def _detect_python(self, rules: list[Rule], evidence: list[Evidence]) -> list[Finding]:
@@ -227,6 +246,57 @@ class ReachabilityDetector:
                 hit = prod_subjects & files
                 if not hit:
                     # 文件级没连上时退一步看顶层名（与 Python 分支同款兜底）
+                    hit = {s for s in prod_subjects if modules & module_names(s)}
+                if hit:
+                    reaching.append(ev.subject)
+            if reaching:
+                continue
+            findings.append(
+                finding_test_cannot_reach_consumer(
+                    rule,
+                    sorted(e.subject for e in visible),
+                    sorted(prod_subjects),
+                    [e.evidence_id for e in prod + visible],
+                )
+            )
+        return findings
+
+    def _detect_rust(self, rules: list[Rule], evidence: list[Evidence]) -> list[Finding]:
+        """Rust 分支：use/mod 模块边经 rust_import_closure 走 Python 闭包机器。
+
+        沉默边界与 Python/Go/TS 分支的一个关键差异：rust_ast.modules 对每个
+        **解析成功**的 .rs 文件都产（哪怕边为空），所以可见性判定是「文件解析
+        成功」而非「留下过 import」。这不是放宽——零 use 的 tests/ 集成测试
+        在 Rust 语义里真的到不了任何生产文件（替身），报 test_cannot_reach_consumer
+        恰恰是正确的：rust-gate CASE-027 的替身就是这么现形的。
+        """
+        adjacency = build_rust_adjacency(evidence)
+        if not adjacency:
+            return []  # 无 rust_ast.modules（无 Rust 项目或 tree-sitter 未装）：不假装看得见
+        rs_files = sorted(
+            {
+                e.subject for e in evidence
+                if e.kind == "rust_ast.references" and e.subject.endswith(".rs")
+            }
+            | set(adjacency)
+        )
+        by_module = index_by_module(rs_files)
+
+        findings: list[Finding] = []
+        for rule in _governed_consumer_rules(rules):
+            prod, test = _rust_marker_files(rule, evidence)
+            if not prod or not test:
+                continue  # 缺一侧由 no_consumer 的 documented_* 模式负责，不重复告警
+            prod_subjects = {e.subject for e in prod}
+            visible = [e for e in test if e.subject in adjacency]
+            if not visible:
+                continue
+            reaching = []
+            for ev in visible:
+                modules, files = rust_import_closure(ev.subject, adjacency, by_module)
+                hit = prod_subjects & files
+                if not hit:
+                    # 文件级没连上时退一步看顶层名（与 Python/TS 分支同款兜底）
                     hit = {s for s in prod_subjects if modules & module_names(s)}
                 if hit:
                     reaching.append(ev.subject)

@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-08-30T13:38:25.570067+00:00",
-  "git_head": "adcfeae",
+  "generated_at": "2026-08-30T15:35:58.062035+00:00",
+  "git_head": "a6502b9",
   "totals": {
-    "cases": 48,
-    "verdict_match": 48,
-    "findings_match": 48,
+    "cases": 49,
+    "verdict_match": 49,
+    "findings_match": 49,
     "accuracy": 1.0
   },
   "by_fixture": {
@@ -34,9 +34,9 @@
       "findings_match": 4
     },
     "rust-gate": {
-      "cases": 2,
-      "verdict_match": 2,
-      "findings_match": 2
+      "cases": 3,
+      "verdict_match": 3,
+      "findings_match": 3
     },
     "healthy-billing": {
       "cases": 5,
@@ -85,25 +85,25 @@
       "cases": 2,
       "verdict_match": 2
     },
+    "test_cannot_reach_consumer": {
+      "cases": 4,
+      "verdict_match": 4
+    },
     "schema_field_unread": {
       "cases": 2,
       "verdict_match": 2
-    },
-    "test_cannot_reach_consumer": {
-      "cases": 3,
-      "verdict_match": 3
     }
   },
   "absorption_distribution": {
     "documented": 14,
     "wired_and_tested": 18,
     "unknown": 11,
-    "wired": 5
+    "wired": 6
   },
   "grounding_distribution": {
     "none": 23,
-    "structural": 23,
-    "lexical": 2
+    "structural": 25,
+    "lexical": 1
   },
   "case_results": [
     {
@@ -553,14 +553,14 @@
       "fixture": "rust-gate",
       "rule_id": "RS-001",
       "expected": {
-        "status": "pass",
-        "absorption": "wired_and_tested",
-        "grounding": "lexical"
+        "status": "gap",
+        "absorption": "wired",
+        "grounding": "structural"
       },
       "actual": {
-        "status": "pass",
-        "absorption": "wired_and_tested",
-        "grounding": "lexical"
+        "status": "gap",
+        "absorption": "wired",
+        "grounding": "structural"
       },
       "verdict_match": true,
       "findings_match": true
@@ -921,10 +921,27 @@
       },
       "verdict_match": true,
       "findings_match": true
+    },
+    {
+      "case_id": "CASE-049",
+      "fixture": "rust-gate",
+      "rule_id": "RS-003",
+      "expected": {
+        "status": "pass",
+        "absorption": "wired_and_tested",
+        "grounding": "structural"
+      },
+      "actual": {
+        "status": "pass",
+        "absorption": "wired_and_tested",
+        "grounding": "structural"
+      },
+      "verdict_match": true,
+      "findings_match": true
     }
   ],
   "mutations": {
-    "declared_mutations": 11,
+    "declared_mutations": 12,
     "enforcement_command": "python -m pytest tests/corpus/test_mutations.py -q",
     "exit_code": 0,
     "passed": true,
@@ -979,7 +996,7 @@
   "external_datapoint": {
     "root": "/tmp/jf-audit",
     "rules": 1,
-    "evidence_count": 4089,
+    "evidence_count": 4092,
     "findings": [
       {
         "pattern_id": "documented_rule_no_consumer",

@@ -139,6 +139,15 @@ def mut_011_ts_closure_blind(mp) -> None:
     _patch_everywhere(mp, "ts_import_closure", lambda start, adjacency, by_module: (set(), set()))
 
 
+def mut_012_rust_closure_blind(mp) -> None:
+    """rust_import_closure 恒返回空集 → 经 use 闭合的 Rust 回归全部判成不可达。
+
+    Rust 分支的过度告警守卫（对称于 MUT-010/011）：模块边证据瞎了，
+    rust-gate 的真正向对照 CASE-049 会误报 test_cannot_reach_consumer。
+    """
+    _patch_everywhere(mp, "rust_import_closure", lambda start, adjacency, by_module: (set(), set()))
+
+
 MUTATORS = {
     "MUT-001": mut_001_forget_colocated_tests,
     "MUT-002": mut_002_spec_dir_is_test,
@@ -151,4 +160,5 @@ MUTATORS = {
     "MUT-009": mut_009_stem_only_module_names,
     "MUT-010": mut_010_go_closure_blind,
     "MUT-011": mut_011_ts_closure_blind,
+    "MUT-012": mut_012_rust_closure_blind,
 }

@@ -91,8 +91,13 @@ lexical）。同包互见 + import 末段匹配包名的闭包近似：import �
 机器（MUT-011 守过报方向）。**.js/.jsx/.mjs/.cjs 按设计永留词法层**（语料 CASE-048
 永久看守词法自曝）；解析失败的 .ts 回退词法并如实标 lexical。
 
-**Rust 仍词法**：`rust_scan` 不解析完整语法：宏展开、raw string 等可能残留或误剥。
-语料覆盖基本注释/字符串。Go/TS 模板可复制（tree-sitter-rust）。
+**Rust 已结构化（2026-08-30，件5 收尾）**：`rust_ast_scan`（tree-sitter-rust）
+产结构化引用 + use/mod 模块边（use 全段参与闭合，crate/self/super 关键字段剔除；
+mod 声明取 name 字段——节点类型是 mod_item 而非 mod_declaration，接手时修正）。
+Rust 集成测试是独立 crate：零 use 的测试文件经空边 modules 证据进闭包索引，
+只能到自己是替身的形状，被 test_cannot_reach_consumer 识破（CASE-027）；
+经 `use crate::limiter` 闭合的真回归通过（CASE-049）。MUT-012 守过报方向。
+解析失败的 .rs 回退词法并如实标 lexical。词法判定至此只剩 .js 家族对照（按设计永留）。
 
 ## R9 修复智能在脊柱之外（B3 起，2026-08-26 更新）
 

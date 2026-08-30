@@ -36,8 +36,9 @@ mutations:
   - {case_id: CASE-007, pattern_id: comment_only_reference}
   - {case_id: CASE-017, pattern_id: comment_only_reference}
   - {case_id: CASE-024, pattern_id: comment_only_reference}
-  - {case_id: CASE-027, pattern_id: comment_only_reference}
   - {case_id: CASE-032, pattern_id: comment_only_reference}
+  # CASE-027 已翻转为替身缺口（Rust 可达性上线），不再是负向对照；
+  # 它的 comment_only_reference 守卫职责由同构的 CASE-017/024/032 继续承担
 
 - mutation_id: MUT-004
   fix: 只声明 state_markers 的规则交给 state_health，不在 no_consumer 判未声明消费者
@@ -114,3 +115,13 @@ mutations:
   must_fire:
   - {case_id: CASE-017, pattern_id: test_cannot_reach_consumer}
   - {case_id: CASE-042, pattern_id: test_cannot_reach_consumer}
+
+- mutation_id: MUT-012
+  fix: rust_import_closure 用 use/mod 模块边走 Python 闭包机器（go_ast 模板 Rust 复制）
+  revert: 闭包恒返回空集——Rust 测试文件永远到不了生产实现
+  breaks: 经 use 闭合的 Rust 集成测试被判成到不了消费者，误报可达性缺口
+  # 与 MUT-010/011 同守过度告警方向，守的是 Rust 分支。致盲点是具名薄包装
+  # rust_import_closure。靶子 CASE-049（真正向对照）——CASE-027 已翻转为
+  # 本来就该报警的替身，「变异后仍响」证明不了任何东西。
+  must_fire:
+  - {case_id: CASE-049, pattern_id: test_cannot_reach_consumer}

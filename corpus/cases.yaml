@@ -224,10 +224,11 @@ cases:
 - case_id: CASE-027
   fixture: rust-gate
   rule_id: RS-001
-  expected_verdict: {status: pass, absorption: wired_and_tested}
-  expected_grounding: lexical
-  expected_findings: []
-  ground_truth: Rust 表面正向对照——rust_scan 识别 admit_request（含测试）；兼作 comment_only_reference 负向对照（notes.rs 只在注释提及 admit_request）——变异验证：去掉 referenced_anywhere 即报警
+  expected_verdict: {status: gap, absorption: wired}
+  expected_grounding: structural
+  expected_findings:
+  - {pattern_id: test_cannot_reach_consumer, severity: gap}
+  ground_truth: R1 在 Rust 表面的形态——tests/gate_test.rs 自定义同名替身 admit_request（集成测试是独立 crate，零 use 即到不了生产）；词法时代它曾顶着正向对照的脸，rust 可达性上线后现形。兼作 comment_only_reference 负向对照（notes.rs 只在注释提及 admit_request）——变异验证：去掉 referenced_anywhere 即报警
 
 - case_id: CASE-028
   fixture: rust-gate
@@ -419,3 +420,11 @@ cases:
   expected_grounding: lexical
   expected_findings: []
   ground_truth: .js 家族按设计永留词法层（tree-sitter 只覆盖 .ts/.tsx）——语料必须永远保留一个「pass 但只是搜到了标识符」的正向对照，看守词法自曝这条输出层防线不被 TS 升级顺带抹掉
+
+- case_id: CASE-049
+  fixture: rust-gate
+  rule_id: RS-003
+  expected_verdict: {status: pass, absorption: wired_and_tested}
+  expected_grounding: structural
+  expected_findings: []
+  ground_truth: Rust 正向对照——tests/limiter_test.rs 经 use crate::limiter 闭包到生产 src/limiter.rs（集成测试是独立 crate，不 use 生产 crate 就只能定义替身，那是 CASE-027 的形态）；use 路径段与 mod 名参与闭合，MUT-012 守过报方向

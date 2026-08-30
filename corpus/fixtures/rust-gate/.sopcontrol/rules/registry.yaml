@@ -9,8 +9,20 @@ rules:
   source:
     type: document
     ref: docs/sop.md
+    observed_at: null
   consumer_markers:
   - admit_request
+  legacy_markers: []
+  state_markers: []
+  guard_ids: []
+  source_hash: ''
+  bypass_note: ''
+  attested_by: ''
+  attested_at: null
+  supersedes: []
+  tags: []
+  created_at: '2026-08-30T14:04:03.361075Z'
+  accepted_at: null
 - rule_id: RS-002
   statement: 审计钩子必须经 register_audit_hook 注册
   modality: MUST
@@ -21,5 +33,41 @@ rules:
   source:
     type: document
     ref: docs/sop.md
+    observed_at: null
   consumer_markers:
   - register_audit_hook
+  legacy_markers: []
+  state_markers: []
+  guard_ids: []
+  source_hash: ''
+  bypass_note: ''
+  attested_by: ''
+  attested_at: null
+  supersedes: []
+  tags: []
+  created_at: '2026-08-30T14:04:03.361097Z'
+  accepted_at: null
+- rule_id: RS-003
+  statement: 限流必须经 enforce_rate_limit 受控入口，并有经 use 闭合的真实回归
+  modality: MUST
+  status: accepted
+  scope: rust.limit
+  owner: platform
+  risk: medium
+  source:
+    type: document
+    ref: docs/sop.md
+    observed_at: null
+  consumer_markers:
+  - enforce_rate_limit
+  legacy_markers: []
+  state_markers: []
+  guard_ids: []
+  source_hash: ''
+  bypass_note: ''
+  attested_by: ''
+  attested_at: null
+  supersedes: []
+  tags: []
+  created_at: '2026-08-30T14:04:03.348111Z'
+  accepted_at: null

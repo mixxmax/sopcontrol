@@ -54,6 +54,7 @@ class NoConsumerDetector:
                 "ast_scan.references", "js_scan.references",
                 "go_scan.references", "rust_scan.references",
                 "go_ast.references", "ts_ast.references",
+                "rust_ast.references",
             )
         ]
         structured_by_subject = {e.subject: e for e in structured}
