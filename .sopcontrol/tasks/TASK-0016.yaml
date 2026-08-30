@@ -18,14 +18,14 @@ contract:
   strict_schema: true
   capability_note: 当前模型未声明（已有画像 fixture-weak 不适用） tier=unknown：模型能力未知：按保守边界执行，文件级写入
     + 强制 MUST 字段清单
-status: verification_pending
+status: delivered
 repair_count: 0
 changed_paths:
 - SKILL.md
 - ROADMAP.md
-revision: 3
+revision: 5
 created_at: '2026-08-30T18:32:41.115286Z'
-updated_at: '2026-08-30T18:38:37.695713Z'
+updated_at: '2026-08-30T18:44:10.528379Z'
 history:
 - at: '2026-08-30T18:33:02.978487Z'
   action: accept
@@ -43,3 +43,20 @@ history:
   reason: 改动 2 个路径，全部在写入范围内；MUST 字段齐备 [skill_example, roadmap_policy, verification]
   detail:
     next_action: 运行 task verify 由控制器独立审计
+- at: '2026-08-30T18:44:01.912875Z'
+  action: verify
+  from_status: verification_pending
+  to_status: verified
+  allowed: true
+  reason: 完成门通过：全部必需规则 [CTRL-001, SELF-001, SELF-002] 判定 pass（E4 实测：本轮执行 .venv/bin/python
+    -m pytest -q 通过（25.035s）+ E3 独立审计）
+  detail:
+    next_action: task deliver 交付
+- at: '2026-08-30T18:44:10.524934Z'
+  action: deliver
+  from_status: verified
+  to_status: delivered
+  allowed: true
+  reason: 完成门已独立验证，允许交付
+  detail:
+    next_action: 无

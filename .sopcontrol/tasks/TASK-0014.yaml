@@ -19,16 +19,16 @@ contract:
   write_granularity: file
   strict_schema: true
   capability_note: 模型画像 fixture-weak tier=weak：边界遵循失败：文件级写入 + 强制 MUST 字段清单（场景8）
-status: verification_pending
+status: delivered
 repair_count: 0
 changed_paths:
 - sopcontrol/cli.py
 - DESIGN.md
 - README.md
 - PLAYBOOK.md
-revision: 3
+revision: 5
 created_at: '2026-08-30T18:19:26.762547Z'
-updated_at: '2026-08-30T18:38:37.145782Z'
+updated_at: '2026-08-30T18:44:09.991576Z'
 history:
 - at: '2026-08-30T18:19:32.296580Z'
   action: accept
@@ -46,3 +46,20 @@ history:
   reason: 改动 4 个路径，全部在写入范围内；MUST 字段齐备 [documented_policy, cli_help, migration_guidance]
   detail:
     next_action: 运行 task verify 由控制器独立审计
+- at: '2026-08-30T18:42:00.272176Z'
+  action: verify
+  from_status: verification_pending
+  to_status: verified
+  allowed: true
+  reason: 完成门通过：全部必需规则 [CTRL-001, SELF-001, SELF-002] 判定 pass（E4 实测：本轮执行 .venv/bin/python
+    -m pytest -q 通过（41.189s）+ E3 独立审计）
+  detail:
+    next_action: task deliver 交付
+- at: '2026-08-30T18:44:09.987898Z'
+  action: deliver
+  from_status: verified
+  to_status: delivered
+  allowed: true
+  reason: 完成门已独立验证，允许交付
+  detail:
+    next_action: 无

@@ -20,15 +20,15 @@ contract:
   write_granularity: file
   strict_schema: true
   capability_note: 模型画像 fixture-weak tier=weak：边界遵循失败：文件级写入 + 强制 MUST 字段清单（场景8）
-status: verification_pending
+status: delivered
 repair_count: 0
 changed_paths:
 - sopcontrol/capability.py
 - sopcontrol/cli_task.py
 - tests/harness/test_capability.py
-revision: 3
+revision: 5
 created_at: '2026-08-30T18:16:35.009116Z'
-updated_at: '2026-08-30T18:38:36.624675Z'
+updated_at: '2026-08-30T18:44:09.522700Z'
 history:
 - at: '2026-08-30T18:16:41.077436Z'
   action: accept
@@ -47,3 +47,20 @@ history:
     compatibility, regression_evidence]
   detail:
     next_action: 运行 task verify 由控制器独立审计
+- at: '2026-08-30T18:39:31.373633Z'
+  action: verify
+  from_status: verification_pending
+  to_status: verified
+  allowed: true
+  reason: 完成门通过：全部必需规则 [CTRL-001, SELF-001, SELF-002] 判定 pass（E4 实测：本轮执行 .venv/bin/python
+    -m pytest -q 通过（20.761s）+ E3 独立审计）
+  detail:
+    next_action: task deliver 交付
+- at: '2026-08-30T18:44:09.519175Z'
+  action: deliver
+  from_status: verified
+  to_status: delivered
+  allowed: true
+  reason: 完成门已独立验证，允许交付
+  detail:
+    next_action: 无
