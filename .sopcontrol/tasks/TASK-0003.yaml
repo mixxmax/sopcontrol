@@ -1,0 +1,75 @@
+task_id: TASK-0003
+contract:
+  objective: 对 TASK-0002 已提交基线（commit 6192d05：证据强度自曝+语料基线快照）运行完成门独立复核：本任务自身零代码改动，仅提交改动路径与基线哈希，由完成门跑
+    E4 测试与 SELF-001/002 判定
+  allowed_writes:
+  - sopcontrol/model.py
+  - sopcontrol/verdict.py
+  - sopcontrol/metrics.py
+  - sopcontrol/cli.py
+  - sopcontrol/cli_core.py
+  - corpus/cases.yaml
+  - corpus/baseline.json
+  - tests/corpus/test_cases.py
+  - tests/constitution/test_verdict.py
+  - tests/constitution/test_metrics.py
+  required_rules:
+  - SELF-001
+  - SELF-002
+  required_fields:
+  - baseline_commit
+  max_repairs: 1
+  repairs_fingerprint: null
+  write_granularity: file
+  strict_schema: true
+  capability_note: 模型画像 fixture-weak tier=weak：边界遵循失败：文件级写入 + 强制 MUST 字段清单（场景8）
+status: delivered
+repair_count: 0
+changed_paths:
+- sopcontrol/model.py
+- sopcontrol/verdict.py
+- sopcontrol/metrics.py
+- sopcontrol/cli.py
+- sopcontrol/cli_core.py
+- corpus/cases.yaml
+- corpus/baseline.json
+- tests/corpus/test_cases.py
+- tests/constitution/test_verdict.py
+- tests/constitution/test_metrics.py
+revision: 5
+created_at: '2026-08-30T06:19:42.689175Z'
+updated_at: '2026-08-30T06:20:51.250589Z'
+history:
+- at: '2026-08-30T06:19:43.033403Z'
+  action: accept
+  from_status: contract_proposed
+  to_status: executing
+  allowed: true
+  reason: 契约完整：目标、写入范围与可验证完成定义齐备
+  detail:
+    next_action: 执行变更后 task submit 提交改动路径
+- at: '2026-08-30T06:19:49.534682Z'
+  action: submit
+  from_status: executing
+  to_status: verification_pending
+  allowed: true
+  reason: 改动 10 个路径，全部在写入范围内；MUST 字段齐备 [baseline_commit]
+  detail:
+    next_action: 运行 task verify 由控制器独立审计
+- at: '2026-08-30T06:20:28.688276Z'
+  action: verify
+  from_status: verification_pending
+  to_status: verified
+  allowed: true
+  reason: 完成门通过：全部必需规则 [SELF-001, SELF-002] 判定 pass（E4 实测：本轮执行 .venv/bin/python -m
+    pytest -q 通过（28.598s）+ E3 独立审计）
+  detail:
+    next_action: task deliver 交付
+- at: '2026-08-30T06:20:51.244795Z'
+  action: deliver
+  from_status: verified
+  to_status: delivered
+  allowed: true
+  reason: 完成门已独立验证，允许交付
+  detail:
+    next_action: 无
