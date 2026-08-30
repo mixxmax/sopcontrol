@@ -1,0 +1,56 @@
+task_id: TASK-0020
+contract:
+  objective: 第三批：从被动能力事件确定性推导按模型隔离的行为画像；高风险失败立即收紧，稳定成功只建议升级，live 批准过期回到 unknown
+  allowed_writes:
+  - sopcontrol/capability.py
+  - sopcontrol/capability_events.py
+  - tests/harness/test_behavior_profile.py
+  - tests/harness/test_capability.py
+  - DESIGN.md
+  - ROADMAP.md
+  required_rules:
+  - CTRL-001
+  - SELF-001
+  - SELF-002
+  required_fields:
+  - derivation_policy
+  - identity_isolation
+  - expiry_policy
+  - no_auto_escalation
+  - energy_budget
+  max_repairs: 1
+  repairs_fingerprint: null
+  write_granularity: file
+  strict_schema: true
+  capability_note: 当前模型未声明（已有画像 fixture-weak 不适用） tier=unknown：模型能力未知：按保守边界执行，文件级写入
+    + 强制 MUST 字段清单
+status: verification_pending
+repair_count: 0
+changed_paths:
+- sopcontrol/capability.py
+- sopcontrol/capability_events.py
+- tests/harness/test_behavior_profile.py
+- tests/harness/test_capability.py
+- DESIGN.md
+- ROADMAP.md
+revision: 3
+created_at: '2026-08-30T19:25:17.771440Z'
+updated_at: '2026-08-30T19:31:11.801797Z'
+history:
+- at: '2026-08-30T19:25:17.996102Z'
+  action: accept
+  from_status: contract_proposed
+  to_status: executing
+  allowed: true
+  reason: 契约完整：目标、写入范围与可验证完成定义齐备
+  detail:
+    next_action: 执行变更后 task submit 提交改动路径
+- at: '2026-08-30T19:31:11.798873Z'
+  action: submit
+  from_status: executing
+  to_status: verification_pending
+  allowed: true
+  reason: 改动 6 个路径，全部在写入范围内；MUST 字段齐备 [derivation_policy, identity_isolation, expiry_policy,
+    no_auto_escalation, energy_budget]
+  detail:
+    next_action: 运行 task verify 由控制器独立审计

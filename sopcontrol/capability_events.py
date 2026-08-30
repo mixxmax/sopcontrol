@@ -1,14 +1,14 @@
 """被动能力事件：复用既有控制结果，内容寻址、去重、可重放。
 
-事件只记录客观结果，不参与模型画像或权限计算。采集失败不得阻断原动作。
+事件只记录客观结果；第三批纯推导层可据此收紧画像，但事件本身不能授权。采集失败不得阻断原动作。
 """
 from __future__ import annotations
 
 import json
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -16,6 +16,7 @@ from .model import content_hash, utcnow
 
 CAPABILITY_EVENT_REL = ".sopcontrol/evidence/capability-events.jsonl"
 MAX_CAPABILITY_EVENTS = 500
+BEHAVIOR_WINDOW = timedelta(days=30)
 
 
 class CapabilityEvent(BaseModel):
@@ -32,6 +33,59 @@ class CapabilityEvent(BaseModel):
         if not self.event_id:
             payload = self.model_dump(exclude={"event_id", "observed_at"}, mode="json")
             self.event_id = "ce-" + content_hash(payload)
+
+
+class BehaviorProfile(BaseModel):
+    model: str
+    event_ids: list[str] = Field(default_factory=list)
+    denied_transitions: int = 0
+    successful_deliveries: int = 0
+    enforced_ceiling: Optional[Literal["weak"]] = None
+    recommended_tier: Optional[Literal["strong"]] = None
+
+
+def derive_behavior_profile(
+    events: list[CapabilityEvent],
+    *,
+    model: str,
+    now: Optional[datetime] = None,
+) -> BehaviorProfile:
+    """从近期客观事件确定性推导行为画像；只执行收紧，成功仅形成建议。"""
+    current = now or utcnow()
+    cutoff = current - BEHAVIOR_WINDOW
+    unique = {event.event_id: event for event in events}
+    recent = [
+        event for event in unique.values()
+        if event.observed_at.tzinfo is not None and cutoff <= event.observed_at <= current
+    ]
+    task_ids = {
+        event.subject for event in recent
+        if event.kind == "task.open" and event.model == model
+    }
+    relevant = [
+        event for event in recent
+        if (event.kind == "task.open" and event.model == model)
+        or (event.kind == "task.transition" and event.subject in task_ids)
+    ]
+    denied = sum(
+        1 for event in relevant
+        if event.kind == "task.transition" and event.outcome == "denied"
+    )
+    deliveries = {
+        event.subject for event in relevant
+        if event.kind == "task.transition"
+        and event.outcome == "allowed"
+        and event.detail.get("action") == "deliver"
+        and event.detail.get("to_status") == "delivered"
+    }
+    return BehaviorProfile(
+        model=model,
+        event_ids=sorted(event.event_id for event in relevant),
+        denied_transitions=denied,
+        successful_deliveries=len(deliveries),
+        enforced_ceiling="weak" if denied else None,
+        recommended_tier="strong" if len(deliveries) >= 5 else None,
+    )
 
 
 def capability_event_path(root: Path) -> Path:

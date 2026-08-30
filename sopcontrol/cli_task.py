@@ -91,12 +91,19 @@ def cmd_task(args) -> int:
                 return 2
         profile = load_profile(root)
         current_model = getattr(args, "model", None)
+        from .capability_events import derive_behavior_profile, load_capability_events
+
+        behavior = derive_behavior_profile(
+            load_capability_events(root),
+            model=current_model or "",
+        )
         explicit = getattr(args, "max_repairs", None) is not None
         repairs, knobs, note = apply_knobs_to_open(
             max_repairs=args.max_repairs if explicit else 2,
             max_repairs_explicit=explicit,
             profile=profile,
             current_model=current_model,
+            behavior=behavior,
         )
         writes = list(args.allow)
         if knobs.write_granularity == "file":

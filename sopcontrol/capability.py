@@ -8,14 +8,18 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Literal, Optional
 
 import yaml
 from pydantic import BaseModel, Field
 
+from .model import utcnow
+
 Tier = Literal["strong", "fragile", "weak", "unknown"]
 WriteGranularity = Literal["prefix", "prefer_file", "file"]
+APPROVAL_TTL = timedelta(days=30)
 
 PROBE_IDS = ("json_stability", "boundary_follow", "instruction_follow")
 
@@ -150,6 +154,7 @@ class ModelProfile(BaseModel):
     evaluation_id: str = ""
     approved_evaluation_id: str = ""
     approved_by: str = ""
+    approved_at: Optional[datetime] = None
     history: list[dict] = Field(default_factory=list)
 
 
@@ -168,22 +173,35 @@ def effective_control_knobs(
     profile: Optional[ModelProfile],
     *,
     current_model: Optional[str] = None,
+    now: Optional[datetime] = None,
 ) -> ControlKnobs:
-    """仅已人工批准、身份匹配、自洽的 live 画像可以放宽边界。"""
+    """仅未过期、已人工批准、身份匹配且自洽的 live 画像可以放宽边界。"""
     if profile is None or not current_model or profile.model != current_model:
         return control_knobs("unknown")
     expected_id = evaluation_id(profile.model, profile.source, profile.tier, profile.scores)
+    current = now or utcnow()
     trusted = (
         profile.source.startswith("live:")
         and profile.evaluation_id == expected_id
         and profile.approved_evaluation_id == expected_id
         and bool(profile.approved_by)
+        and profile.approved_at is not None
+        and current <= profile.approved_at + APPROVAL_TTL
     )
     if not trusted:
         return control_knobs("unknown")
     scored_tier = tier_from_scores(profile.scores)
     tier = scored_tier if scored_tier == profile.tier else "unknown"
     return control_knobs(tier)
+
+
+def apply_behavior_ceiling(knobs: ControlKnobs, behavior) -> ControlKnobs:
+    """行为画像只能收紧既有旋钮；成功建议没有授权效力。"""
+    if getattr(behavior, "enforced_ceiling", None) != "weak":
+        return knobs
+    if knobs.tier in {"strong", "fragile"}:
+        return control_knobs("weak")
+    return knobs
 
 
 def profile_path(root: Path) -> Path:
@@ -222,6 +240,7 @@ def approve_profile(root: Path, *, expected_evaluation_id: str, by: str = "user"
         raise ValueError("批准必须记录人工确认人，agent 自签不算批准")
     profile.approved_evaluation_id = current_id
     profile.approved_by = by.strip()
+    profile.approved_at = utcnow()
     save_profile(root, profile)
     return profile
 
@@ -263,9 +282,12 @@ def apply_knobs_to_open(
     max_repairs_explicit: bool,
     profile: Optional[ModelProfile],
     current_model: Optional[str] = None,
+    behavior=None,
+    now: Optional[datetime] = None,
 ) -> tuple[int, ControlKnobs, str]:
-    """返回实际修复预算、最终旋钮与说明；所有消费者共享同一次能力决策。"""
-    knobs = effective_control_knobs(profile, current_model=current_model)
+    """返回实际修复预算、最终旋钮与说明；行为证据只能收紧同一次决策。"""
+    knobs = effective_control_knobs(profile, current_model=current_model, now=now)
+    knobs = apply_behavior_ceiling(knobs, behavior)
     repairs = min(max_repairs, knobs.max_repairs) if max_repairs_explicit else knobs.max_repairs
     if profile is None:
         identity = "无模型画像"
@@ -276,4 +298,8 @@ def apply_knobs_to_open(
     else:
         identity = f"模型画像 {profile.model}"
     note = f"{identity} tier={knobs.tier}：{knobs.reason}"
+    if getattr(behavior, "enforced_ceiling", None):
+        note += "；行为事件触发 weak 上限（近期任务迁移被拒）"
+    elif getattr(behavior, "recommended_tier", None):
+        note += f"；行为事件建议 tier={behavior.recommended_tier}（仅建议，不自动授权）"
     return repairs, knobs, note

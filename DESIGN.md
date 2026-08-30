@@ -168,8 +168,15 @@ JSON 或指令失手 → `fragile`；边界失手 → `weak`；无画像或探�
 **被动能力事件（第二批）**：任务 open/迁移、运行时 guard 与总门只在既有决策完成后，
 把已经产生的客观结果追加到 `.sopcontrol/evidence/capability-events.jsonl`。事件按不含
 时间戳的内容摘要去重、最多保留 500 条，坏行忽略，写入失败不得改变原动作结果；重放
-只做确定性聚合。事件层不扫描仓库、不启动子进程、不调用模型，也不被
-`effective_control_knobs` 消费，因此本批只建立事实基础，不自动升降权限。
+只做确定性聚合。事件层不扫描仓库、不启动子进程、不调用模型；第二批只建立事实基础，
+事件本身不具有授权能力。
+
+**行为画像（第三批）**：`task open` 至多读取上述有界日志一次，按当前模型身份关联近期
+30 天的任务事件。任一任务迁移拒绝会把已经批准的 `strong/fragile` 画像收紧到 `weak`；
+五次独立成功交付只产生 `strong` 建议，不会自动授权或抬高现有 tier。live 画像的人工批准
+有效期为 30 天，过期回到 `unknown`；模型切换不继承另一身份的事件。能力层只接收纯
+`BehaviorProfile` 并与已批准画像取更保守交集，不直接读取事件存储。该路径仍不扫描仓库、
+不启动子进程、不调用网络或 LLM，控制开销由 500 条日志上限约束。
 
 ## 12. 场景1 决策：对话意图层 v0（2026-08-25 补）
 
@@ -205,7 +212,7 @@ JSON 或指令失手 → `fragile`；边界失手 → `weak`；无画像或探�
 ## 16. 场景8 与多平台投影（2026-08-25 补）
 
 **场景8**：弱模型漏 MUST 字段。契约增加 `required_fields`；`submit` 校验
-`--field key=value` 是否齐备。fragile/weak 画像设 `strict_schema=true`，accept
+`--field key=value` 是否齐备。fragile/weak/unknown/无画像设 `strict_schema=true`，accept
 时未声明字段清单即拒——确定性 schema 门，不靠模型自报。
 
 **多平台投影**：同一小节内容同步到 `AGENTS.md`（Codex/OpenCode）与 `CLAUDE.md`

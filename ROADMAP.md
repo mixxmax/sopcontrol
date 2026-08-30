@@ -34,7 +34,7 @@
 ### B2 快回路 — 完成（2026-08-23 深夜）
 - [x] TaskContract / PolicyEnvelope 最小 schema（DESIGN.md §10：不新增第四种真相）
 - [x] INTAKE→…→DELIVERED 状态机 + 合法迁移表（task.py；blocked/failed_unverified 终态）
-- [x] `sopctl task open/accept/submit/verify/deliver/show/list`：范围走私拒绝、完成门只信 E3 审计、修复熔断（默认两轮）、revision 防旧覆盖
+- [x] `sopctl task open/accept/submit/verify/deliver/show/list`：范围走私拒绝、完成门只信 E3 审计、修复预算由任务能力契约决定（unknown 最多 1 轮）、revision 防旧覆盖
 - [x] 任务语料 `corpus/task_cases.yaml`（8 用例）：14.1 场景 2/5/8/9/11/15 + 两个正向对照；场景 6/7 归 B4（场景 1 见下）
 - [x] 意图编译器 v0：`sopctl intake` 文档 MUST 句 → CandidateRule（observed，永不写注册表；强度建议区分必须/不得）
 - [x] 场景1 对话意图层：`intake --conversation` + discuss_only 阻断写工具（DESIGN §12，2026-08-25）
