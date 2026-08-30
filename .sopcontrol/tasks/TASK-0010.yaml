@@ -1,0 +1,85 @@
+task_id: TASK-0010
+contract:
+  objective: 件5收尾·Rust 深度化（Go/TS 模板复制）：rust_ast_scan 传感器（tree-sitter-rust，结构化引用 +
+    use 路径归一——crate 前缀后取顶层模块名，符合 Rust 集成测试独立 crate 语义），reachability 补 Rust 分支；rust-gate
+    同名替身（tests/gate_test.rs 零 use）被识破转 gap/wired（夹具注释已预告此形态），CASE-027 翻转 + 新增 CASE-049（RS-003
+    经 use 闭合的真回归）；MUT-012 过报守卫；词法判定归零至 .js 对照一条；基线刷新
+  allowed_writes:
+  - pyproject.toml
+  - plugins/__init__.py
+  - plugins/sensors/rust_ast_scan.py
+  - sopcontrol/verdict.py
+  - plugins/detectors/no_consumer.py
+  - plugins/detectors/reachability.py
+  - corpus/cases.yaml
+  - corpus/mutations.yaml
+  - corpus/baseline.json
+  - tests/corpus/mutations.py
+  - tests/patterns/test_rust_ast_scan.py
+  - RESIDUAL_RISKS.md
+  - ROADMAP.md
+  required_rules:
+  - CTRL-001
+  - SELF-001
+  - SELF-002
+  required_fields:
+  - rust_grounding_upgrade
+  - baseline_diff
+  max_repairs: 1
+  repairs_fingerprint: null
+  write_granularity: file
+  strict_schema: true
+  capability_note: 模型画像 fixture-weak tier=weak：边界遵循失败：文件级写入 + 强制 MUST 字段清单（场景8）
+status: delivered
+repair_count: 0
+changed_paths:
+- pyproject.toml
+- plugins/__init__.py
+- plugins/sensors/rust_ast_scan.py
+- sopcontrol/verdict.py
+- plugins/detectors/no_consumer.py
+- plugins/detectors/reachability.py
+- corpus/cases.yaml
+- corpus/mutations.yaml
+- corpus/baseline.json
+- tests/corpus/mutations.py
+- tests/patterns/test_rust_ast_scan.py
+- RESIDUAL_RISKS.md
+- ROADMAP.md
+revision: 5
+created_at: '2026-08-30T14:16:26.011935Z'
+updated_at: '2026-08-30T15:38:00.959458Z'
+history:
+- at: '2026-08-30T15:37:27.903377Z'
+  action: accept
+  from_status: contract_proposed
+  to_status: executing
+  allowed: true
+  reason: 契约完整：目标、写入范围与可验证完成定义齐备
+  detail:
+    next_action: 执行变更后 task submit 提交改动路径
+- at: '2026-08-30T15:37:28.098675Z'
+  action: submit
+  from_status: executing
+  to_status: verification_pending
+  allowed: true
+  reason: 改动 13 个路径，全部在写入范围内；MUST 字段齐备 [rust_grounding_upgrade, baseline_diff]
+  detail:
+    next_action: 运行 task verify 由控制器独立审计
+- at: '2026-08-30T15:37:48.062096Z'
+  action: verify
+  from_status: verification_pending
+  to_status: verified
+  allowed: true
+  reason: 完成门通过：全部必需规则 [CTRL-001, SELF-001, SELF-002] 判定 pass（E4 实测：本轮执行 .venv/bin/python
+    -m pytest -q 通过（13.261s）+ E3 独立审计）
+  detail:
+    next_action: task deliver 交付
+- at: '2026-08-30T15:38:00.952037Z'
+  action: deliver
+  from_status: verified
+  to_status: delivered
+  allowed: true
+  reason: 完成门已独立验证，允许交付
+  detail:
+    next_action: 无

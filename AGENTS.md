@@ -37,6 +37,12 @@
 - TASK-0008 [delivered] Phase 6 第一批·TS 深度化（照 Go 模板复制）：ts_ast_scan 传感器（tree-sitter-ty
   完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
   ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
+- TASK-0009 [delivered] Phase 6 件5 收尾·Rust 深度化（Go/TS 模板复制）：rust_ast_scan 传感器（tree-si
+  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
+  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
+- TASK-0010 [delivered] 件5收尾·Rust 深度化（Go/TS 模板复制）：rust_ast_scan 传感器（tree-sitter-rust
+  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
+  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
 
 ## 硬约束
 - 不得直接读写或修改 `.sopcontrol/` 内任何文件；一切经 `sopctl` 子命令。
