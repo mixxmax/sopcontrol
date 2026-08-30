@@ -90,6 +90,40 @@ def cmd_capability_eval(args) -> int:
         f"  strict_schema={knobs.get('strict_schema')}"
     )
     print(f"  理由: {knobs['reason']}")
+    print(f"  evaluation_id: {result['evaluation_id']}")
+    if result["source"].startswith("live:"):
+        print("  状态: 待人工批准；运行 capability-approve 后才可放宽任务边界")
+    else:
+        print("  状态: 离线校准结果；fixture/responses 永不授予更宽权限")
+    return 0
+
+
+def cmd_capability_approve(args) -> int:
+    """交互式批准当前 live 评测；非交互 agent 不能自评自批。"""
+    from .capability import approve_profile
+
+    root = _project(args.path)
+    if not sys.stdin.isatty():
+        print("错误: capability-approve 只允许人工交互终端执行；非交互调用拒绝", file=sys.stderr)
+        return 2
+    print("警告: 此操作可能放宽后续任务的写入范围与修复预算。")
+    typed = input("请重新输入 evaluation_id 以确认: ").strip()
+    if typed != args.evaluation_id:
+        print("错误: evaluation_id 确认不匹配，未批准", file=sys.stderr)
+        return 2
+    try:
+        profile = approve_profile(
+            root,
+            expected_evaluation_id=args.evaluation_id,
+            by=args.by,
+        )
+    except ValueError as exc:
+        print(f"错误: {exc}", file=sys.stderr)
+        return 2
+    print(
+        f"已批准 live 模型画像 {profile.model} tier={profile.tier} "
+        f"evaluation_id={profile.evaluation_id}（by={profile.approved_by}）"
+    )
     return 0
 
 

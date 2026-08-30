@@ -51,6 +51,19 @@ def test_unrelated_bash_and_tools_are_observed_not_blocked():
     assert call("Read", file_path=".sopcontrol/evidence/ledger.jsonl").permissionDecision == "allow"
 
 
+def test_capability_privilege_changes_require_human_confirmation():
+    live = call("Bash", command="sopctl capability-eval --model m --live opencode .")
+    assert live.permissionDecision == "ask"
+    assert "人工" in live.reason
+
+    approve = call("Bash", command="sopctl capability-approve --evaluation-id abc .")
+    assert approve.permissionDecision == "ask"
+    assert "人工" in approve.reason
+
+    fixture = call("Bash", command="sopctl capability-eval --model m --fixture strong .")
+    assert fixture.permissionDecision == "allow"
+
+
 def test_uninstalling_own_leash_is_denied():
     d = call("Write", file_path=".opencode/plugins/sopcontrol.js", content="export const X = 1")
     assert d.permissionDecision == "deny" and "人工" in d.reason

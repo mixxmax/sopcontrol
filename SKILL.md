@@ -30,7 +30,7 @@ sopctl identity export . --out id.yaml
 sopctl identity import . --file id.yaml
 ```
 
-`--model` 必须填写当前执行模型，并与已存画像中的身份完全一致；省略或不匹配时按 `unknown` 保守执行。`submit` 若契约有 MUST 字段：`--field key=value`（漏字段会被拒）。
+`--model` 必须填写当前执行模型，并与已存画像中的身份完全一致；省略或不匹配时按 `unknown` 保守执行。fixture/响应文件只用于离线校准，不能授权；只有人工批准的 live 评测可放宽，agent 不得自行运行 `capability-approve`。`submit` 若契约有 MUST 字段：`--field key=value`（漏字段会被拒）。
 
 ## 不要做
 

@@ -23,10 +23,11 @@
 - **Claude Code（运行时拦截，协议已核实）**：适配完成；本机无 API key，待有 key 环境实测。
 - **拦截组件自保护**：删除 opencode 插件/claude 钩子配置 = 卸项圈，一律拒绝（人工动作）。
 - 能力画像落盘 `.sopcontrol/harness-profile.yaml`（live_verified 如实记录）。
-- **模型能力握手**：`sopctl capability-eval --model X --fixture strong|fragile|weak` 写入
-  `.sopcontrol/model-profile.yaml`；`task open --model X` 仅在当前模型身份与画像一致且探针自洽时使用画像。
-  未声明当前模型、身份不匹配、未画像、探针不完整或 tier 不一致一律按 `unknown` 保守执行：
-  每个 allow 项只授权该精确路径、强制 MUST 字段、修复预算最多 1 轮。
+- **模型能力握手**：`capability-eval --fixture/--responses` 只做离线校准，永不授予宽权限。
+  只有 `capability-eval --live` 的真实探针结果，经人工交互执行 `capability-approve` 并绑定本次
+  `evaluation_id` 后，`task open --model X` 才可使用画像。未批准、重新评测、身份不匹配、
+  探针不完整或 tier 不一致一律按 `unknown` 保守执行：每个 allow 项只授权该精确路径、
+  强制 MUST 字段、修复预算最多 1 轮。日常 open 只做小画像字段比较，不运行探针或扫描仓库。
 
 B0–B3 能力见 git 历史；检测 10 模式（Python 以 AST 为准，JS/TS/Go/Rust 为词法剥离后
 的标识符级代理，边界见 RESIDUAL_RISKS.md）。

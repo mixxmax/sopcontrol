@@ -14,9 +14,10 @@ def test_task_lifecycle_via_cli(tmp_path, capsys):
                  "--model", "lifecycle-test",
                  "--objective", "接线 PUSH-001",
                  "--allow", "src/push_job.py", "--allow", "tests/test_push.py",
-                 "--require-rule", "PUSH-001"]) == 0
+                 "--require-rule", "PUSH-001", "--require-field", "status"]) == 0
     assert main(["task", "accept", "TASK-0001", str(work)]) == 0
-    assert main(["task", "submit", "TASK-0001", str(work), "--changed", "src/push_job.py"]) == 0
+    assert main(["task", "submit", "TASK-0001", str(work),
+                 "--changed", "src/push_job.py", "--field", "status=initial"]) == 0
     assert main(["task", "verify", "TASK-0001", str(work)]) == 0  # PUSH-001 gap → repair_required
 
     # 真实接线（注意：不在注释里写标记词——R1 反向家族教训）
@@ -29,7 +30,8 @@ def test_task_lifecycle_via_cli(tmp_path, capsys):
         encoding="utf-8",
     )
     assert main(["task", "submit", "TASK-0001", str(work),
-                 "--changed", "src/push_job.py", "--changed", "tests/test_push.py"]) == 0
+                 "--changed", "src/push_job.py", "--changed", "tests/test_push.py",
+                 "--field", "status=fixed"]) == 0
     assert main(["task", "verify", "TASK-0001", str(work)]) == 0
     assert main(["task", "deliver", "TASK-0001", str(work)]) == 0
 

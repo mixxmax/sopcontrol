@@ -1,12 +1,14 @@
 """capability handshake：三维探针打分、tier 映射、旋钮调节、task open 接线。"""
 import builtins
 
+import pytest
 import yaml
 
 from sopcontrol.capability import (
     FIXTURES,
     ModelProfile,
     apply_knobs_to_open,
+    approve_profile,
     build_profile,
     control_knobs,
     effective_control_knobs,
@@ -74,11 +76,18 @@ def test_control_knobs_table():
     assert control_knobs("unknown").strict_schema is True
 
 
-def test_effective_knobs_require_matching_model_and_complete_profile():
-    strong = build_profile("model-a", FIXTURES["strong"], source="fixture:strong", at="t")
-    assert effective_control_knobs(strong, current_model="model-a").tier == "strong"
-    assert effective_control_knobs(strong).tier == "unknown"
-    assert effective_control_knobs(strong, current_model="model-b").tier == "unknown"
+def test_effective_knobs_require_trusted_approved_live_profile(tmp_path):
+    fixture = build_profile("model-a", FIXTURES["strong"], source="fixture:strong", at="t")
+    assert effective_control_knobs(fixture, current_model="model-a").tier == "unknown"
+
+    live = build_profile("model-a", FIXTURES["strong"], source="live:opencode", at="t")
+    assert effective_control_knobs(live, current_model="model-a").tier == "unknown"
+    from sopcontrol.capability import save_profile
+    save_profile(tmp_path, live)
+    approved = approve_profile(tmp_path, expected_evaluation_id=live.evaluation_id)
+    assert effective_control_knobs(approved, current_model="model-a").tier == "strong"
+    assert effective_control_knobs(approved).tier == "unknown"
+    assert effective_control_knobs(approved, current_model="model-b").tier == "unknown"
 
     incomplete = ModelProfile(
         model="model-a",
@@ -131,7 +140,7 @@ def test_fixtures_produce_expected_tiers():
         assert profile.tier == expected, (name, profile.scores)
 
 
-def test_capability_eval_archives_profile(tmp_path):
+def test_capability_eval_archives_profile_without_granting_fixture(tmp_path):
     (tmp_path / ".sopcontrol").mkdir()
     result = run_capability_eval(tmp_path, "demo-model", fixture="fragile")
     assert result["tier"] == "fragile"
@@ -141,13 +150,36 @@ def test_capability_eval_archives_profile(tmp_path):
     assert profile is not None
     assert profile.model == "demo-model"
     assert profile.tier == "fragile"
+    assert profile.evaluation_id
+    assert profile.approved_evaluation_id == ""
+    assert effective_control_knobs(profile, current_model="demo-model").tier == "unknown"
     assert len(profile.history) == 1
 
-    # 再次评测追加 history，不丢旧记录
+    # 再次评测追加 history，并以新摘要自动撤销任何旧批准。
+    live = build_profile("demo-model", FIXTURES["fragile"], source="live:opencode", at="t")
+    from sopcontrol.capability import save_profile
+    live.history = profile.history + live.history
+    save_profile(tmp_path, live)
+    approve_profile(tmp_path, expected_evaluation_id=live.evaluation_id)
     run_capability_eval(tmp_path, "demo-model", fixture="strong")
     profile = load_profile(tmp_path)
     assert profile.tier == "strong"
-    assert len(profile.history) == 2
+    assert profile.approved_evaluation_id == ""
+    assert len(profile.history) == 3
+
+
+def test_approval_rejects_non_live_and_stale_evaluation(tmp_path):
+    (tmp_path / ".sopcontrol").mkdir()
+    run_capability_eval(tmp_path, "demo-model", fixture="strong")
+    profile = load_profile(tmp_path)
+    with pytest.raises(ValueError, match="live"):
+        approve_profile(tmp_path, expected_evaluation_id=profile.evaluation_id)
+
+    live = build_profile("demo-model", FIXTURES["strong"], source="live:opencode", at="t")
+    from sopcontrol.capability import save_profile
+    save_profile(tmp_path, live)
+    with pytest.raises(ValueError, match="已变化"):
+        approve_profile(tmp_path, expected_evaluation_id="stale")
 
 
 def test_explicit_budget_cannot_exceed_tier_limit(tmp_path):
@@ -161,16 +193,16 @@ def test_explicit_budget_cannot_exceed_tier_limit(tmp_path):
         profile=profile,
         current_model="m",
     )
-    assert repairs == 1 and knobs.tier == "weak" and "weak" in note
+    assert repairs == 1 and knobs.tier == "unknown" and "unknown" in note
 
-    strong = build_profile("s", FIXTURES["strong"], source="fixture:strong", at="t")
+    fixture_strong = build_profile("s", FIXTURES["strong"], source="fixture:strong", at="t")
     repairs, knobs, _ = apply_knobs_to_open(
         max_repairs=1,
         max_repairs_explicit=True,
-        profile=strong,
+        profile=fixture_strong,
         current_model="s",
     )
-    assert repairs == 1 and knobs.tier == "strong"
+    assert repairs == 1 and knobs.tier == "unknown"
 
 
 def test_file_granularity_is_enforced_by_exact_submit_paths():
@@ -299,54 +331,39 @@ def test_cli_task_open_without_profile_persists_unknown_boundary(tmp_path):
     ]) == 2
 
 
-def test_cli_capability_eval_and_task_open(tmp_path):
+def test_cli_fixture_eval_never_grants_broader_task_permissions(tmp_path):
     from sopcontrol.cli import main
 
     _write_test_registry(tmp_path)
     (tmp_path / "src").mkdir()
 
-    assert main(["capability-eval", "--model", "m", "--fixture", "fragile", str(tmp_path)]) == 0
+    for fixture in ("fragile", "strong", "weak"):
+        assert main([
+            "capability-eval", "--model", "self-claimed", "--fixture", fixture,
+            str(tmp_path),
+        ]) == 0
+        assert main([
+            "task", "open", str(tmp_path),
+            "--model", "self-claimed",
+            "--objective", f"{fixture} fixture 不得授权目录",
+            "--allow", "src",
+            "--require-rule", "R-1",
+            "--require-field", "status",
+        ]) == 2
+
     assert main([
         "task", "open", str(tmp_path),
-        "--model", "m",
-        "--objective", "接线 R-1",
-        "--allow", "src",
+        "--model", "self-claimed",
+        "--objective", "离线画像按 unknown 开精确文件任务",
+        "--allow", "src/app.py",
         "--require-rule", "R-1",
+        "--require-field", "status",
+        "--max-repairs", "9",
     ]) == 0
 
     task_file = next((tmp_path / ".sopcontrol" / "tasks").glob("TASK-*.yaml"))
     data = yaml.safe_load(task_file.read_text(encoding="utf-8"))
     assert data["contract"]["max_repairs"] == 1
-    assert data["contract"]["write_granularity"] == "prefer_file"
-
-    assert main([
-        "task", "open", str(tmp_path),
-        "--model", "m",
-        "--objective", "接线 R-1",
-        "--allow", "src",
-        "--require-rule", "R-1",
-        "--max-repairs", "3",
-    ]) == 0
-    task_file2 = sorted((tmp_path / ".sopcontrol" / "tasks").glob("TASK-*.yaml"))[-1]
-    data2 = yaml.safe_load(task_file2.read_text(encoding="utf-8"))
-    assert data2["contract"]["max_repairs"] == 1
-
-    assert main(["capability-eval", "--model", "m", "--fixture", "strong", str(tmp_path)]) == 0
-    assert main([
-        "task", "open", str(tmp_path),
-        "--model", "other-model",
-        "--objective", "换模不得继承 strong",
-        "--allow", "src",
-        "--require-rule", "R-1",
-        "--require-field", "status",
-    ]) == 2
-
-    assert main(["capability-eval", "--model", "m", "--fixture", "weak", str(tmp_path)]) == 0
-    assert main([
-        "task", "open", str(tmp_path),
-        "--model", "m",
-        "--objective", "接线 R-1",
-        "--allow", "src",
-        "--require-rule", "R-1",
-        "--require-field", "status",
-    ]) == 2
+    assert data["contract"]["write_granularity"] == "file"
+    assert data["contract"]["strict_schema"] is True
+    assert "tier=unknown" in data["contract"]["capability_note"]

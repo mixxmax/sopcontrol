@@ -140,10 +140,10 @@ fail-closed 视为脏。提交基线后照常裁决。这把"改 verifier 自证
 2. `boundary_follow`——声明的改动是否落在给定写入范围（越界→文件级粒度）
 3. `instruction_follow`——是否服从显式约束（跳步倾向→更紧预算）
 
-打分是确定性字符串/JSON 检查；响应由夹具注入或显式文件提供（本切片不强制
-烧真实 token）。三探针全过 → `strong`；JSON 或指令失手 → `fragile`；边界失手
-→ `weak`；无画像或探针维度不完整 → `unknown`。`unknown` 表示尚无扩大权限的证据，
-不是与 `strong` 等价的默认值。
+打分是确定性字符串/JSON 检查。夹具和显式响应只用于离线校准，永远不能授予
+更宽权限；只有真实 `--live` 探针结果可以成为授权候选。三探针全过 → `strong`；
+JSON 或指令失手 → `fragile`；边界失手 → `weak`；无画像或探针维度不完整 →
+`unknown`。`unknown` 表示尚无扩大权限的证据，不是与 `strong` 等价的默认值。
 
 **旋钮映射（纯函数 `control_knobs`）**：
 
@@ -156,9 +156,14 @@ fail-closed 视为脏。提交基线后照常裁决。这把"改 verifier 自证
 
 **接入点**：`task open --model <当前模型>` 从完整探针分数重新推导实际旋钮，不信任旧画像中
 可能过期的派生 `knobs`。省略当前模型、当前模型与画像身份不匹配、画像标称 tier 与分数
-不一致或探针维度缺失时均按 `unknown` 处理。显式 `--max-repairs` 只能在能力上限内进一步
-收紧，不能扩大预算；`file` 粒度由 `submit` 门按精确路径匹配，`accept` 对 strict schema
-再拦一道。harness 画像与模型画像并列，不互相覆盖。
+不一致或探针维度缺失时均按 `unknown` 处理。画像还必须来自真实 `--live` 探针，并由人工
+通过 `capability-approve` 批准且绑定本次评测摘要；fixture、响应文件、未批准 live、重新评测
+后的旧批准均不得放宽。显式 `--max-repairs` 只能在能力上限内进一步收紧；`file` 粒度由
+`submit` 门按精确路径匹配，`accept` 对 strict schema 再拦一道。
+
+**控制税约束**：探针与人工批准属于低频冷路径；日常 `task open` 只读取小型画像并做常数时间
+字段/摘要比较，不新增仓库扫描、子进程、网络或 LLM 调用。离线 fixture 保留为零 token 校准，
+但评测事实与权限授权严格分离。harness 画像与模型画像并列，不互相覆盖。
 
 ## 12. 场景1 决策：对话意图层 v0（2026-08-25 补）
 

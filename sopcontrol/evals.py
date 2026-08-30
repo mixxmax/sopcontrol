@@ -325,6 +325,8 @@ def run_capability_eval(
         "knobs": profile.knobs.model_dump(),
         "profile_path": str(path),
         "source": source,
+        "evaluation_id": profile.evaluation_id,
+        "approved": False,
     }
 
 

@@ -276,7 +276,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser(
         "capability-eval",
-        help="模型能力握手：三维探针打分 → model-profile.yaml（夹具不烧 token；调节 task open 旋钮）",
+        help="模型能力评测：fixture/responses 仅校准；live 结果经人工批准后才可调节 task open",
     )
     p.add_argument("--model", required=True, help="模型标识（写入画像，如 ox-alpha-free）")
     p.add_argument(
@@ -293,6 +293,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("path", nargs="?", default=".")
     p.set_defaults(func=cmd_capability_eval)
+
+    p = sub.add_parser(
+        "capability-approve",
+        help="人工批准一次具体 live 能力评测（高影响操作；非交互调用拒绝）",
+    )
+    p.add_argument("--evaluation-id", required=True, help="capability-eval --live 输出的评测摘要")
+    p.add_argument("--by", default="user", help="确认人；agent 自签无效")
+    p.add_argument("path", nargs="?", default=".")
+    p.set_defaults(func=cmd_capability_approve)
 
     p = sub.add_parser(
         "capability-compare",

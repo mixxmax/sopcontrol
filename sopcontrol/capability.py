@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -140,26 +141,49 @@ def control_knobs(tier: Tier) -> ControlKnobs:
     )
 
 
-def effective_control_knobs(
-    profile: Optional[ModelProfile],
-    *,
-    current_model: Optional[str] = None,
-) -> ControlKnobs:
-    """只为身份匹配且探针自洽的画像放宽边界；其余一律 unknown。"""
-    if profile is None or not current_model or profile.model != current_model:
-        return control_knobs("unknown")
-    scored_tier = tier_from_scores(profile.scores)
-    tier = scored_tier if scored_tier == profile.tier else "unknown"
-    return control_knobs(tier)
-
-
 class ModelProfile(BaseModel):
     model: str
     tier: Tier = "unknown"
     scores: dict[str, bool] = Field(default_factory=dict)
     knobs: ControlKnobs = Field(default_factory=lambda: control_knobs("unknown"))
     source: str = "unset"  # fixture / responses / live
+    evaluation_id: str = ""
+    approved_evaluation_id: str = ""
+    approved_by: str = ""
     history: list[dict] = Field(default_factory=list)
+
+
+def evaluation_id(model: str, source: str, tier: Tier, scores: dict[str, bool]) -> str:
+    """内容寻址一次评测；来源、模型或结果任一变化都会产生新 id。"""
+    payload = json.dumps(
+        {"model": model, "source": source, "tier": tier, "scores": scores},
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+
+def effective_control_knobs(
+    profile: Optional[ModelProfile],
+    *,
+    current_model: Optional[str] = None,
+) -> ControlKnobs:
+    """仅已人工批准、身份匹配、自洽的 live 画像可以放宽边界。"""
+    if profile is None or not current_model or profile.model != current_model:
+        return control_knobs("unknown")
+    expected_id = evaluation_id(profile.model, profile.source, profile.tier, profile.scores)
+    trusted = (
+        profile.source.startswith("live:")
+        and profile.evaluation_id == expected_id
+        and profile.approved_evaluation_id == expected_id
+        and bool(profile.approved_by)
+    )
+    if not trusted:
+        return control_knobs("unknown")
+    scored_tier = tier_from_scores(profile.scores)
+    tier = scored_tier if scored_tier == profile.tier else "unknown"
+    return control_knobs(tier)
 
 
 def profile_path(root: Path) -> Path:
@@ -184,6 +208,24 @@ def save_profile(root: Path, profile: ModelProfile) -> Path:
     return path
 
 
+def approve_profile(root: Path, *, expected_evaluation_id: str, by: str = "user") -> ModelProfile:
+    """批准当前 live 评测；摘要不匹配或离线来源一律拒绝。"""
+    profile = load_profile(root)
+    if profile is None:
+        raise ValueError("没有待批准的模型画像；先运行 capability-eval --live")
+    if not profile.source.startswith("live:"):
+        raise ValueError("只有真实 live 探针结果可以批准；fixture/responses 仅用于离线校准")
+    current_id = evaluation_id(profile.model, profile.source, profile.tier, profile.scores)
+    if profile.evaluation_id != current_id or expected_evaluation_id != current_id:
+        raise ValueError("待批准评测已变化；请重新查看最新 evaluation_id 后确认")
+    if not by.strip() or by.strip().lower() == "agent":
+        raise ValueError("批准必须记录人工确认人，agent 自签不算批准")
+    profile.approved_evaluation_id = current_id
+    profile.approved_by = by.strip()
+    save_profile(root, profile)
+    return profile
+
+
 def build_profile(
     model: str,
     responses: dict[str, str],
@@ -194,17 +236,22 @@ def build_profile(
     scores = {pid: score_probe(pid, responses.get(pid, "")) for pid in PROBE_IDS}
     tier = tier_from_scores(scores)
     knobs = control_knobs(tier)
+    eid = evaluation_id(model, source, tier, scores)
     return ModelProfile(
         model=model,
         tier=tier,
         scores=scores,
         knobs=knobs,
         source=source,
+        evaluation_id=eid,
+        approved_evaluation_id="",
+        approved_by="",
         history=[{
             "at": at,
             "source": source,
             "scores": scores,
             "tier": tier,
+            "evaluation_id": eid,
             "responses_excerpt": {k: v[:80] for k, v in responses.items()},
         }],
     )

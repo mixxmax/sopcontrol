@@ -35,7 +35,7 @@ def test_takeover_via_cli_is_readonly(tmp_path, capsys):
     assert main(["capability-eval", "--model", "takeover-test", "--fixture", "strong", str(work)]) == 0
     assert main(["task", "open", str(work), "--model", "takeover-test",
                  "--objective", "接线 DEPLOY-001", "--allow", "scripts/deploy.py",
-                 "--require-rule", "DEPLOY-001"]) == 0
+                 "--require-rule", "DEPLOY-001", "--require-field", "status"]) == 0
     assert main(["task", "accept", "TASK-0001", str(work)]) == 0
     assert main(["task", "takeover", "TASK-0001", str(work)]) == 0
     out = capsys.readouterr().out

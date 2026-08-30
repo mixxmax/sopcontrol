@@ -61,6 +61,7 @@ GUARD_SELF_UNINSTALL = "GUARD-SELF-UNINSTALL"
 GUARD_NO_VERIFY = "GUARD-NO-VERIFY"
 GUARD_CONTROLLER_BASH = "GUARD-CONTROLLER-BASH"
 GUARD_PUSH_GATE = "GUARD-PUSH-GATE"
+GUARD_CAPABILITY_APPROVAL = "GUARD-CAPABILITY-APPROVAL"
 
 GUARD_IDS = frozenset({
     GUARD_INTENT,
@@ -69,6 +70,7 @@ GUARD_IDS = frozenset({
     GUARD_NO_VERIFY,
     GUARD_CONTROLLER_BASH,
     GUARD_PUSH_GATE,
+    GUARD_CAPABILITY_APPROVAL,
 })
 
 # 能力画像（手册 5.9）：不同 harness 得到不同控制强度，如实记录，不假装一致
@@ -173,6 +175,17 @@ def check_tool_call(
             return _deny(
                 "拒绝 --no-verify：绕过验证钩子属于已登记绕过家族 R6，一律阻断",
                 GUARD_NO_VERIFY,
+            )
+
+        normalized_command = command.casefold()
+        capability_live = "capability-eval" in normalized_command and "--live" in normalized_command
+        capability_approve = "capability-approve" in normalized_command
+        if capability_live or capability_approve:
+            action = "真实模型能力评测" if capability_live else "模型能力画像批准"
+            return HookDecision(
+                permissionDecision="ask",
+                reason=f"{action}可能扩大后续任务权限，必须由人工在交互终端确认；agent 不得自评自批",
+                rule_ids=[GUARD_CAPABILITY_APPROVAL],
             )
 
         if command_touches_controller(command):
