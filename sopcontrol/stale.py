@@ -11,6 +11,7 @@ from .bootstrap import MATURITY_KIND, maturity_evidence
 from .context import file_hash
 from .model import Evidence
 from .testrun import TEST_RUN_KIND, source_digest
+from .trace import TRACE_KIND, trace_evidence
 
 
 def is_input_stale(root: Path, ev: Evidence) -> bool:
@@ -23,12 +24,22 @@ def is_input_stale(root: Path, ev: Evidence) -> bool:
         重算一遍当前状态，答案变了就 stale——装了钩子、声明了验收命令之后，
         旧的「未达 L2」必须退场。注意不能只因 subject 不是文件就判 stale：
         那会让派生结论一落盘即过期，永远进不了任何消费者的视野。
+    运行时 trace：指纹是事件汇总（guards 决策计数与时刻），不是 trace.jsonl
+        的文件哈希。掉进文件哈希兜底分支的后果是每条 trace 行一落盘即 stale——
+        explain/doctor 的账本视图永远看不见条件6（首次 enforced 走查抓到的真 bug）。
+        修法与成熟度同构：重算当前汇总，不一致才 stale；事件清空 = 结论消失 = stale。
     """
     if ev.kind == MATURITY_KIND:
         try:
             return maturity_evidence(root).input_hash != ev.input_hash
         except OSError:
             return True
+    if ev.kind == TRACE_KIND:
+        try:
+            current = trace_evidence(root)
+        except OSError:
+            return True
+        return current is None or current.input_hash != ev.input_hash
     path = Path(root) / ev.subject
     if not path.is_file():
         return True
