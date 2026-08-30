@@ -110,7 +110,23 @@ def run_gate(root: Path) -> int:
     if tampered:
         print("FAIL(阻断): 证据账本被篡改或损坏（运行 sopctl doctor 复核）", file=sys.stderr)
 
-    if fails or tampered:
+    from .capability_events import CapabilityEvent, append_capability_event
+
+    blocked = bool(fails or tampered)
+    append_capability_event(
+        root,
+        CapabilityEvent(
+            kind="gate.result",
+            subject="project",
+            outcome="block" if blocked else "pass",
+            detail={
+                "fails": len(fails),
+                "gaps": len(gaps),
+                "ledger_tampered": tampered,
+            },
+        ),
+    )
+    if blocked:
         print(f"gate: 已阻断——fail {len(fails)} 项，账本{'损坏' if tampered else '完整'}", file=sys.stderr)
         return 1
     print(f"gate: 通过（gap 警告 {len(gaps)} 项未阻断，治理阶梯见 DESIGN.md §8）")
@@ -156,6 +172,7 @@ def _task_decide(
     store = TaskStore(root)
     task = store.load(task_id)
     known = {r.rule_id for r in Registry(root / ".sopcontrol" / "rules" / "registry.yaml").load()}
+    from_status = task.status.value
     if action == "verify":
         decision = run_task_verify(root, SENSORS, DETECTORS, task)
     else:
@@ -166,6 +183,21 @@ def _task_decide(
             known_rule_ids=known,
         )
     task = store.apply(task, decision, action, changed_paths=changed_paths)
+    from .capability_events import CapabilityEvent, append_capability_event
+
+    append_capability_event(
+        root,
+        CapabilityEvent(
+            kind="task.transition",
+            subject=task_id,
+            outcome="allowed" if decision.allowed else "denied",
+            detail={
+                "action": action,
+                "from_status": from_status,
+                "to_status": decision.to_status.value if decision.to_status else "",
+            },
+        ),
+    )
     mark = "迁移" if decision.allowed and decision.to_status else "拒绝"
     print(f"{mark}: {task_id} {task.status.value} (r{task.revision})")
     print(f"  理由: {decision.reason}")

@@ -163,6 +163,17 @@ def cmd_harness_check(args) -> int:
         rule_ids=decision.rule_ids,
         detail=decision.reason,
     )
+    from .capability_events import CapabilityEvent, append_capability_event
+
+    append_capability_event(
+        root,
+        CapabilityEvent(
+            kind="guard.decision",
+            subject=tool,
+            outcome=decision.permissionDecision,
+            detail={"rule_ids": decision.rule_ids},
+        ),
+    )
     print(json.dumps(decision.claude_payload(), ensure_ascii=False))
     return 0
 

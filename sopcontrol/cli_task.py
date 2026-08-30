@@ -126,6 +126,23 @@ def cmd_task(args) -> int:
             ),
         )
         store.save(task)
+        from .capability_events import CapabilityEvent, append_capability_event
+
+        append_capability_event(
+            root,
+            CapabilityEvent(
+                kind="task.open",
+                subject=task_id,
+                outcome="created",
+                model=current_model or "",
+                tier=knobs.tier,
+                detail={
+                    "write_granularity": gran,
+                    "strict_schema": strict,
+                    "max_repairs": repairs,
+                },
+            ),
+        )
         print(f"已创建任务 {task_id} [contract_proposed]：{args.objective}")
         print(f"  写入范围: {', '.join(writes)}")
         print(f"  完成定义: 规则 {', '.join(args.require_rule or [])} 全部判定 pass")
