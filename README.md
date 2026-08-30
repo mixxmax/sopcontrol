@@ -24,14 +24,16 @@
 - **拦截组件自保护**：删除 opencode 插件/claude 钩子配置 = 卸项圈，一律拒绝（人工动作）。
 - 能力画像落盘 `.sopcontrol/harness-profile.yaml`（live_verified 如实记录）。
 - **模型能力握手**：`sopctl capability-eval --model X --fixture strong|fragile|weak` 写入
-  `.sopcontrol/model-profile.yaml`；`task open` 按 tier 调节修复预算与写入粒度（弱模型更严）。
+  `.sopcontrol/model-profile.yaml`；`task open --model X` 仅在当前模型身份与画像一致且探针自洽时使用画像。
+  未声明当前模型、身份不匹配、未画像、探针不完整或 tier 不一致一律按 `unknown` 保守执行：
+  每个 allow 项只授权该精确路径、强制 MUST 字段、修复预算最多 1 轮。
 
 B0–B3 能力见 git 历史；检测 10 模式（Python 以 AST 为准，JS/TS/Go/Rust 为词法剥离后
 的标识符级代理，边界见 RESIDUAL_RISKS.md）。
 
 - `sopctl task open/accept/submit/verify/deliver` —— 任务契约 → 受控执行 → 完成门 → 交付
 - 完成门只信独立审计（E3）：required_rules 全部 pass 才 verified；fail → blocked（人工）；
-  gap → repair_required（默认两轮熔断 → failed_unverified）
+  gap → repair_required（按任务契约的能力预算熔断；unknown/无画像默认 1 轮）
 - 范围走私（契约外路径）拒绝该次提交，可自愈重试；revision 防旧上下文覆盖新状态
 - `sopctl intake` —— 意图编译器 v0：文档 MUST 句 → CandidateRule（observed，永不写注册表）
 - `sopctl intake --conversation chat.txt` —— 对话意图：discuss_only 锁定写工具；永久政策→Candidate
@@ -78,8 +80,10 @@ sopctl doctor /path/to/project           # 安装自诊：注册表/账本完整
 sopctl gate /path/to/project             # 终点门（hook 与 CI 调用同一入口）
 sopctl hook install /path/to/project     # 安装 pre-push 终态门
 sopctl self-test                         # 穿透演习：验证 gate 真实有效
-sopctl task open . --objective "接线 X" --allow src --require-rule X-001
-sopctl task accept/submit/verify/deliver TASK-0001 .
+sopctl task open . --objective "接线 X" --allow src/x.py --require-rule X-001 --require-field status
+sopctl task accept TASK-0001 .
+# 修改后提交时携带 MUST 字段；随后依次 verify / deliver
+sopctl task submit TASK-0001 . --changed src/x.py --field status=ok
 sopctl intake .                          # 文档 MUST 句 → 候选规则（不写注册表）
 sopctl hook claude .                     # 安装 Claude Code PreToolUse 钩子
 sopctl hook opencode .                   # 安装 OpenCode 运行时插件

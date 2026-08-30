@@ -5,16 +5,17 @@ import yaml
 
 from sopcontrol.capability import (
     FIXTURES,
+    ModelProfile,
     apply_knobs_to_open,
     build_profile,
     control_knobs,
+    effective_control_knobs,
     load_profile,
     score_boundary_follow,
     score_instruction_follow,
     score_json_stability,
     score_probe,
     tier_from_scores,
-    validate_writes_for_granularity,
 )
 from sopcontrol.evals import run_capability_eval
 from sopcontrol.task import Contract, TaskRecord, TaskStatus, evaluate_transition
@@ -68,14 +69,60 @@ def test_control_knobs_table():
     assert control_knobs("weak").max_repairs == 1
     assert control_knobs("weak").write_granularity == "file"
     assert control_knobs("weak").strict_schema is True
-    assert control_knobs("unknown").max_repairs == 2
+    assert control_knobs("unknown").max_repairs == 1
+    assert control_knobs("unknown").write_granularity == "file"
+    assert control_knobs("unknown").strict_schema is True
 
 
-def test_file_granularity_rejects_dir_prefix():
-    err = validate_writes_for_granularity(["src"], "file")
-    assert err and "src" in err
-    assert validate_writes_for_granularity(["src/foo.py"], "file") is None
-    assert validate_writes_for_granularity(["src"], "prefix") is None
+def test_effective_knobs_require_matching_model_and_complete_profile():
+    strong = build_profile("model-a", FIXTURES["strong"], source="fixture:strong", at="t")
+    assert effective_control_knobs(strong, current_model="model-a").tier == "strong"
+    assert effective_control_knobs(strong).tier == "unknown"
+    assert effective_control_knobs(strong, current_model="model-b").tier == "unknown"
+
+    incomplete = ModelProfile(
+        model="model-a",
+        tier="strong",
+        scores={"json_stability": True},
+        knobs=control_knobs("strong"),
+    )
+    knobs = effective_control_knobs(incomplete, current_model="model-a")
+    assert knobs.tier == "unknown"
+    assert knobs.max_repairs == 1
+    assert knobs.write_granularity == "file"
+    assert knobs.strict_schema is True
+
+
+def test_effective_knobs_downgrade_tier_score_conflict():
+    conflicting = ModelProfile(
+        model="conflicting-model",
+        tier="weak",
+        scores={
+            "json_stability": True,
+            "boundary_follow": True,
+            "instruction_follow": True,
+        },
+        knobs=control_knobs("strong"),
+    )
+
+    knobs = effective_control_knobs(conflicting, current_model="conflicting-model")
+
+    assert knobs.tier == "unknown"
+    assert knobs.write_granularity == "file"
+    assert knobs.strict_schema is True
+
+
+def test_no_profile_applies_unknown_boundary():
+    repairs, knobs, note = apply_knobs_to_open(
+        max_repairs=9,
+        max_repairs_explicit=True,
+        profile=None,
+    )
+
+    assert repairs == 1
+    assert knobs.write_granularity == "file"
+    assert knobs.strict_schema is True
+    assert "unknown" in note
 
 
 def test_fixtures_produce_expected_tiers():
@@ -103,30 +150,30 @@ def test_capability_eval_archives_profile(tmp_path):
     assert len(profile.history) == 2
 
 
-def test_apply_knobs_respects_explicit_max_repairs(tmp_path):
+def test_explicit_budget_cannot_exceed_tier_limit(tmp_path):
     (tmp_path / ".sopcontrol").mkdir()
     run_capability_eval(tmp_path, "m", fixture="weak")
     profile = load_profile(tmp_path)
 
-    repairs, writes, reject, note = apply_knobs_to_open(
-        allowed_writes=["src/a.py"],
+    repairs, knobs, note = apply_knobs_to_open(
         max_repairs=5,
         max_repairs_explicit=True,
         profile=profile,
+        current_model="m",
     )
-    assert repairs == 5 and reject is None and "weak" in note
+    assert repairs == 1 and knobs.tier == "weak" and "weak" in note
 
-    repairs, writes2, reject, _ = apply_knobs_to_open(
-        allowed_writes=["src"],
-        max_repairs=2,
-        max_repairs_explicit=False,
-        profile=profile,
+    strong = build_profile("s", FIXTURES["strong"], source="fixture:strong", at="t")
+    repairs, knobs, _ = apply_knobs_to_open(
+        max_repairs=1,
+        max_repairs_explicit=True,
+        profile=strong,
+        current_model="s",
     )
-    assert repairs == 1 and reject and "src" in reject
-    assert writes2 == ["src"]
+    assert repairs == 1 and knobs.tier == "strong"
 
 
-def test_accept_blocks_weak_dir_writes():
+def test_file_granularity_is_enforced_by_exact_submit_paths():
     task = TaskRecord(
         task_id="TASK-0001",
         contract=Contract(
@@ -139,12 +186,15 @@ def test_accept_blocks_weak_dir_writes():
         status=TaskStatus.contract_proposed,
     )
     decision = evaluate_transition(task, "accept", known_rule_ids={"R-1"})
-    assert not decision.allowed
-    assert "文件级" in decision.reason or "文件" in decision.reason
-
-    task.contract.allowed_writes = ["src/a.py"]
-    decision = evaluate_transition(task, "accept", known_rule_ids={"R-1"})
     assert decision.allowed and decision.to_status == TaskStatus.executing
+
+    task.status = TaskStatus.executing
+    rejected = evaluate_transition(task, "submit", changed_paths=["src/a.py"])
+    assert not rejected.allowed
+    assert "范围走私" in rejected.reason
+
+    accepted = evaluate_transition(task, "submit", changed_paths=["src"])
+    assert accepted.allowed and accepted.to_status == TaskStatus.verification_pending
 
 
 def test_clean_live_output_strips_ansi_and_footer():
@@ -191,11 +241,9 @@ def test_capability_compare_archives(tmp_path):
     assert path.exists() and "runs:" in path.read_text(encoding="utf-8")
 
 
-def test_cli_capability_eval_and_task_open(tmp_path):
-    from sopcontrol.cli import main
-
-    (tmp_path / ".sopcontrol" / "rules").mkdir(parents=True)
-    (tmp_path / ".sopcontrol" / "rules" / "registry.yaml").write_text(
+def _write_test_registry(root):
+    (root / ".sopcontrol" / "rules").mkdir(parents=True)
+    (root / ".sopcontrol" / "rules" / "registry.yaml").write_text(
         yaml.safe_dump({
             "rules": [{
                 "rule_id": "R-1",
@@ -212,9 +260,55 @@ def test_cli_capability_eval_and_task_open(tmp_path):
         encoding="utf-8",
     )
 
+
+def test_cli_task_open_without_profile_persists_unknown_boundary(tmp_path):
+    from sopcontrol.cli import main
+
+    _write_test_registry(tmp_path)
+
+    assert main([
+        "task", "open", str(tmp_path),
+        "--objective", "无画像任务",
+        "--allow", "src/a.py",
+        "--require-rule", "R-1",
+        "--require-field", "status",
+        "--max-repairs", "4",
+    ]) == 0
+
+    task_file = next((tmp_path / ".sopcontrol" / "tasks").glob("TASK-*.yaml"))
+    data = yaml.safe_load(task_file.read_text(encoding="utf-8"))
+    contract = data["contract"]
+    assert contract["max_repairs"] == 1
+    assert contract["write_granularity"] == "file"
+    assert contract["strict_schema"] is True
+    assert "无模型画像 tier=unknown" in contract["capability_note"]
+
+    assert main(["task", "accept", "TASK-0001", str(tmp_path)]) == 0
+    assert main([
+        "task", "submit", "TASK-0001", str(tmp_path),
+        "--changed", "src/a.py", "--field", "status=ok",
+    ]) == 0
+
+    (tmp_path / "src").mkdir()
+    assert main([
+        "task", "open", str(tmp_path),
+        "--objective", "目录越界",
+        "--allow", "src",
+        "--require-rule", "R-1",
+        "--require-field", "status",
+    ]) == 2
+
+
+def test_cli_capability_eval_and_task_open(tmp_path):
+    from sopcontrol.cli import main
+
+    _write_test_registry(tmp_path)
+    (tmp_path / "src").mkdir()
+
     assert main(["capability-eval", "--model", "m", "--fixture", "fragile", str(tmp_path)]) == 0
     assert main([
         "task", "open", str(tmp_path),
+        "--model", "m",
         "--objective", "接线 R-1",
         "--allow", "src",
         "--require-rule", "R-1",
@@ -222,12 +316,12 @@ def test_cli_capability_eval_and_task_open(tmp_path):
 
     task_file = next((tmp_path / ".sopcontrol" / "tasks").glob("TASK-*.yaml"))
     data = yaml.safe_load(task_file.read_text(encoding="utf-8"))
-    assert data["contract"]["max_repairs"] == 1  # fragile 画像调节
+    assert data["contract"]["max_repairs"] == 1
     assert data["contract"]["write_granularity"] == "prefer_file"
 
-    # 显式 --max-repairs 优先于画像
     assert main([
         "task", "open", str(tmp_path),
+        "--model", "m",
         "--objective", "接线 R-1",
         "--allow", "src",
         "--require-rule", "R-1",
@@ -235,13 +329,24 @@ def test_cli_capability_eval_and_task_open(tmp_path):
     ]) == 0
     task_file2 = sorted((tmp_path / ".sopcontrol" / "tasks").glob("TASK-*.yaml"))[-1]
     data2 = yaml.safe_load(task_file2.read_text(encoding="utf-8"))
-    assert data2["contract"]["max_repairs"] == 3
+    assert data2["contract"]["max_repairs"] == 1
 
-    # weak + 目录前缀 → open 拒绝
+    assert main(["capability-eval", "--model", "m", "--fixture", "strong", str(tmp_path)]) == 0
+    assert main([
+        "task", "open", str(tmp_path),
+        "--model", "other-model",
+        "--objective", "换模不得继承 strong",
+        "--allow", "src",
+        "--require-rule", "R-1",
+        "--require-field", "status",
+    ]) == 2
+
     assert main(["capability-eval", "--model", "m", "--fixture", "weak", str(tmp_path)]) == 0
     assert main([
         "task", "open", str(tmp_path),
+        "--model", "m",
         "--objective", "接线 R-1",
         "--allow", "src",
         "--require-rule", "R-1",
+        "--require-field", "status",
     ]) == 2

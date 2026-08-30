@@ -15,7 +15,8 @@
 ```text
 sopctl audit .
 sopctl explain <RULE-ID> .
-sopctl task open . --objective "..." --allow <path> --require-rule <ID>
+sopctl task open . --model <CURRENT-MODEL> --objective "..." \
+  --allow <exact-file> --require-rule <ID> --require-field <name>
 sopctl task accept|submit|verify|deliver <TASK-ID> .
 sopctl task takeover <TASK-ID> .          # 换会话最小接手包
 sopctl intake . --conversation chat.txt  # 讨论/政策句 → Candidate 或 discuss_only
@@ -29,7 +30,7 @@ sopctl identity export . --out id.yaml
 sopctl identity import . --file id.yaml
 ```
 
-`submit` 若契约有 MUST 字段：`--field key=value`（漏字段会被拒）。
+`--model` 必须填写当前执行模型，并与已存画像中的身份完全一致；省略或不匹配时按 `unknown` 保守执行。`submit` 若契约有 MUST 字段：`--field key=value`（漏字段会被拒）。
 
 ## 不要做
 

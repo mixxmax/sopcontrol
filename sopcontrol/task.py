@@ -145,9 +145,15 @@ def is_controller_path(path: str) -> bool:
     return any(part.casefold() == CONTROLLER_DIR for part in norm.split("/") if part)
 
 
-def path_allowed(changed: str, allowed_writes: list[str]) -> bool:
+def path_allowed(
+    changed: str,
+    allowed_writes: list[str],
+    *,
+    write_granularity: Optional[str] = None,
+) -> bool:
     """契约范围判定（纯函数，大小写敏感）。
 
+    file 粒度把每个 allow 条目解释为精确路径；其他粒度保留目录前缀语义。
     这里刻意不做大小写归一：allow-list 比对不上只会多拒一个改动（fail-closed，
     最坏是误报），而归一化在 Linux 上会把契约外的 `SRC/` 放进 `src` 的范围里，
     那是 fail-open。symlink 逃逸需要碰文件系统，不在纯函数里解决，见
@@ -164,7 +170,9 @@ def path_allowed(changed: str, allowed_writes: list[str]) -> bool:
             a = normalize_relpath(allow)
         except ValueError:
             continue
-        if norm == a or norm.startswith(a.rstrip("/") + "/"):
+        if norm == a:
+            return True
+        if write_granularity != "file" and norm.startswith(a.rstrip("/") + "/"):
             return True
     return False
 
@@ -198,21 +206,13 @@ def evaluate_transition(
         unknown = [r for r in contract.required_rules if known_rule_ids is not None and r not in known_rule_ids]
         if unknown:
             problems.append(f"引用了不存在的规则: {', '.join(unknown)}")
-        if contract.write_granularity == "file":
-            from .capability import validate_writes_for_granularity
-
-            gran_err = validate_writes_for_granularity(
-                contract.allowed_writes, "file"
-            )
-            if gran_err:
-                problems.append(gran_err)
         if contract.strict_schema and not contract.required_fields:
             problems.append(
-                "strict_schema=true（弱/不稳模型画像）：必须声明 required_fields"
+                "strict_schema=true（fragile/weak/unknown/无画像）：必须声明 required_fields"
                 "（MUST 输出字段清单），防漏字段假完成（14.1 场景8）"
             )
         if problems:
-            return _reject("契约不完整: " + "；".join(problems) + "。修复后重新 open 或修改契约")
+            return _reject("契约不完整: " + "；".join(problems) + "。请重新 task open 创建完整契约")
         return TransitionDecision(
             allowed=True, to_status=TaskStatus.executing,
             reason="契约完整：目标、写入范围与可验证完成定义齐备",
@@ -225,13 +225,23 @@ def evaluate_transition(
         paths = changed_paths or []
         if not paths:
             return _reject("submit 需要至少一个 --changed 路径（完成门依据改动范围审计）")
-        illegal = [p for p in paths if not path_allowed(p, task.contract.allowed_writes)]
+        illegal = [
+            p for p in paths
+            if not path_allowed(
+                p,
+                task.contract.allowed_writes,
+                write_granularity=task.contract.write_granularity,
+            )
+        ]
         if illegal:
             return TransitionDecision(
                 allowed=False, to_status=None,
                 reason=f"范围走私被拒绝：{', '.join(illegal)} 不在契约的 allowed_writes 内；"
-                       f"扩大范围需人工重新确认契约（14.1 场景9）",
-                next_action="只提交契约内路径，或经人工确认后修改 allowed_writes",
+                       f"扩大范围必须重新创建并确认契约（14.1 场景9）",
+                next_action=(
+                    "只提交契约内路径；如确需扩大范围，重新运行 sopctl task open "
+                    "创建包含精确路径的新任务"
+                ),
             )
         req_fields = task.contract.required_fields
         if req_fields:

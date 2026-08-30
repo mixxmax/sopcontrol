@@ -170,3 +170,14 @@ def test_path_normalization_rejects_escape_attempts():
     assert path_allowed("src/a/b.py", ["src"]) is True
     assert path_allowed("src", ["src"]) is True
     assert path_allowed("srcevil.py", ["src"]) is False  # 前缀必须落在路径边界上
+
+
+def test_file_granularity_uses_exact_paths_not_filename_shapes():
+    assert path_allowed("src.v2", ["src.v2"], write_granularity="file") is True
+    assert path_allowed("src.v2/secret.py", ["src.v2"], write_granularity="file") is False
+    assert path_allowed("Makefile", ["Makefile"], write_granularity="file") is True
+    assert path_allowed("Dockerfile", ["Dockerfile"], write_granularity="file") is True
+
+
+def test_prefix_granularity_keeps_directory_scope():
+    assert path_allowed("src/a.py", ["src"], write_granularity="prefix") is True

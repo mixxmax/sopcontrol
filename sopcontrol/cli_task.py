@@ -90,18 +90,26 @@ def cmd_task(args) -> int:
                 print(f"错误: {exc}", file=sys.stderr)
                 return 2
         profile = load_profile(root)
+        current_model = getattr(args, "model", None)
         explicit = getattr(args, "max_repairs", None) is not None
-        repairs, writes, reject, note = apply_knobs_to_open(
-            allowed_writes=list(args.allow),
+        repairs, knobs, note = apply_knobs_to_open(
             max_repairs=args.max_repairs if explicit else 2,
             max_repairs_explicit=explicit,
             profile=profile,
+            current_model=current_model,
         )
-        if reject:
-            print(f"错误: {reject}", file=sys.stderr)
-            return 2
-        gran = profile.knobs.write_granularity if profile else None
-        strict = bool(profile and profile.knobs.strict_schema)
+        writes = list(args.allow)
+        if knobs.write_granularity == "file":
+            directories = [p for p in writes if (root / p).is_dir()]
+            if directories:
+                print(
+                    "错误: 当前能力策略采用精确路径授权，不能把现有目录作为 file 范围: "
+                    + ", ".join(directories),
+                    file=sys.stderr,
+                )
+                return 2
+        gran = knobs.write_granularity
+        strict = knobs.strict_schema
         fields = list(args.require_field or [])
         task_id = store.next_task_id()
         task = TaskRecord(
@@ -114,7 +122,7 @@ def cmd_task(args) -> int:
                 max_repairs=repairs,
                 write_granularity=gran,
                 strict_schema=strict,
-                capability_note=note if profile else None,
+                capability_note=note,
             ),
         )
         store.save(task)
@@ -124,11 +132,13 @@ def cmd_task(args) -> int:
         if fields:
             print(f"  MUST 字段: {', '.join(fields)}")
         elif strict:
-            print("  MUST 字段: （strict_schema，accept 前须补 --require-field）")
-        print(f"  修复预算: {repairs}" + (f"（画像调节）" if profile and not explicit else ""))
-        if profile:
-            print(f"  能力: {note}")
-        print("  下一步: sopctl task accept " + task_id)
+            print("  MUST 字段: （缺失；当前任务无法 accept，请重新 task open 并带 --require-field）")
+        print(f"  修复预算: {repairs}（能力等级上限）")
+        print(f"  能力: {note}")
+        if strict and not fields:
+            print("  下一步: 重新 task open，并声明至少一个 --require-field")
+        else:
+            print("  下一步: sopctl task accept " + task_id)
         return 0
 
     if sub == "list":

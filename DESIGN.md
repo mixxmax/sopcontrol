@@ -99,7 +99,7 @@ Evidence/Finding 的 id 由内容 hash 生成，排除时间字段。效果：�
 verification_pending → verified | repair_required | blocked | failed_unverified；
 verified → delivered`。INTAKE 并入 open（创建即带完整契约字段），PLAN_VALIDATED
 与 DELIVERY_PREVIEW 留到有真实 plan/副作用时再加——先闭环后带宽。`blocked` 与
-`failed_unverified` 为终态：前者需人工，后者是修复预算耗尽（默认两轮，手册 10.5）。
+`failed_unverified` 为终态：前者需人工，后者是任务契约中的修复预算耗尽（预算由能力等级决定，手册 10.5）。
 
 **完成判定复用吸收等级**：任务的 required_rules 全部 `pass` 才可 verified——
 "声称接线了规则 X"由审计器独立证实（E3），不信自报。有 `fail`（绕过存活）→
@@ -142,19 +142,23 @@ fail-closed 视为脏。提交基线后照常裁决。这把"改 verifier 自证
 
 打分是确定性字符串/JSON 检查；响应由夹具注入或显式文件提供（本切片不强制
 烧真实 token）。三探针全过 → `strong`；JSON 或指令失手 → `fragile`；边界失手
-→ `weak`；无画像 → `unknown`（保持默认，不假装测过）。
+→ `weak`；无画像或探针维度不完整 → `unknown`。`unknown` 表示尚无扩大权限的证据，
+不是与 `strong` 等价的默认值。
 
 **旋钮映射（纯函数 `control_knobs`）**：
 
-| tier | max_repairs | write_granularity |
-|---|---|---|
-| strong / unknown | 2 | prefix（目录前缀可） |
-| fragile | 1 | prefer_file（目录可，记录建议） |
-| weak | 1 | file（open 时拒绝纯目录前缀） |
+| tier | max_repairs | write_granularity | strict_schema |
+|---|---:|---|---|
+| strong | 2 | prefix（目录前缀可） | false |
+| fragile | 1 | prefer_file（目录前缀可） | true |
+| weak | 1 | file（每个 allow 项仅授权该精确路径） | true |
+| unknown / 无画像 | 1 | file（每个 allow 项仅授权该精确路径） | true |
 
-**接入点**：`task open` 在用户未显式改 `--max-repairs`（仍为默认 2）时读取画像
-套用；显式传参优先于画像。`accept` 对 `file` 粒度再拦一道，理由可行动。
-harness 画像与模型画像并列，不互相覆盖。
+**接入点**：`task open --model <当前模型>` 从完整探针分数重新推导实际旋钮，不信任旧画像中
+可能过期的派生 `knobs`。省略当前模型、当前模型与画像身份不匹配、画像标称 tier 与分数
+不一致或探针维度缺失时均按 `unknown` 处理。显式 `--max-repairs` 只能在能力上限内进一步
+收紧，不能扩大预算；`file` 粒度由 `submit` 门按精确路径匹配，`accept` 对 strict schema
+再拦一道。harness 画像与模型画像并列，不互相覆盖。
 
 ## 12. 场景1 决策：对话意图层 v0（2026-08-25 补）
 

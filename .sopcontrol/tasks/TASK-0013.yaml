@@ -1,0 +1,44 @@
+task_id: TASK-0013
+contract:
+  objective: 第一批伴随回归修正：移除生命周期与接管测试对无画像目录级放行的隐式依赖，改用明确文件范围
+  allowed_writes:
+  - tests/gate/test_task_cli.py
+  - tests/constitution/test_takeover.py
+  required_rules:
+  - CTRL-001
+  - SELF-001
+  - SELF-002
+  required_fields:
+  - test_scope
+  - preserved_intent
+  - regression_evidence
+  max_repairs: 1
+  repairs_fingerprint: null
+  write_granularity: file
+  strict_schema: true
+  capability_note: 模型画像 fixture-weak tier=weak：边界遵循失败：文件级写入 + 强制 MUST 字段清单（场景8）
+status: verification_pending
+repair_count: 0
+changed_paths:
+- tests/gate/test_task_cli.py
+- tests/constitution/test_takeover.py
+revision: 3
+created_at: '2026-08-30T18:18:46.659075Z'
+updated_at: '2026-08-30T18:38:36.862029Z'
+history:
+- at: '2026-08-30T18:18:51.516174Z'
+  action: accept
+  from_status: contract_proposed
+  to_status: executing
+  allowed: true
+  reason: 契约完整：目标、写入范围与可验证完成定义齐备
+  detail:
+    next_action: 执行变更后 task submit 提交改动路径
+- at: '2026-08-30T18:38:36.859733Z'
+  action: submit
+  from_status: executing
+  to_status: verification_pending
+  allowed: true
+  reason: 改动 2 个路径，全部在写入范围内；MUST 字段齐备 [test_scope, preserved_intent, regression_evidence]
+  detail:
+    next_action: 运行 task verify 由控制器独立审计

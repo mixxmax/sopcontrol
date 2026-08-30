@@ -59,7 +59,8 @@
 - [x] 接管包：`sopctl task takeover`（手册 8.3，只读）
 - [x] **capability handshake（模型维度）**：三维探针 json/boundary/instruction → tier →
   调节 `max_repairs`/`allowed_writes` 粒度；`sopctl capability-eval --fixture` 离线闭环；
-  `task open` 读 `.sopcontrol/model-profile.yaml`（显式 `--max-repairs` 优先）；DESIGN §11
+  `task open --model <当前模型>` 仅使用身份匹配且探针自洽的画像；省略、不匹配或不完整均按
+  `unknown` 保守执行。显式 `--max-repairs` 只能在能力上限内进一步收紧；DESIGN §11
 - 剩余：codex 出现运行时钩子后升级其画像；真实模型探针（可选，本切片不强制烧 token）
 - claude 适配保留：用户环境无 key（不修），有 key 环境可直接实测
 

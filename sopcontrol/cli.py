@@ -126,15 +126,16 @@ def build_parser() -> argparse.ArgumentParser:
     p = task_sub.add_parser("open", help="创建任务契约（contract_proposed）")
     p.add_argument("path", nargs="?", default=".")
     p.add_argument("--objective", required=True, help="任务目标")
-    p.add_argument("--allow", action="append", required=True, help="允许写入的路径前缀，可重复")
+    p.add_argument("--allow", action="append", required=True, help="允许写入路径，可重复；file 粒度下每项仅授权该精确路径")
+    p.add_argument("--model", help="当前执行模型；仅与已存画像身份一致时使用该画像，省略或不匹配按 unknown")
     p.add_argument("--require-rule", action="append", help="完成定义：这些规则必须全部判定 pass")
     p.add_argument(
         "--require-field", action="append",
-        help="MUST 输出字段名（可重复；弱模型画像下 accept 强制要求）",
+        help="MUST 输出字段名（可重复；fragile/weak/unknown/无画像时 accept 强制要求）",
     )
     p.add_argument(
         "--max-repairs", type=int, default=None,
-        help="修复预算（默认跟模型画像；无画像时 2 轮；显式传参优先于画像）",
+        help="修复预算（受能力等级上限约束；显式值只能收紧，unknown/无画像最多 1 轮）",
     )
     p.set_defaults(func=cmd_task)
     def _task_cmd(name: str, help_text: str, *, task_id: bool = False, changed: bool = False, fields: bool = False):

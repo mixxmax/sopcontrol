@@ -1,0 +1,45 @@
+task_id: TASK-0016
+contract:
+  objective: 第一批最终公开契约修正：同步 SKILL 常用命令与 ROADMAP 能力预算语义，确保陌生模型可照文档执行
+  allowed_writes:
+  - SKILL.md
+  - ROADMAP.md
+  required_rules:
+  - CTRL-001
+  - SELF-001
+  - SELF-002
+  required_fields:
+  - skill_example
+  - roadmap_policy
+  - verification
+  max_repairs: 1
+  repairs_fingerprint: null
+  write_granularity: file
+  strict_schema: true
+  capability_note: 当前模型未声明（已有画像 fixture-weak 不适用） tier=unknown：模型能力未知：按保守边界执行，文件级写入
+    + 强制 MUST 字段清单
+status: verification_pending
+repair_count: 0
+changed_paths:
+- SKILL.md
+- ROADMAP.md
+revision: 3
+created_at: '2026-08-30T18:32:41.115286Z'
+updated_at: '2026-08-30T18:38:37.695713Z'
+history:
+- at: '2026-08-30T18:33:02.978487Z'
+  action: accept
+  from_status: contract_proposed
+  to_status: executing
+  allowed: true
+  reason: 契约完整：目标、写入范围与可验证完成定义齐备
+  detail:
+    next_action: 执行变更后 task submit 提交改动路径
+- at: '2026-08-30T18:38:37.693140Z'
+  action: submit
+  from_status: executing
+  to_status: verification_pending
+  allowed: true
+  reason: 改动 2 个路径，全部在写入范围内；MUST 字段齐备 [skill_example, roadmap_policy, verification]
+  detail:
+    next_action: 运行 task verify 由控制器独立审计

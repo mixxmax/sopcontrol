@@ -135,31 +135,22 @@ def control_knobs(tier: Tier) -> ControlKnobs:
             reason="边界遵循失败：文件级写入 + 强制 MUST 字段清单（场景8）",
         )
     return ControlKnobs(
-        tier="unknown", max_repairs=2, write_granularity="prefix", strict_schema=False,
-        reason="无模型画像：保持默认旋钮，不假装测过（手册 5.9）",
+        tier="unknown", max_repairs=1, write_granularity="file", strict_schema=True,
+        reason="模型能力未知：按保守边界执行，文件级写入 + 强制 MUST 字段清单",
     )
 
 
-def looks_like_file_path(path: str) -> bool:
-    """有扩展名的路径视为文件级；否则视为目录前缀。"""
-    name = Path(path.rstrip("/")).name
-    return "." in name and not name.startswith(".")
-
-
-def validate_writes_for_granularity(
-    allowed_writes: list[str], granularity: WriteGranularity
-) -> Optional[str]:
-    """返回拒绝理由；None = 通过。仅 file 粒度硬拦目录前缀。"""
-    if granularity != "file":
-        return None
-    dirs = [p for p in allowed_writes if not looks_like_file_path(p)]
-    if dirs:
-        return (
-            f"模型能力 tier=weak，写入粒度要求文件级；"
-            f"以下是目录前缀而非文件: {', '.join(dirs)}。"
-            f"请改用具体文件路径（如 src/foo.py）"
-        )
-    return None
+def effective_control_knobs(
+    profile: Optional[ModelProfile],
+    *,
+    current_model: Optional[str] = None,
+) -> ControlKnobs:
+    """只为身份匹配且探针自洽的画像放宽边界；其余一律 unknown。"""
+    if profile is None or not current_model or profile.model != current_model:
+        return control_knobs("unknown")
+    scored_tier = tier_from_scores(profile.scores)
+    tier = scored_tier if scored_tier == profile.tier else "unknown"
+    return control_knobs(tier)
 
 
 class ModelProfile(BaseModel):
@@ -221,26 +212,21 @@ def build_profile(
 
 def apply_knobs_to_open(
     *,
-    allowed_writes: list[str],
     max_repairs: int,
     max_repairs_explicit: bool,
     profile: Optional[ModelProfile],
-) -> tuple[int, list[str], Optional[str], str]:
-    """返回 (max_repairs, allowed_writes, reject_reason, note)。
-
-    max_repairs_explicit=True 时不覆盖用户显式传参。
-    weak+目录前缀 → reject_reason 非空（调用方应拒绝 open）。
-    """
+    current_model: Optional[str] = None,
+) -> tuple[int, ControlKnobs, str]:
+    """返回实际修复预算、最终旋钮与说明；所有消费者共享同一次能力决策。"""
+    knobs = effective_control_knobs(profile, current_model=current_model)
+    repairs = min(max_repairs, knobs.max_repairs) if max_repairs_explicit else knobs.max_repairs
     if profile is None:
-        knobs = control_knobs("unknown")
-        return max_repairs, allowed_writes, None, knobs.reason
-
-    knobs = profile.knobs
-    repairs = max_repairs if max_repairs_explicit else knobs.max_repairs
-    reject = validate_writes_for_granularity(allowed_writes, knobs.write_granularity)
-    note = f"模型画像 {profile.model} tier={knobs.tier}：{knobs.reason}"
-    if knobs.write_granularity == "prefer_file":
-        dirs = [p for p in allowed_writes if not looks_like_file_path(p)]
-        if dirs:
-            note += f"；建议把目录前缀细化到文件: {', '.join(dirs)}"
-    return repairs, allowed_writes, reject, note
+        identity = "无模型画像"
+    elif not current_model:
+        identity = f"当前模型未声明（已有画像 {profile.model} 不适用）"
+    elif profile.model != current_model:
+        identity = f"当前模型 {current_model} 与画像 {profile.model} 不匹配"
+    else:
+        identity = f"模型画像 {profile.model}"
+    note = f"{identity} tier={knobs.tier}：{knobs.reason}"
+    return repairs, knobs, note

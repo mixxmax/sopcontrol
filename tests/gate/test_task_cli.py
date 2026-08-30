@@ -9,9 +9,11 @@ def test_task_lifecycle_via_cli(tmp_path, capsys):
     work.mkdir()
     shutil.copytree("corpus/fixtures/jobflow-preview", work, dirs_exist_ok=True)
 
+    assert main(["capability-eval", "--model", "lifecycle-test", "--fixture", "strong", str(work)]) == 0
     assert main(["task", "open", str(work),
+                 "--model", "lifecycle-test",
                  "--objective", "接线 PUSH-001",
-                 "--allow", "src", "--allow", "tests",
+                 "--allow", "src/push_job.py", "--allow", "tests/test_push.py",
                  "--require-rule", "PUSH-001"]) == 0
     assert main(["task", "accept", "TASK-0001", str(work)]) == 0
     assert main(["task", "submit", "TASK-0001", str(work), "--changed", "src/push_job.py"]) == 0

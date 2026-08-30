@@ -1,0 +1,48 @@
+task_id: TASK-0014
+contract:
+  objective: 第一批公开契约同步：将 CLI 帮助、设计说明与操作示例更新为 unknown/无画像保守策略，消除项目自相矛盾
+  allowed_writes:
+  - sopcontrol/cli.py
+  - DESIGN.md
+  - README.md
+  - PLAYBOOK.md
+  required_rules:
+  - CTRL-001
+  - SELF-001
+  - SELF-002
+  required_fields:
+  - documented_policy
+  - cli_help
+  - migration_guidance
+  max_repairs: 1
+  repairs_fingerprint: null
+  write_granularity: file
+  strict_schema: true
+  capability_note: 模型画像 fixture-weak tier=weak：边界遵循失败：文件级写入 + 强制 MUST 字段清单（场景8）
+status: verification_pending
+repair_count: 0
+changed_paths:
+- sopcontrol/cli.py
+- DESIGN.md
+- README.md
+- PLAYBOOK.md
+revision: 3
+created_at: '2026-08-30T18:19:26.762547Z'
+updated_at: '2026-08-30T18:38:37.145782Z'
+history:
+- at: '2026-08-30T18:19:32.296580Z'
+  action: accept
+  from_status: contract_proposed
+  to_status: executing
+  allowed: true
+  reason: 契约完整：目标、写入范围与可验证完成定义齐备
+  detail:
+    next_action: 执行变更后 task submit 提交改动路径
+- at: '2026-08-30T18:38:37.142523Z'
+  action: submit
+  from_status: executing
+  to_status: verification_pending
+  allowed: true
+  reason: 改动 4 个路径，全部在写入范围内；MUST 字段齐备 [documented_policy, cli_help, migration_guidance]
+  detail:
+    next_action: 运行 task verify 由控制器独立审计
