@@ -4,13 +4,14 @@
 权威源: `.sopcontrol/rules/registry.yaml`；规则变更后运行 `sopctl project all` 刷新本节。
 本节只是指导——真正的拦截在 git pre-push 钩子、CI gate、运行时 hook 与 `sopctl gate`。
 
-## 控制成熟度：L2 Validate：schema/test 不通过则不宣称完成
-- 未达下一级 L3：补齐 ORDER-2：装了运行时拦截或 git 钩子，且至少一条生效规则声明了 guard_ids
+## 控制成熟度：L4 Govern：规则变更、发布和高影响操作需双阶段确认
+- 五项基本秩序全部有机制。
 - 明细与依据: `sopctl bootstrap`。低于 L3 时门以建议为主，沉默不等于许可。
 
 ## 必须遵守的规则
 - [SELF-001][MUST] 检测模式 write_only_state 必须在生产代码接线并具备回归测试 （生产消费者标记: finding_write_only_state）
 - [SELF-002][MUST] 检测模式 state_in_parallel_files 必须在生产代码接线并具备回归测试 （生产消费者标记: finding_state_in_parallel_files）
+- [CTRL-001][MUST] 控制器状态目录 .sopcontrol/ 内任何文件不得直接读写或修改，一切写入必须经 sopctl 子命令 （生产消费者标记: touches_protected_path, check_tool_call）
 
 ## 任务状态（换会话/换模型先看这里；以下即全量信息，无需再用命令查询任务）
 - TASK-0001 [delivered] 扩展检测模式库：两个状态健康模式（接线+跨域语料+回归测试）
@@ -23,6 +24,15 @@
   ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
 - TASK-0004 [delivered] Go 深度化（用户 2026-08-30 授权越过依赖边界引入解析器）：go_ast_scan 传感器（tree-sit
   完成定义: SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
+  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
+- TASK-0005 [delivered] 首个 enforced（垂直最后一步）：把 AGENTS.md 硬约束「不得直接写 .sopcontrol，一切经 so
+  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
+  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
+- TASK-0006 [delivered] 首个 enforced（垂直最后一步）：CTRL-001（.sopcontrol 写保护，guard: GUARD-CO
+  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
+  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
+- TASK-0007 [delivered] 修复首次 enforced 走查发现的真 bug：is_input_stale 对 harness.trace 证据落进
+  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
   ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
 
 ## 硬约束

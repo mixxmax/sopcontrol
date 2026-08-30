@@ -72,6 +72,16 @@
 
 ## 状态（每次运行后更新）
 
+- 2026-08-30（首个 enforced，垂直最后一步）：CTRL-001（.sopcontrol 写保护，
+  AGENTS.md 硬约束规则化）走完手册 6.5 七条件——真实 opencode 会话（deepseek-v4-pro）
+  经插件咨询 GUARD-CONTROLLER-WRITE 落盘 trace.jsonl（条件6/E4）、docs/ctrl-001.md
+  确认书 + bypass 分析（条件5/7）、完成门 E4 实测（条件4），`explain CTRL-001` 可观测
+  `absorption: enforced`。走查抓到真 bug：is_input_stale 对 harness.trace 落文件哈希
+  兜底分支，每条 trace 行一落盘即 stale、账本视图永远丢失条件6——与 MATURITY/TEST_RUN
+  同构修复 + 回归测试（TASK-0007）。TASK-0005/0006 双程 verified+delivered。
+  注：TASK-0005 的契约曾因 CTRL-001 未登记而被 open 拒绝，重开后产生悬空
+  contract_proposed 任务，后以 TASK-0006 完成闭环吸收。审计吸收分布随 E4 时效波动：
+  普通 audit（无 E4）下 CTRL-001 显示 wired_and_tested，完成门 verify 后为 enforced。
 - 2026-08-26（横向扩展前收口，d44b387）：六件评估工作 + R8 全部闭环，302 测试全绿，
   gate / project check 通过。件5 把变异验证从手工习惯变成机制（`corpus/mutations.yaml`
   + `tests/corpus/test_mutations.py`：每个负向对照必须在还原修复后变红，否则语料本身

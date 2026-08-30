@@ -1,0 +1,58 @@
+task_id: TASK-0006
+contract:
+  objective: '首个 enforced（垂直最后一步）：CTRL-001（.sopcontrol 写保护，guard: GUARD-CONTROLLER-WRITE）走完七条件——真实
+    opencode 会话留下运行时 trace（条件6，E4）+ 源文档确认书（条件5/7）+ 完成门 E4 测试，由完成门独立判定 enforced'
+  allowed_writes:
+  - docs/ctrl-001.md
+  required_rules:
+  - CTRL-001
+  - SELF-001
+  - SELF-002
+  required_fields:
+  - first_enforced
+  max_repairs: 1
+  repairs_fingerprint: null
+  write_granularity: file
+  strict_schema: true
+  capability_note: 模型画像 fixture-weak tier=weak：边界遵循失败：文件级写入 + 强制 MUST 字段清单（场景8）
+status: delivered
+repair_count: 0
+changed_paths:
+- docs/ctrl-001.md
+revision: 5
+created_at: '2026-08-30T08:33:01.747433Z'
+updated_at: '2026-08-30T08:53:46.735801Z'
+history:
+- at: '2026-08-30T08:52:49.816217Z'
+  action: accept
+  from_status: contract_proposed
+  to_status: executing
+  allowed: true
+  reason: 契约完整：目标、写入范围与可验证完成定义齐备
+  detail:
+    next_action: 执行变更后 task submit 提交改动路径
+- at: '2026-08-30T08:52:50.040867Z'
+  action: submit
+  from_status: executing
+  to_status: verification_pending
+  allowed: true
+  reason: 改动 1 个路径，全部在写入范围内；MUST 字段齐备 [first_enforced]
+  detail:
+    next_action: 运行 task verify 由控制器独立审计
+- at: '2026-08-30T08:53:09.399212Z'
+  action: verify
+  from_status: verification_pending
+  to_status: verified
+  allowed: true
+  reason: 完成门通过：全部必需规则 [CTRL-001, SELF-001, SELF-002] 判定 pass（E4 实测：本轮执行 .venv/bin/python
+    -m pytest -q 通过（13.468s）+ E3 独立审计）
+  detail:
+    next_action: task deliver 交付
+- at: '2026-08-30T08:53:46.731225Z'
+  action: deliver
+  from_status: verified
+  to_status: delivered
+  allowed: true
+  reason: 完成门已独立验证，允许交付
+  detail:
+    next_action: 无

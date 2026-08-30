@@ -49,3 +49,30 @@ rules:
   tags: []
   created_at: '2026-08-23T15:52:09.826104Z'
   accepted_at: '2026-08-23T15:52:09.826104Z'
+- rule_id: CTRL-001
+  statement: 控制器状态目录 .sopcontrol/ 内任何文件不得直接读写或修改，一切写入必须经 sopctl 子命令
+  modality: MUST
+  status: accepted
+  scope: controller.state
+  owner: platform
+  risk: critical
+  source:
+    type: document
+    ref: docs/ctrl-001.md
+    observed_at: null
+  consumer_markers:
+  - touches_protected_path
+  - check_tool_call
+  legacy_markers: []
+  state_markers: []
+  guard_ids:
+  - GUARD-CONTROLLER-WRITE
+  source_hash: d233165eff321459
+  bypass_note: 人工带外编辑不经过拦截层（账本篡改检测兜底）；卸插件=提权被 GUARD-SELF-UNINSTALL 拦；--no-verify 被
+    GUARD-NO-VERIFY 拦 + CI 后盾；symlink/大小写逃逸由 R8 三层守卫闭环。详见 docs/ctrl-001.md 绕过分析节
+  attested_by: agent
+  attested_at: '2026-08-30T08:34:39.263295Z'
+  supersedes: []
+  tags: []
+  created_at: '2026-08-30T08:32:49.216832Z'
+  accepted_at: null

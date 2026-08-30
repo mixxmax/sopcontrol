@@ -1,0 +1,67 @@
+task_id: TASK-0005
+contract:
+  objective: '首个 enforced（垂直最后一步）：把 AGENTS.md 硬约束「不得直接写 .sopcontrol，一切经 sopctl」规则化为
+    CTRL-001（consumer: touches_protected_path/check_tool_call，guard: GUARD-CONTROLLER-WRITE），走完七条件——真实
+    opencode 会话留下运行时 trace（条件6，E4）+ 源文档确认书（条件5/7）+ 完成门 E4 测试，由完成门独立判定 enforced'
+  allowed_writes:
+  - docs/ctrl-001.md
+  required_rules:
+  - CTRL-001
+  - SELF-001
+  - SELF-002
+  required_fields:
+  - first_enforced
+  max_repairs: 1
+  repairs_fingerprint: null
+  write_granularity: file
+  strict_schema: true
+  capability_note: 模型画像 fixture-weak tier=weak：边界遵循失败：文件级写入 + 强制 MUST 字段清单（场景8）
+status: delivered
+repair_count: 0
+changed_paths:
+- docs/ctrl-001.md
+revision: 6
+created_at: '2026-08-30T08:32:34.759788Z'
+updated_at: '2026-08-30T08:48:40.417156Z'
+history:
+- at: '2026-08-30T08:32:35.300332Z'
+  action: accept
+  from_status: contract_proposed
+  to_status: null
+  allowed: false
+  reason: '契约不完整: 引用了不存在的规则: CTRL-001。修复后重新 open 或修改契约'
+  detail:
+    next_action: sopctl task show 查看当前状态与契约
+- at: '2026-08-30T08:33:02.153876Z'
+  action: accept
+  from_status: contract_proposed
+  to_status: executing
+  allowed: true
+  reason: 契约完整：目标、写入范围与可验证完成定义齐备
+  detail:
+    next_action: 执行变更后 task submit 提交改动路径
+- at: '2026-08-30T08:42:26.079050Z'
+  action: submit
+  from_status: executing
+  to_status: verification_pending
+  allowed: true
+  reason: 改动 1 个路径，全部在写入范围内；MUST 字段齐备 [first_enforced]
+  detail:
+    next_action: 运行 task verify 由控制器独立审计
+- at: '2026-08-30T08:42:52.836525Z'
+  action: verify
+  from_status: verification_pending
+  to_status: verified
+  allowed: true
+  reason: 完成门通过：全部必需规则 [CTRL-001, SELF-001, SELF-002] 判定 pass（E4 实测：本轮执行 .venv/bin/python
+    -m pytest -q 通过（13.764s）+ E3 独立审计）
+  detail:
+    next_action: task deliver 交付
+- at: '2026-08-30T08:48:40.410771Z'
+  action: deliver
+  from_status: verified
+  to_status: delivered
+  allowed: true
+  reason: 完成门已独立验证，允许交付
+  detail:
+    next_action: 无
