@@ -1,0 +1,97 @@
+task_id: TASK-0004
+contract:
+  objective: Go 深度化（用户 2026-08-30 授权越过依赖边界引入解析器）：go_ast_scan 传感器（tree-sitter-go，结构化引用+包/import
+    证据，替代词法代理 go_scan，不可解析文件回退词法），reachability 检测器补 Go 同包/import 闭包可达性（R1 在 Go 表面收口），go-gateway
+    pass 判定 grounding lexical→structural，新增 CASE-047（测试替身同名符号、import 闭包到不了生产实现）与 MUT-010（Go
+    包索引致盲的过报守卫），语料基线快照刷新对比
+  allowed_writes:
+  - pyproject.toml
+  - plugins/__init__.py
+  - plugins/sensors/go_ast_scan.py
+  - sopcontrol/verdict.py
+  - plugins/detectors/no_consumer.py
+  - plugins/detectors/reachability.py
+  - corpus/cases.yaml
+  - corpus/mutations.yaml
+  - tests/corpus/mutations.py
+  - tests/patterns/test_go_ast_scan.py
+  - tests/constitution/test_verdict.py
+  - corpus/fixtures/go-gateway/src/api/admission_test.go
+  - corpus/baseline.json
+  - RESIDUAL_RISKS.md
+  - ROADMAP.md
+  required_rules:
+  - SELF-001
+  - SELF-002
+  required_fields:
+  - go_grounding_upgrade
+  - baseline_diff
+  max_repairs: 1
+  repairs_fingerprint: null
+  write_granularity: file
+  strict_schema: true
+  capability_note: 模型画像 fixture-weak tier=weak：边界遵循失败：文件级写入 + 强制 MUST 字段清单（场景8）
+status: delivered
+repair_count: 0
+changed_paths:
+- pyproject.toml
+- plugins/__init__.py
+- plugins/sensors/go_ast_scan.py
+- sopcontrol/verdict.py
+- plugins/detectors/no_consumer.py
+- plugins/detectors/reachability.py
+- corpus/cases.yaml
+- corpus/mutations.yaml
+- corpus/baseline.json
+- tests/corpus/mutations.py
+- tests/patterns/test_go_ast_scan.py
+- tests/constitution/test_verdict.py
+- RESIDUAL_RISKS.md
+- ROADMAP.md
+revision: 6
+created_at: '2026-08-30T07:54:23.232095Z'
+updated_at: '2026-08-30T08:18:14.040890Z'
+history:
+- at: '2026-08-30T07:54:24.277060Z'
+  action: accept
+  from_status: contract_proposed
+  to_status: executing
+  allowed: true
+  reason: 契约完整：目标、写入范围与可验证完成定义齐备
+  detail:
+    next_action: 执行变更后 task submit 提交改动路径
+- at: '2026-08-30T08:16:13.764533Z'
+  action: submit
+  from_status: executing
+  to_status: null
+  allowed: false
+  reason: 范围走私被拒绝：corpus/fixtures/go-gateway/docs/sop.md, corpus/fixtures/go-gateway/src/charge.go,
+    corpus/fixtures/go-gateway/src/api/charge_test.go 不在契约的 allowed_writes 内；扩大范围需人工重新确认契约（14.1
+    场景9）
+  detail:
+    next_action: 只提交契约内路径，或经人工确认后修改 allowed_writes
+- at: '2026-08-30T08:17:09.453859Z'
+  action: submit
+  from_status: executing
+  to_status: verification_pending
+  allowed: true
+  reason: 改动 14 个路径，全部在写入范围内；MUST 字段齐备 [go_grounding_upgrade, baseline_diff]
+  detail:
+    next_action: 运行 task verify 由控制器独立审计
+- at: '2026-08-30T08:17:50.342183Z'
+  action: verify
+  from_status: verification_pending
+  to_status: verified
+  allowed: true
+  reason: 完成门通过：全部必需规则 [SELF-001, SELF-002] 判定 pass（E4 实测：本轮执行 .venv/bin/python -m
+    pytest -q 通过（21.549s）+ E3 独立审计）
+  detail:
+    next_action: task deliver 交付
+- at: '2026-08-30T08:18:14.034437Z'
+  action: deliver
+  from_status: verified
+  to_status: delivered
+  allowed: true
+  reason: 完成门已独立验证，允许交付
+  detail:
+    next_action: 无
