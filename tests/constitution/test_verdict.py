@@ -72,3 +72,47 @@ def test_positive_control_is_not_false_blocked():
     verdict = next(v for v in report.verdicts if v.rule_id == "REFUND-001")
     assert verdict.status == "pass"
     assert verdict.absorption == Absorption.wired_and_tested
+
+
+def test_grounding_classification():
+    """依据强度分类：全结构化/全词法/混合/无证据，按最弱承重取值。"""
+    from sopcontrol.model import Evidence
+    from sopcontrol.verdict import evidence_grounding
+
+    def ev(kind):
+        return Evidence(kind=kind, subject="x.py", observed=[], observer="t", input_hash="h")
+
+    assert evidence_grounding([]) is None
+    assert evidence_grounding([ev("ast_scan.references")]) == "structural"
+    assert evidence_grounding([ev("go_scan.references")]) == "lexical"
+    assert evidence_grounding([ev("code_scan.identifiers")]) == "lexical"
+    assert evidence_grounding([ev("ast_scan.references"), ev("go_scan.references")]) == "mixed"
+
+
+def test_python_pass_discloses_structural():
+    """Python 夹具的 pass 自曝结构化依据。"""
+    report = run_case("shop-checkout")
+    verdict = next(v for v in report.verdicts if v.rule_id == "REFUND-001")
+    assert verdict.grounding == "structural"
+    assert "判定依据" in verdict.reason and "结构化" in verdict.reason
+
+
+def test_go_pass_discloses_lexical_proxy():
+    """Go 夹具的 pass 必须自曝词法代理——16.4 的输出层防线。
+
+    治理幻觉的输出层形态：Go 规则的 pass 和 Python 规则的 pass 打印得一模
+    一样，但一个验证了代码结构、一个只是标识符在剥掉注释的文本里出现过。
+    判定器不验证调用关系（零 I/O），但它必须如实说出它凭什么判 pass。
+    """
+    report = run_case("go-gateway")
+    verdict = next(v for v in report.verdicts if v.rule_id == "GO-001")
+    assert verdict.status == "pass"
+    assert verdict.grounding == "lexical"
+    assert "词法代理" in verdict.reason and "未验证调用关系" in verdict.reason
+
+
+def test_verdict_without_consumer_evidence_has_no_grounding():
+    """无消费证据的判定（unknown/gap-documented）不假装有依据强度。"""
+    verdict = evaluate_rule(make_rule(), [], [])
+    assert verdict.grounding is None
+    assert "判定依据" not in verdict.reason

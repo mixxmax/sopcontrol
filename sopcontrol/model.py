@@ -171,6 +171,9 @@ class Verdict(BaseModel):
     evidence_ids: list[str] = Field(default_factory=list)
     finding_ids: list[str] = Field(default_factory=list)
     rule_ids: list[str] = Field(default_factory=list)
+    # 证据强度自曝（structural/lexical/mixed；None=无消费证据）：Go 规则和 Python
+    # 规则的 pass 打印出来不能一个样——一个验证了代码结构，一个只搜到了字符串。
+    grounding: Optional[str] = None
 
     def model_post_init(self, _) -> None:
         if not self.rule_ids:

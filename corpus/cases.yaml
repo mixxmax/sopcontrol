@@ -13,6 +13,7 @@ cases:
   fixture: shop-checkout
   rule_id: REFUND-001
   expected_verdict: {status: pass, absorption: wired_and_tested}
+  expected_grounding: structural
   expected_findings: []
   ground_truth: 正向对照——消费者与回归齐备时不得误报（防"永远报警"检测器）
 
@@ -37,6 +38,7 @@ cases:
   fixture: shop-checkout
   rule_id: REFUND-004
   expected_verdict: {status: gap, absorption: wired}
+  expected_grounding: structural
   expected_findings:
   - {pattern_id: documented_rule_untested, severity: gap}
   ground_truth: 手册 1.2 症状9——"测试通过"不代表链路被回归保护
@@ -53,6 +55,7 @@ cases:
   fixture: ci-deploy
   rule_id: ROLLBACK-001
   expected_verdict: {status: pass, absorption: wired_and_tested}
+  expected_grounding: structural
   expected_findings: []
   ground_truth: 正向对照（CI 域）；兼作 comment_only_reference 负向对照第二域——rollback_guard 在 rollback.py 真调用，ops_notes.py 只在注释提及，跨文件散文提及不得判成断口（healthy-billing/BILL-001 是第一域）
 
@@ -60,6 +63,7 @@ cases:
   fixture: ci-deploy
   rule_id: DEPLOY-002
   expected_verdict: {status: gap, absorption: documented}
+  expected_grounding: structural
   expected_findings:
   - {pattern_id: test_helper_only, severity: gap}
   ground_truth: 手册 1.2 症状4 / 14.1 场景4——测试 helper 造出生产不存在的前置资源
@@ -68,6 +72,7 @@ cases:
   fixture: jobflow-preview
   rule_id: PUSH-002
   expected_verdict: {status: fail, absorption: wired_and_tested}
+  expected_grounding: structural
   expected_findings:
   - {pattern_id: legacy_entry_alive, severity: gap}
   ground_truth: 手册 1.2 症状3 / 5.8——文档说 gateway 强制，但旧直写脚本仍可直接产生副作用；新链合格 + 旧链存活 = 判定 fail
@@ -76,6 +81,7 @@ cases:
   fixture: ci-deploy
   rule_id: RELEASE-001
   expected_verdict: {status: fail, absorption: wired_and_tested}
+  expected_grounding: structural
   expected_findings:
   - {pattern_id: legacy_entry_alive, severity: gap}
   ground_truth: legacy_entry_alive 的第二领域验证（CI 域）
@@ -133,6 +139,7 @@ cases:
   fixture: web-gate
   rule_id: GATE-001
   expected_verdict: {status: pass, absorption: wired_and_tested}
+  expected_grounding: lexical
   expected_findings: []
   ground_truth: TypeScript 表面正向对照——js_scan 识别真实 request_gate 引用（含测试）；兼作 comment_only_reference 负向对照（notes.ts 只在注释提及 request_gate，真引用在 gate.ts）——变异验证：去掉 referenced_anywhere 即报警
 
@@ -158,6 +165,7 @@ cases:
   fixture: shop-checkout
   rule_id: REFUND-008
   expected_verdict: {status: gap, absorption: documented}
+  expected_grounding: structural
   expected_findings:
   - {pattern_id: test_helper_only, severity: gap}
   ground_truth: test_helper_only 第二领域（电商）——receipt_guard 仅测试 helper
@@ -166,6 +174,7 @@ cases:
   fixture: ci-deploy
   rule_id: DEPLOY-006
   expected_verdict: {status: gap, absorption: wired}
+  expected_grounding: structural
   expected_findings:
   - {pattern_id: documented_rule_untested, severity: gap}
   ground_truth: documented_rule_untested 第二领域（CI）——smoke_probe 有生产无测试
@@ -190,6 +199,7 @@ cases:
   fixture: go-gateway
   rule_id: GO-001
   expected_verdict: {status: pass, absorption: wired_and_tested}
+  expected_grounding: lexical
   expected_findings: []
   ground_truth: Go 表面正向对照——go_scan 识别 AdmitRequest（含测试）；兼作 comment_only_reference 负向对照（notes.go 只在注释提及 AdmitRequest）——变异验证：去掉 referenced_anywhere 即报警
 
@@ -215,6 +225,7 @@ cases:
   fixture: rust-gate
   rule_id: RS-001
   expected_verdict: {status: pass, absorption: wired_and_tested}
+  expected_grounding: lexical
   expected_findings: []
   ground_truth: Rust 表面正向对照——rust_scan 识别 admit_request（含测试）；兼作 comment_only_reference 负向对照（notes.rs 只在注释提及 admit_request）——变异验证：去掉 referenced_anywhere 即报警
 
@@ -260,6 +271,7 @@ cases:
   fixture: healthy-billing
   rule_id: BILL-001
   expected_verdict: {status: pass, absorption: wired_and_tested}
+  expected_grounding: structural
   expected_findings: []
   ground_truth: comment_only_reference 负向对照——charge_gate 在 service.py 真调用，dashboard.py 只在注释提及；注释提及本身不是罪
 
@@ -267,6 +279,7 @@ cases:
   fixture: healthy-billing
   rule_id: BILL-002
   expected_verdict: {status: pass, absorption: wired_and_tested}
+  expected_grounding: structural
   expected_findings: []
   ground_truth: documented_rule_no_consumer / documented_rule_untested 负向对照——生产调用与回归断言齐备
 
@@ -274,6 +287,7 @@ cases:
   fixture: healthy-billing
   rule_id: BILL-003
   expected_verdict: {status: pass, absorption: wired_and_tested}
+  expected_grounding: structural
   expected_findings: []
   ground_truth: state_in_parallel_files 负向对照——invoice_state 在 billing.py 定义并写入、reporting.py 只读；正确分层不得判成双处维护
 
@@ -281,6 +295,7 @@ cases:
   fixture: healthy-billing
   rule_id: BILL-004
   expected_verdict: {status: pass, absorption: wired_and_tested}
+  expected_grounding: structural
   expected_findings: []
   ground_truth: write_only_state / schema_field_unread 负向对照——audit_field 生产写入、下游读取，读写流闭合
 
@@ -288,6 +303,7 @@ cases:
   fixture: healthy-billing
   rule_id: BILL-005
   expected_verdict: {status: pass, absorption: wired_and_tested}
+  expected_grounding: structural
   expected_findings: []
   ground_truth: legacy_entry_alive 负向对照——旧入口被测试以真实 import 引用（不是 hasattr 字符串，否则本条是空对照）；把这种引用判成旧链存活等于惩罚拆除者
 
@@ -311,6 +327,7 @@ cases:
   fixture: shop-checkout
   rule_id: REFUND-010
   expected_verdict: {status: pass, absorption: wired_and_tested}
+  expected_grounding: structural
   expected_findings: []
   ground_truth: legacy_entry_alive 负向对照第二域——direct_settle 已从生产拆除，只被「断言其不存在」的测试真实 import；判成旧链存活等于惩罚拆除者（healthy-billing/BILL-005 是第一域）
 
@@ -330,6 +347,7 @@ cases:
   fixture: shop-checkout
   rule_id: REFUND-012
   expected_verdict: {status: pass, absorption: wired_and_tested}
+  expected_grounding: structural
   expected_findings: []
   ground_truth: test_helper_only 负向对照第一域——validate_refund_shape 的生产实现住在 src/spec/ 里（OpenAPI 式的生产包，不是 RSpec 测试根）；把嵌套 spec/ 一律当测试会把唯一生产消费者判没，于是"接了线也测了"被读成"只有测试 helper"
 
@@ -337,6 +355,7 @@ cases:
   fixture: ci-deploy
   rule_id: DEPLOY-013
   expected_verdict: {status: pass, absorption: wired_and_tested}
+  expected_grounding: structural
   expected_findings: []
   ground_truth: test_helper_only 负向对照第二域（CI）——load_deploy_manifest 住在 scripts/spec/；与 CASE-040 同一判断的跨域验证
 
@@ -344,6 +363,7 @@ cases:
   fixture: web-gate
   rule_id: GATE-003
   expected_verdict: {status: pass, absorption: wired_and_tested}
+  expected_grounding: lexical
   expected_findings: []
   ground_truth: documented_rule_untested 负向对照第一域——回归写在 src/limiter.test.ts（JS/TS 生态的同置约定）；只认 tests/ 目录会把它读成生产文件，于是"有回归"被判成"无回归证据"，惩罚按生态惯例组织测试的人
 
@@ -351,6 +371,7 @@ cases:
   fixture: go-gateway
   rule_id: GO-003
   expected_verdict: {status: pass, absorption: wired_and_tested}
+  expected_grounding: lexical
   expected_findings: []
   ground_truth: documented_rule_untested 负向对照第二域——Go 强制 limiter_test.go 与 limiter.go 同目录，语言本身不允许另建 tests/；这条对照守住的是"路径启发式不能与语言惯例冲突"
 
@@ -368,6 +389,7 @@ cases:
   fixture: ci-deploy
   rule_id: DEPLOY-015
   expected_verdict: {status: gap, absorption: wired}
+  expected_grounding: structural
   expected_findings:
   - {pattern_id: test_cannot_reach_consumer, severity: gap}
   ground_truth: R1 第一域（CI）——record_audit_entry 的回归全打在 Mock 替身上，tests/test_audit_log.py 的 import 闭包永远到不了 scripts/audit_log.py；标识符出现在测试里不等于生产代码被执行过
@@ -376,6 +398,7 @@ cases:
   fixture: jobflow-preview
   rule_id: PUSH-005
   expected_verdict: {status: gap, absorption: wired}
+  expected_grounding: structural
   expected_findings:
   - {pattern_id: test_cannot_reach_consumer, severity: gap}
   ground_truth: R1 第二域（求职）——archive_material 在测试里被就地重定义成同名替身，连 Mock 都不需要；改名或删 import 都不会让这条测试变红，正是 SELF-001 bypass_note 登记的绕过路径

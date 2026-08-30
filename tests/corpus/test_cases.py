@@ -40,6 +40,16 @@ def test_case(case):
     actual_absorption = verdict.absorption.value if verdict.absorption else None
     assert actual_absorption == expected["absorption"]
 
+    if "expected_grounding" in case:
+        assert verdict.grounding == case["expected_grounding"], (
+            f"{case['case_id']} 依据强度不符: 期望 {case['expected_grounding']}, 实际 {verdict.grounding}"
+        )
+        # 自曝必须进 reason：用户读的是渲染出来的那句话，不是 pydantic 字段
+        if verdict.grounding:
+            assert "判定依据" in verdict.reason, (
+                f"{case['case_id']} 有 grounding 字段但 reason 未自曝依据强度"
+            )
+
     actual_findings = {
         (f.pattern_id, f.severity) for f in report.findings if f.rule_id == case["rule_id"]
     }
@@ -49,3 +59,23 @@ def test_case(case):
     assert actual_findings == expected_findings, (
         f"{case['case_id']} finding 不符: 期望 {expected_findings}, 实际 {actual_findings}"
     )
+
+
+def test_pass_cases_declare_grounding():
+    """每个正向判定必须声明依据强度——16.4 输出层防线在语料层的落实。
+
+    pass 打印出来都一样好看，但 structural 验证了代码结构、lexical 只搜到了
+    字符串。语料不逐条声明 expected_grounding，这条差别就无人看守，跨语言
+    的 pass 会永远顶着一个和 Python 一样可信的脸。
+    """
+    missing = [
+        c["case_id"] for c in CASES
+        if c["expected_verdict"]["status"] == "pass" and "expected_grounding" not in c
+    ]
+    assert not missing, f"pass 用例缺 expected_grounding: {missing}"
+    bad = [
+        c["case_id"] for c in CASES
+        if "expected_grounding" in c
+        and c["expected_grounding"] not in ("structural", "lexical", "mixed")
+    ]
+    assert not bad, f"expected_grounding 取值越界: {bad}"

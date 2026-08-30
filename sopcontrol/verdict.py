@@ -32,6 +32,40 @@ _STRUCTURED_SUFFIXES = (
     ".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".go", ".rs",
 )
 
+# 证据强度分层（16.4 的输出层防线）。消费者证据只可能来自这几类 kind：
+# name_flows/import_graph 不参与 marker 命中（marker_hit 不收），故不在分层里。
+# 结构化 = 解析器产出，见过代码结构；词法 = 标识符出现在剥掉注释的文本里。
+# 判定器不验证调用关系（零 I/O），但它知道每条证据出自哪类扫描器——
+# 把这一点如实带上，pass 才能自曝「我凭什么」，渲染层不必猜。
+STRUCTURAL_EVIDENCE_KINDS = frozenset({"ast_scan.references"})
+LEXICAL_EVIDENCE_KINDS = frozenset({
+    "js_scan.references", "go_scan.references",
+    "rust_scan.references", "code_scan.identifiers",
+})
+GROUNDING_DISCLOSURE = {
+    "structural": "判定依据：结构化证据（AST，已解析代码结构）",
+    "lexical": "判定依据：词法代理（标识符匹配，未验证调用关系）",
+    "mixed": "判定依据：结构化+词法代理混合（部分消费者仅标识符级验证）",
+}
+
+
+def evidence_grounding(evidence: list[Evidence]) -> str | None:
+    """消费证据的依据强度：全结构化/全词法/混合；无证据返回 None。
+
+    取「混合」而不是取最强：每条消费者证据都是 pass 的承重梁，任何一根
+    只到词法级，整体宣称就该打折扣——这是最弱承重原则，不是取平均。
+    """
+    kinds = {ev.kind for ev in evidence}
+    structural = bool(kinds & STRUCTURAL_EVIDENCE_KINDS)
+    lexical = bool(kinds & LEXICAL_EVIDENCE_KINDS)
+    if structural and lexical:
+        return "mixed"
+    if structural:
+        return "structural"
+    if lexical:
+        return "lexical"
+    return None
+
 
 def marker_hit(ev: Evidence, markers: list[str]) -> bool:
     """标记命中：.py/AST、JS/TS、Go 用结构化扫描；其余表面用 grep。"""
@@ -221,6 +255,14 @@ def evaluate_rule(rule: Rule, evidence: list[Evidence], findings: list[Finding])
         attestations=fresh_attestations(evidence),
         attest_ids=[e.evidence_id for e in evidence if e.kind == "rule.attestation"],
     )
+    # 依据强度自曝：只要判定建立在消费证据上，就说明它是哪一级证据撑起来的。
+    # 写进 reason 而不是只挂结构化字段，因为用户读的是渲染出来的那句话。
+    grounding = evidence_grounding(prod + test)
+    if grounding:
+        base = base.model_copy(update={
+            "grounding": grounding,
+            "reason": f"{base.reason}；{GROUNDING_DISCLOSURE[grounding]}",
+        })
 
     legacy = legacy_evidence(rule, evidence)
     if legacy:

@@ -1,0 +1,965 @@
+{
+  "generated_at": "2026-08-30T05:39:30.878946+00:00",
+  "git_head": "3fc64ba",
+  "totals": {
+    "cases": 46,
+    "verdict_match": 46,
+    "findings_match": 46,
+    "accuracy": 1.0
+  },
+  "by_fixture": {
+    "jobflow-preview": {
+      "cases": 5,
+      "verdict_match": 5,
+      "findings_match": 5
+    },
+    "shop-checkout": {
+      "cases": 12,
+      "verdict_match": 12,
+      "findings_match": 12
+    },
+    "ci-deploy": {
+      "cases": 16,
+      "verdict_match": 16,
+      "findings_match": 16
+    },
+    "web-gate": {
+      "cases": 3,
+      "verdict_match": 3,
+      "findings_match": 3
+    },
+    "go-gateway": {
+      "cases": 3,
+      "verdict_match": 3,
+      "findings_match": 3
+    },
+    "rust-gate": {
+      "cases": 2,
+      "verdict_match": 2,
+      "findings_match": 2
+    },
+    "healthy-billing": {
+      "cases": 5,
+      "verdict_match": 5,
+      "findings_match": 5
+    }
+  },
+  "by_pattern": {
+    "documented_rule_no_consumer": {
+      "cases": 10,
+      "verdict_match": 10
+    },
+    "no_finding_expected": {
+      "cases": 18,
+      "verdict_match": 18
+    },
+    "comment_only_reference": {
+      "cases": 8,
+      "verdict_match": 8
+    },
+    "consumer_markers_undefined": {
+      "cases": 2,
+      "verdict_match": 2
+    },
+    "documented_rule_untested": {
+      "cases": 2,
+      "verdict_match": 2
+    },
+    "test_helper_only": {
+      "cases": 2,
+      "verdict_match": 2
+    },
+    "legacy_entry_alive": {
+      "cases": 2,
+      "verdict_match": 2
+    },
+    "write_only_state": {
+      "cases": 4,
+      "verdict_match": 4
+    },
+    "state_in_parallel_files": {
+      "cases": 2,
+      "verdict_match": 2
+    },
+    "state_marker_absent": {
+      "cases": 2,
+      "verdict_match": 2
+    },
+    "schema_field_unread": {
+      "cases": 2,
+      "verdict_match": 2
+    },
+    "test_cannot_reach_consumer": {
+      "cases": 2,
+      "verdict_match": 2
+    }
+  },
+  "absorption_distribution": {
+    "documented": 14,
+    "wired_and_tested": 17,
+    "unknown": 11,
+    "wired": 4
+  },
+  "grounding_distribution": {
+    "none": 23,
+    "structural": 18,
+    "lexical": 5
+  },
+  "case_results": [
+    {
+      "case_id": "CASE-001",
+      "fixture": "jobflow-preview",
+      "rule_id": "PUSH-001",
+      "expected": {
+        "status": "gap",
+        "absorption": "documented",
+        "grounding": null
+      },
+      "actual": {
+        "status": "gap",
+        "absorption": "documented",
+        "grounding": null
+      },
+      "verdict_match": true,
+      "findings_match": true
+    },
+    {
+      "case_id": "CASE-002",
+      "fixture": "shop-checkout",
+      "rule_id": "REFUND-001",
+      "expected": {
+        "status": "pass",
+        "absorption": "wired_and_tested",
+        "grounding": "structural"
+      },
+      "actual": {
+        "status": "pass",
+        "absorption": "wired_and_tested",
+        "grounding": "structural"
+      },
+      "verdict_match": true,
+      "findings_match": true
+    },
+    {
+      "case_id": "CASE-003",
+      "fixture": "shop-checkout",
+      "rule_id": "REFUND-002",
+      "expected": {
+        "status": "gap",
+        "absorption": "documented",
+        "grounding": null
+      },
+      "actual": {
+        "status": "gap",
+        "absorption": "documented",
+        "grounding": null
+      },
+      "verdict_match": true,
+      "findings_match": true
+    },
+    {
+      "case_id": "CASE-004",
+      "fixture": "shop-checkout",
+      "rule_id": "REFUND-003",
+      "expected": {
+        "status": "unknown",
+        "absorption": null,
+        "grounding": null
+      },
+      "actual": {
+        "status": "unknown",
+        "absorption": null,
+        "grounding": null
+      },
+      "verdict_match": true,
+      "findings_match": true
+    },
+    {
+      "case_id": "CASE-005",
+      "fixture": "shop-checkout",
+      "rule_id": "REFUND-004",
+      "expected": {
+        "status": "gap",
+        "absorption": "wired",
+        "grounding": "structural"
+      },
+      "actual": {
+        "status": "gap",
+        "absorption": "wired",
+        "grounding": "structural"
+      },
+      "verdict_match": true,
+      "findings_match": true
+    },
+    {
+      "case_id": "CASE-006",
+      "fixture": "ci-deploy",
+      "rule_id": "DEPLOY-001",
+      "expected": {
+        "status": "gap",
+        "absorption": "documented",
+        "grounding": null
+      },
+      "actual": {
+        "status": "gap",
+        "absorption": "documented",
+        "grounding": null
+      },
+      "verdict_match": true,
+      "findings_match": true
+    },
+    {
+      "case_id": "CASE-007",
+      "fixture": "ci-deploy",
+      "rule_id": "ROLLBACK-001",
+      "expected": {
+        "status": "pass",
+        "absorption": "wired_and_tested",
+        "grounding": "structural"
+      },
+      "actual": {
+        "status": "pass",
+        "absorption": "wired_and_tested",
+        "grounding": "structural"
+      },
+      "verdict_match": true,
+      "findings_match": true
+    },
+    {
+      "case_id": "CASE-008",
+      "fixture": "ci-deploy",
+      "rule_id": "DEPLOY-002",
+      "expected": {
+        "status": "gap",
+        "absorption": "documented",
+        "grounding": "structural"
+      },
+      "actual": {
+        "status": "gap",
+        "absorption": "documented",
+        "grounding": "structural"
+      },
+      "verdict_match": true,
+      "findings_match": true
+    },
+    {
+      "case_id": "CASE-009",
+      "fixture": "jobflow-preview",
+      "rule_id": "PUSH-002",
+      "expected": {
+        "status": "fail",
+        "absorption": "wired_and_tested",
+        "grounding": "structural"
+      },
+      "actual": {
+        "status": "fail",
+        "absorption": "wired_and_tested",
+        "grounding": "structural"
+      },
+      "verdict_match": true,
+      "findings_match": true
+    },
+    {
+      "case_id": "CASE-010",
+      "fixture": "ci-deploy",
+      "rule_id": "RELEASE-001",
+      "expected": {
+        "status": "fail",
+        "absorption": "wired_and_tested",
+        "grounding": "structural"
+      },
+      "actual": {
+        "status": "fail",
+        "absorption": "wired_and_tested",
+        "grounding": "structural"
+      },
+      "verdict_match": true,
+      "findings_match": true
+    },
+    {
+      "case_id": "CASE-011",
+      "fixture": "shop-checkout",
+      "rule_id": "REFUND-005",
+      "expected": {
+        "status": "unknown",
+        "absorption": null,
+        "grounding": null
+      },
+      "actual": {
+        "status": "unknown",
+        "absorption": null,
+        "grounding": null
+      },
+      "verdict_match": true,
+      "findings_match": true
+    },
+    {
+      "case_id": "CASE-012",
+      "fixture": "shop-checkout",
+      "rule_id": "REFUND-006",
+      "expected": {
+        "status": "unknown",
+        "absorption": null,
+        "grounding": null
+      },
+      "actual": {
+        "status": "unknown",
+        "absorption": null,
+        "grounding": null
+      },
+      "verdict_match": true,
+      "findings_match": true
+    },
+    {
+      "case_id": "CASE-013",
+      "fixture": "shop-checkout",
+      "rule_id": "REFUND-007",
+      "expected": {
+        "status": "unknown",
+        "absorption": null,
+        "grounding": null
+      },
+      "actual": {
+        "status": "unknown",
+        "absorption": null,
+        "grounding": null
+      },
+      "verdict_match": true,
+      "findings_match": true
+    },
+    {
+      "case_id": "CASE-014",
+      "fixture": "jobflow-preview",
+      "rule_id": "PUSH-003",
+      "expected": {
+        "status": "unknown",
+        "absorption": null,
+        "grounding": null
+      },
+      "actual": {
+        "status": "unknown",
+        "absorption": null,
+        "grounding": null
+      },
+      "verdict_match": true,
+      "findings_match": true
+    },
+    {
+      "case_id": "CASE-015",
+      "fixture": "ci-deploy",
+      "rule_id": "DEPLOY-003",
+      "expected": {
+        "status": "unknown",
+        "absorption": null,
+        "grounding": null
+      },
+      "actual": {
+        "status": "unknown",
+        "absorption": null,
+        "grounding": null
+      },
+      "verdict_match": true,
+      "findings_match": true
+    },
+    {
+      "case_id": "CASE-016",
+      "fixture": "ci-deploy",
+      "rule_id": "DEPLOY-004",
+      "expected": {
+        "status": "gap",
+        "absorption": "documented",
+        "grounding": null
+      },
+      "actual": {
+        "status": "gap",
+        "absorption": "documented",
+        "grounding": null
+      },
+      "verdict_match": true,
+      "findings_match": true
+    },
+    {
+      "case_id": "CASE-017",
+      "fixture": "web-gate",
+      "rule_id": "GATE-001",
+      "expected": {
+        "status": "pass",
+        "absorption": "wired_and_tested",
+        "grounding": "lexical"
+      },
+      "actual": {
+        "status": "pass",
+        "absorption": "wired_and_tested",
+        "grounding": "lexical"
+      },
+      "verdict_match": true,
+      "findings_match": true
+    },
+    {
+      "case_id": "CASE-018",
+      "fixture": "web-gate",
+      "rule_id": "GATE-002",
+      "expected": {
+        "status": "gap",
+        "absorption": "documented",
+        "grounding": null
+      },
+      "actual": {
+        "status": "gap",
+        "absorption": "documented",
+        "grounding": null
+      },
+      "verdict_match": true,
+      "findings_match": true
+    },
+    {
+      "case_id": "CASE-019",
+      "fixture": "ci-deploy",
+      "rule_id": "DEPLOY-005",
+      "expected": {
+        "status": "gap",
+        "absorption": "documented",
+        "grounding": null
+      },
+      "actual": {
+        "status": "gap",
+        "absorption": "documented",
+        "grounding": null
+      },
+      "verdict_match": true,
+      "findings_match": true
+    },
+    {
+      "case_id": "CASE-020",
+      "fixture": "shop-checkout",
+      "rule_id": "REFUND-008",
+      "expected": {
+        "status": "gap",
+        "absorption": "documented",
+        "grounding": "structural"
+      },
+      "actual": {
+        "status": "gap",
+        "absorption": "documented",
+        "grounding": "structural"
+      },
+      "verdict_match": true,
+      "findings_match": true
+    },
+    {
+      "case_id": "CASE-021",
+      "fixture": "ci-deploy",
+      "rule_id": "DEPLOY-006",
+      "expected": {
+        "status": "gap",
+        "absorption": "wired",
+        "grounding": "structural"
+      },
+      "actual": {
+        "status": "gap",
+        "absorption": "wired",
+        "grounding": "structural"
+      },
+      "verdict_match": true,
+      "findings_match": true
+    },
+    {
+      "case_id": "CASE-022",
+      "fixture": "ci-deploy",
+      "rule_id": "DEPLOY-007",
+      "expected": {
+        "status": "unknown",
+        "absorption": null,
+        "grounding": null
+      },
+      "actual": {
+        "status": "unknown",
+        "absorption": null,
+        "grounding": null
+      },
+      "verdict_match": true,
+      "findings_match": true
+    },
+    {
+      "case_id": "CASE-023",
+      "fixture": "jobflow-preview",
+      "rule_id": "PUSH-004",
+      "expected": {
+        "status": "unknown",
+        "absorption": null,
+        "grounding": null
+      },
+      "actual": {
+        "status": "unknown",
+        "absorption": null,
+        "grounding": null
+      },
+      "verdict_match": true,
+      "findings_match": true
+    },
+    {
+      "case_id": "CASE-024",
+      "fixture": "go-gateway",
+      "rule_id": "GO-001",
+      "expected": {
+        "status": "pass",
+        "absorption": "wired_and_tested",
+        "grounding": "lexical"
+      },
+      "actual": {
+        "status": "pass",
+        "absorption": "wired_and_tested",
+        "grounding": "lexical"
+      },
+      "verdict_match": true,
+      "findings_match": true
+    },
+    {
+      "case_id": "CASE-025",
+      "fixture": "go-gateway",
+      "rule_id": "GO-002",
+      "expected": {
+        "status": "gap",
+        "absorption": "documented",
+        "grounding": null
+      },
+      "actual": {
+        "status": "gap",
+        "absorption": "documented",
+        "grounding": null
+      },
+      "verdict_match": true,
+      "findings_match": true
+    },
+    {
+      "case_id": "CASE-026",
+      "fixture": "ci-deploy",
+      "rule_id": "DEPLOY-009",
+      "expected": {
+        "status": "gap",
+        "absorption": "documented",
+        "grounding": null
+      },
+      "actual": {
+        "status": "gap",
+        "absorption": "documented",
+        "grounding": null
+      },
+      "verdict_match": true,
+      "findings_match": true
+    },
+    {
+      "case_id": "CASE-027",
+      "fixture": "rust-gate",
+      "rule_id": "RS-001",
+      "expected": {
+        "status": "pass",
+        "absorption": "wired_and_tested",
+        "grounding": "lexical"
+      },
+      "actual": {
+        "status": "pass",
+        "absorption": "wired_and_tested",
+        "grounding": "lexical"
+      },
+      "verdict_match": true,
+      "findings_match": true
+    },
+    {
+      "case_id": "CASE-028",
+      "fixture": "rust-gate",
+      "rule_id": "RS-002",
+      "expected": {
+        "status": "gap",
+        "absorption": "documented",
+        "grounding": null
+      },
+      "actual": {
+        "status": "gap",
+        "absorption": "documented",
+        "grounding": null
+      },
+      "verdict_match": true,
+      "findings_match": true
+    },
+    {
+      "case_id": "CASE-029",
+      "fixture": "ci-deploy",
+      "rule_id": "DEPLOY-010",
+      "expected": {
+        "status": "gap",
+        "absorption": "documented",
+        "grounding": null
+      },
+      "actual": {
+        "status": "gap",
+        "absorption": "documented",
+        "grounding": null
+      },
+      "verdict_match": true,
+      "findings_match": true
+    },
+    {
+      "case_id": "CASE-030",
+      "fixture": "shop-checkout",
+      "rule_id": "REFUND-009",
+      "expected": {
+        "status": "gap",
+        "absorption": "documented",
+        "grounding": null
+      },
+      "actual": {
+        "status": "gap",
+        "absorption": "documented",
+        "grounding": null
+      },
+      "verdict_match": true,
+      "findings_match": true
+    },
+    {
+      "case_id": "CASE-031",
+      "fixture": "ci-deploy",
+      "rule_id": "DEPLOY-011",
+      "expected": {
+        "status": "gap",
+        "absorption": "documented",
+        "grounding": null
+      },
+      "actual": {
+        "status": "gap",
+        "absorption": "documented",
+        "grounding": null
+      },
+      "verdict_match": true,
+      "findings_match": true
+    },
+    {
+      "case_id": "CASE-032",
+      "fixture": "healthy-billing",
+      "rule_id": "BILL-001",
+      "expected": {
+        "status": "pass",
+        "absorption": "wired_and_tested",
+        "grounding": "structural"
+      },
+      "actual": {
+        "status": "pass",
+        "absorption": "wired_and_tested",
+        "grounding": "structural"
+      },
+      "verdict_match": true,
+      "findings_match": true
+    },
+    {
+      "case_id": "CASE-033",
+      "fixture": "healthy-billing",
+      "rule_id": "BILL-002",
+      "expected": {
+        "status": "pass",
+        "absorption": "wired_and_tested",
+        "grounding": "structural"
+      },
+      "actual": {
+        "status": "pass",
+        "absorption": "wired_and_tested",
+        "grounding": "structural"
+      },
+      "verdict_match": true,
+      "findings_match": true
+    },
+    {
+      "case_id": "CASE-034",
+      "fixture": "healthy-billing",
+      "rule_id": "BILL-003",
+      "expected": {
+        "status": "pass",
+        "absorption": "wired_and_tested",
+        "grounding": "structural"
+      },
+      "actual": {
+        "status": "pass",
+        "absorption": "wired_and_tested",
+        "grounding": "structural"
+      },
+      "verdict_match": true,
+      "findings_match": true
+    },
+    {
+      "case_id": "CASE-035",
+      "fixture": "healthy-billing",
+      "rule_id": "BILL-004",
+      "expected": {
+        "status": "pass",
+        "absorption": "wired_and_tested",
+        "grounding": "structural"
+      },
+      "actual": {
+        "status": "pass",
+        "absorption": "wired_and_tested",
+        "grounding": "structural"
+      },
+      "verdict_match": true,
+      "findings_match": true
+    },
+    {
+      "case_id": "CASE-036",
+      "fixture": "healthy-billing",
+      "rule_id": "BILL-005",
+      "expected": {
+        "status": "pass",
+        "absorption": "wired_and_tested",
+        "grounding": "structural"
+      },
+      "actual": {
+        "status": "pass",
+        "absorption": "wired_and_tested",
+        "grounding": "structural"
+      },
+      "verdict_match": true,
+      "findings_match": true
+    },
+    {
+      "case_id": "CASE-037",
+      "fixture": "ci-deploy",
+      "rule_id": "DEPLOY-012",
+      "expected": {
+        "status": "unknown",
+        "absorption": null,
+        "grounding": null
+      },
+      "actual": {
+        "status": "unknown",
+        "absorption": null,
+        "grounding": null
+      },
+      "verdict_match": true,
+      "findings_match": true
+    },
+    {
+      "case_id": "CASE-038",
+      "fixture": "shop-checkout",
+      "rule_id": "REFUND-010",
+      "expected": {
+        "status": "pass",
+        "absorption": "wired_and_tested",
+        "grounding": "structural"
+      },
+      "actual": {
+        "status": "pass",
+        "absorption": "wired_and_tested",
+        "grounding": "structural"
+      },
+      "verdict_match": true,
+      "findings_match": true
+    },
+    {
+      "case_id": "CASE-039",
+      "fixture": "shop-checkout",
+      "rule_id": "REFUND-011",
+      "expected": {
+        "status": "unknown",
+        "absorption": null,
+        "grounding": null
+      },
+      "actual": {
+        "status": "unknown",
+        "absorption": null,
+        "grounding": null
+      },
+      "verdict_match": true,
+      "findings_match": true
+    },
+    {
+      "case_id": "CASE-040",
+      "fixture": "shop-checkout",
+      "rule_id": "REFUND-012",
+      "expected": {
+        "status": "pass",
+        "absorption": "wired_and_tested",
+        "grounding": "structural"
+      },
+      "actual": {
+        "status": "pass",
+        "absorption": "wired_and_tested",
+        "grounding": "structural"
+      },
+      "verdict_match": true,
+      "findings_match": true
+    },
+    {
+      "case_id": "CASE-041",
+      "fixture": "ci-deploy",
+      "rule_id": "DEPLOY-013",
+      "expected": {
+        "status": "pass",
+        "absorption": "wired_and_tested",
+        "grounding": "structural"
+      },
+      "actual": {
+        "status": "pass",
+        "absorption": "wired_and_tested",
+        "grounding": "structural"
+      },
+      "verdict_match": true,
+      "findings_match": true
+    },
+    {
+      "case_id": "CASE-042",
+      "fixture": "web-gate",
+      "rule_id": "GATE-003",
+      "expected": {
+        "status": "pass",
+        "absorption": "wired_and_tested",
+        "grounding": "lexical"
+      },
+      "actual": {
+        "status": "pass",
+        "absorption": "wired_and_tested",
+        "grounding": "lexical"
+      },
+      "verdict_match": true,
+      "findings_match": true
+    },
+    {
+      "case_id": "CASE-043",
+      "fixture": "go-gateway",
+      "rule_id": "GO-003",
+      "expected": {
+        "status": "pass",
+        "absorption": "wired_and_tested",
+        "grounding": "lexical"
+      },
+      "actual": {
+        "status": "pass",
+        "absorption": "wired_and_tested",
+        "grounding": "lexical"
+      },
+      "verdict_match": true,
+      "findings_match": true
+    },
+    {
+      "case_id": "CASE-044",
+      "fixture": "ci-deploy",
+      "rule_id": "DEPLOY-014",
+      "expected": {
+        "status": "unknown",
+        "absorption": null,
+        "grounding": null
+      },
+      "actual": {
+        "status": "unknown",
+        "absorption": null,
+        "grounding": null
+      },
+      "verdict_match": true,
+      "findings_match": true
+    },
+    {
+      "case_id": "CASE-045",
+      "fixture": "ci-deploy",
+      "rule_id": "DEPLOY-015",
+      "expected": {
+        "status": "gap",
+        "absorption": "wired",
+        "grounding": "structural"
+      },
+      "actual": {
+        "status": "gap",
+        "absorption": "wired",
+        "grounding": "structural"
+      },
+      "verdict_match": true,
+      "findings_match": true
+    },
+    {
+      "case_id": "CASE-046",
+      "fixture": "jobflow-preview",
+      "rule_id": "PUSH-005",
+      "expected": {
+        "status": "gap",
+        "absorption": "wired",
+        "grounding": "structural"
+      },
+      "actual": {
+        "status": "gap",
+        "absorption": "wired",
+        "grounding": "structural"
+      },
+      "verdict_match": true,
+      "findings_match": true
+    }
+  ],
+  "mutations": {
+    "declared_mutations": 9,
+    "enforcement_command": "python -m pytest tests/corpus/test_mutations.py -q",
+    "exit_code": 0,
+    "passed": true,
+    "kill_semantics": "全灭或套件不绿（tests/corpus/test_mutations.py 硬保证）"
+  },
+  "measured": {
+    "verdict_accuracy": "判定与语料标注的相符率（含正向对照与负向对照）",
+    "grounding_distribution": "pass/gap 判定的依据强度构成：lexical 占比即「词法代理撑起多少宣称」"
+  },
+  "unmeasurable": [
+    {
+      "metric": "bypass_rate",
+      "reason": "需要运行时 harness trace 流量做分母；本仓库账本尚无 E4 trace 事件"
+    },
+    {
+      "metric": "false_completion_rate",
+      "reason": "需要多条真实任务历史；本仓库 n=1 任务"
+    },
+    {
+      "metric": "model_variance",
+      "reason": "需要多模型对同一任务的 live 探针打分"
+    },
+    {
+      "metric": "handoff_success_rate",
+      "reason": "需要真实会话交接记录"
+    },
+    {
+      "metric": "repair_convergence",
+      "reason": "需要多条带修复轮次的任务历史；n=1"
+    },
+    {
+      "metric": "false_block_rate",
+      "reason": "需要真实 harness 拦截流量分母"
+    },
+    {
+      "metric": "human_interruption_rate",
+      "reason": "需要真实会话数据"
+    },
+    {
+      "metric": "rule_context_tokens",
+      "reason": "投影 token 计量未实现"
+    },
+    {
+      "metric": "controlled_delivery_latency",
+      "reason": "需要真实任务端到端计时"
+    },
+    {
+      "metric": "stale_evidence_catch_rate",
+      "reason": "机制在（input_hash/valid_until）但真实 stale 流量为 0；需注入实验"
+    }
+  ],
+  "external_datapoint": {
+    "root": "/tmp/jf-audit",
+    "rules": 1,
+    "evidence_count": 3686,
+    "findings": [
+      {
+        "pattern_id": "documented_rule_no_consumer",
+        "rule_id": "JF-PREVIEW-001",
+        "severity": "gap"
+      }
+    ],
+    "verdicts": [
+      {
+        "rule_id": "JF-PREVIEW-001",
+        "status": "gap",
+        "absorption": "documented",
+        "grounding": null
+      }
+    ]
+  }
+}

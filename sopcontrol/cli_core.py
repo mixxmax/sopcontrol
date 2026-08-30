@@ -141,6 +141,10 @@ def cmd_explain(args) -> int:
     if rule.accepted_at:
         print(f"  接受时间: {rule.accepted_at}")
     print(f"  判定: {verdict.status.upper()}  吸收等级: {verdict.absorption.value if verdict.absorption else '未判定'}")
+    if verdict.grounding:
+        strength = {"structural": "结构化（已解析代码结构）", "lexical": "词法代理（仅标识符匹配，未验证调用关系）",
+                    "mixed": "结构化+词法代理混合"}.get(verdict.grounding, verdict.grounding)
+        print(f"  依据强度: {strength}")
     print(f"  理由: {verdict.reason}")
     print(f"  下一步: {verdict.next_action}")
     if verdict.evidence_ids:
@@ -151,6 +155,51 @@ def cmd_explain(args) -> int:
     doc_ev = [e for e in evidence if e.kind == "doc_scan.must_statement" and rule.source.ref == e.subject]
     for e in doc_ev[:3]:
         print(f"  文档声明证据 {e.evidence_id}: {str(e.observed)[:60]}")
+    return 0
+
+
+
+def cmd_metrics(args) -> int:
+    """控制平面自我度量（手册 14.2 可计算子集）。分母是语料，不是本项目自己的规则——
+    本项目 n=2 规则 n=1 任务，把噪声印成表格不是度量。算不出的指标标 unmeasurable。"""
+    from .metrics import build_snapshot
+
+    jobsflow_root = Path(args.jobsflow) if getattr(args, "jobsflow", None) else None
+    snapshot = build_snapshot(jobsflow_root=jobsflow_root)
+
+    t = snapshot["totals"]
+    print("语料基线（分母 = 语料，不是本项目自己的规则）")
+    print(f"用例 {t['verdict_match']}/{t['cases']} 判定相符，findings {t['findings_match']}/{t['cases']} 相符（准确率 {t['accuracy']})")
+    for fixture, b in sorted(snapshot["by_fixture"].items()):
+        print(f"  {fixture:20} {b['verdict_match']}/{b['cases']} 判定相符")
+    print("按模式:")
+    for pid, b in sorted(snapshot["by_pattern"].items()):
+        print(f"  {pid:36} {b['verdict_match']}/{b['cases']}")
+    print(f"吸收分布: {snapshot['absorption_distribution']}")
+    print(f"依据强度分布: {snapshot['grounding_distribution']}")
+    m = snapshot["mutations"]
+    state = "通过" if m.get("passed") else ("未通过!" if m.get("passed") is False else "未执行")
+    print(f"变异执法: {m['declared_mutations']} 条声明，{state}（{m.get('kill_semantics', 'tests/corpus/test_mutations.py')}）")
+    if "external_datapoint" in snapshot:
+        dp = snapshot["external_datapoint"]
+        if "error" in dp:
+            print(f"外部数据点 {dp['root']}: 审计失败（{dp['error']}）")
+        else:
+            print(f"外部数据点 {dp['root']}: {dp['rules']} 条规则，{dp['evidence_count']} 条证据（只读，未写对方文件）")
+            for v in dp["verdicts"]:
+                print(f"  {v['rule_id']:16} {v['status']:8} {v['absorption'] or '-':18} 依据强度: {v['grounding'] or '-'}")
+            for f in dp["findings"]:
+                print(f"  finding [{f['severity']}] {f['pattern_id']} → {f['rule_id']}")
+    um = snapshot["unmeasurable"]
+    print(f"unmeasurable 指标 {len(um)} 项（需要真实使用数据，不填 0）: {', '.join(x['metric'] for x in um)}")
+
+    if getattr(args, "out", None):
+        out = Path(args.out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(snapshot, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        print(f"快照已写入: {out}")
+    if not m.get("passed", False) and m.get("passed") is not None:
+        return 1
     return 0
 
 
