@@ -107,6 +107,10 @@
 
 ## 运维记录（诚实登记）
 
+- 2026-08-30（Go 深度化）：用户授权越过「仅 pydantic/PyYAML/pytest」依赖边界，
+  引入 tree-sitter/tree-sitter-go；go_ast_scan 结构化证据 + reachability Go 分支 +
+  MUT-010，go-gateway pass grounding lexical→structural（基线快照 6192d05→本次：
+  structural 18→21 / lexical 5→3 / 用例 46→47 / 变异 9→10）。
 - 2026-08-24：清理 eval 挂起时用宽泛 pkill 模式误杀了用户 OpenChamber.app 的两个
   opencode serve 常驻服务（8月10日启动）。此类守护通常按需重启，但属用户运行中应用——
   教训：杀进程前先 ps 确认归属，宁可重启自己的演习进程。

@@ -32,6 +32,11 @@ classifiers = [
 dependencies = [
     "pydantic>=2.5",
     "PyYAML>=6",
+    # 2026-08-30 用户授权越过「仅 pydantic/PyYAML/pytest」边界：Go 表面结构化
+    # 证据（go_ast_scan）依赖 tree-sitter 语法树解析；缺失时运行时退回词法代理
+    # 并在 grounding 自曝 lexical，不静默丢视力。
+    "tree-sitter>=0.26,<0.27",
+    "tree-sitter-go>=0.25,<0.26",
 ]
 
 [project.optional-dependencies]

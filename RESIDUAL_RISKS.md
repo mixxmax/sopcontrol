@@ -79,11 +79,16 @@ allow 不归一化。宪法测试 `test_allow_list_stays_case_sensitive` 锁住�
 默认 `project_id` 由绝对路径哈希派生；挪盘/换路径会变。缓解：`sopctl identity lock`
 固定 id（仍非全局 registry）。全局 daemon / 远程身份同步仍属 Phase 6 其余部分。
 
-## R10 JS/TS/Go/Rust 词法剥离的已知缝隙
+## R10 JS/TS/Go/Rust 词法剥离的已知缝隙（2026-08-30 更新：Go 已结构化）
 
-`js_scan` / `go_scan` / `rust_scan` 不解析完整语法：嵌套模板、正则字面量、
-raw string、宏展开等可能残留或误剥。语料覆盖基本注释/字符串；命中后再补夹具。
-不引入各语言编译器依赖是刻意边界（脊柱依赖白名单）。
+**Go 已升级**：`go_ast_scan`（tree-sitter-go，2026-08-30 用户授权越过依赖白名单）
+产出结构化引用与包/import 证据，`go_scan` 仅作解析失败回退（grounding 如实标
+lexical）。同包互见 + import 末段匹配包名的闭包近似：import 路径末段 ≠ 包声明名
+时闭合走不通，方向是过报（test_cannot_reach_consumer 误响）而非漏报。
+
+**JS/TS/Rust 仍词法**：`js_scan` / `rust_scan` 不解析完整语法：嵌套模板、正则
+字面量、raw string、宏展开等可能残留或误剥。语料覆盖基本注释/字符串；命中后再
+补夹具。Go 模板（go_ast_scan + reachability Go 分支 + MUT-010）可复制。
 
 ## R9 修复智能在脊柱之外（B3 起，2026-08-26 更新）
 

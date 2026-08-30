@@ -91,3 +91,14 @@ mutations:
   must_fire:
   - {case_id: CASE-040, pattern_id: test_cannot_reach_consumer}
   - {case_id: CASE-041, pattern_id: test_cannot_reach_consumer}
+
+- mutation_id: MUT-010
+  fix: go_import_closure 用「同包互见 + import 末段匹配包名」闭合（go_ast 深度化）
+  revert: 闭包恒返回空集——Go 测试文件永远到不了生产实现
+  breaks: 正确同包/正确 import 的 Go 回归测试被判成到不了消费者，误报可达性缺口
+  # 与 MUT-009 同守过度告警方向，但守的是 Go 分支：包索引一瞎，go-gateway 的
+  # 正向对照（CASE-024/043）全部误响。CASE-047（真替身）不在此列——它本来就
+  # 该响，「变异后仍响」证明不了任何东西。
+  must_fire:
+  - {case_id: CASE-024, pattern_id: test_cannot_reach_consumer}
+  - {case_id: CASE-043, pattern_id: test_cannot_reach_consumer}

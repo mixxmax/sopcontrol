@@ -97,18 +97,47 @@ def test_python_pass_discloses_structural():
     assert "判定依据" in verdict.reason and "结构化" in verdict.reason
 
 
-def test_go_pass_discloses_lexical_proxy():
-    """Go 夹具的 pass 必须自曝词法代理——16.4 的输出层防线。
+def test_go_pass_discloses_structural():
+    """Go 夹具的 pass 在 go_ast 深度化后自曝结构化依据。
 
-    治理幻觉的输出层形态：Go 规则的 pass 和 Python 规则的 pass 打印得一模
-    一样，但一个验证了代码结构、一个只是标识符在剥掉注释的文本里出现过。
-    判定器不验证调用关系（零 I/O），但它必须如实说出它凭什么判 pass。
+    go_ast_scan（tree-sitter）就位后，Go 消费证据与 Python 同级：同包互见 +
+    import 闭包可达，测试替身（CASE-047）进不了这个信用等级。
     """
     report = run_case("go-gateway")
     verdict = next(v for v in report.verdicts if v.rule_id == "GO-001")
     assert verdict.status == "pass"
+    assert verdict.grounding == "structural"
+    assert "判定依据" in verdict.reason and "结构化" in verdict.reason
+
+
+def test_ts_pass_still_discloses_lexical_proxy():
+    """TS 夹具尚无结构化扫描器——pass 必须继续自曝词法代理，不许蹭 Go 的升级。
+
+    治理幻觉的输出层形态：Go 升级后若 TS 的 pass 顶着一模一样的脸，用户就
+    分不清哪个验证了代码结构、哪个只是标识符在剥掉注释的文本里出现过。
+    """
+    report = run_case("web-gate")
+    verdict = next(v for v in report.verdicts if v.rule_id == "GATE-001")
+    assert verdict.status == "pass"
     assert verdict.grounding == "lexical"
     assert "词法代理" in verdict.reason and "未验证调用关系" in verdict.reason
+
+
+def test_go_test_double_cannot_reach_consumer():
+    """Go 同名替身（package api 自定义 PostCharge）必须被可达性识破。
+
+    替身文件能编译、测试能全绿——生产实现从未被 import。go_ast 的包/import
+    证据让 go_import_closure 走不到 src/charge.go，回归信用被收回退回 wired。
+    """
+    report = run_case("go-gateway")
+    verdict = next(v for v in report.verdicts if v.rule_id == "GO-004")
+    assert verdict.status == "gap"
+    assert verdict.absorption == Absorption.wired
+    assert verdict.grounding == "structural"
+    assert any(
+        f.pattern_id == "test_cannot_reach_consumer" and f.rule_id == "GO-004"
+        for f in report.findings
+    )
 
 
 def test_verdict_without_consumer_evidence_has_no_grounding():

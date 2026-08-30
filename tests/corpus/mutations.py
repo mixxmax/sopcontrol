@@ -116,6 +116,18 @@ def mut_009_stem_only_module_names(mp) -> None:
     )
 
 
+def mut_010_go_closure_blind(mp) -> None:
+    """go_import_closure 恒返回空集 → 同包/同 import 的 Go 回归全部判成不可达。
+
+    Go 分支的过度告警守卫（对称于 MUT-009 之于 Python）：包/import 证据瞎了，
+    go-gateway 的正向对照会全部误报 test_cannot_reach_consumer——用户一旦发现
+    「接对了也报警」，就会绕开控制器而不是修复它。
+    """
+    _patch_everywhere(
+        mp, "go_import_closure", lambda start, packages, adjacency: set()
+    )
+
+
 MUTATORS = {
     "MUT-001": mut_001_forget_colocated_tests,
     "MUT-002": mut_002_spec_dir_is_test,
@@ -126,4 +138,5 @@ MUTATORS = {
     "MUT-007": mut_007_reads_must_be_local,
     "MUT-008": mut_008_no_test_dirs,
     "MUT-009": mut_009_stem_only_module_names,
+    "MUT-010": mut_010_go_closure_blind,
 }

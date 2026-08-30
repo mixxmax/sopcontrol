@@ -36,9 +36,9 @@ def test_snapshot_counts_and_accuracy_on_subset():
     assert set(snapshot["by_fixture"]) == {"shop-checkout", "jobflow-preview", "go-gateway"}
     # 负向对照（无期望 finding）进了独立桶：CASE-002 与 CASE-024 都是
     assert snapshot["by_pattern"]["no_finding_expected"]["cases"] == 2
-    # 跨语言夹具的 pass 是词法代理支撑的
-    assert snapshot["grounding_distribution"].get("lexical") == 1
-    assert snapshot["grounding_distribution"].get("structural") >= 1
+    # go-gateway 的 pass 在 go_ast 深度化后是结构化证据
+    assert snapshot["grounding_distribution"].get("structural") == 2
+    assert snapshot["grounding_distribution"].get("none") == 1
 
 
 def test_unmeasurable_never_fakes_zero():
@@ -50,9 +50,10 @@ def test_unmeasurable_never_fakes_zero():
 
 def test_case_results_carry_grounding():
     """逐用例结果必须带上依据强度——度量自己也要用上自曝字段，而不是只打印给人看。"""
-    subset = [c for c in CASES if c["case_id"] in ("CASE-002", "CASE-024")]
+    subset = [c for c in CASES if c["case_id"] in ("CASE-002", "CASE-017", "CASE-024")]
     results = run_corpus_cases(subset, ROOT / "corpus" / "fixtures", SENSORS, DETECTORS)
     by_case = {r["case_id"]: r for r in results}
     assert by_case["CASE-002"]["actual"]["grounding"] == "structural"
-    assert by_case["CASE-024"]["actual"]["grounding"] == "lexical"
+    assert by_case["CASE-017"]["actual"]["grounding"] == "lexical"  # TS 尚无结构化扫描器
+    assert by_case["CASE-024"]["actual"]["grounding"] == "structural"  # go_ast 深度化后
     assert all(r["verdict_match"] for r in results)

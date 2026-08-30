@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-08-30T05:39:30.878946+00:00",
-  "git_head": "3fc64ba",
+  "generated_at": "2026-08-30T08:12:59.108732+00:00",
+  "git_head": "243ce0e",
   "totals": {
-    "cases": 46,
-    "verdict_match": 46,
-    "findings_match": 46,
+    "cases": 47,
+    "verdict_match": 47,
+    "findings_match": 47,
     "accuracy": 1.0
   },
   "by_fixture": {
@@ -29,9 +29,9 @@
       "findings_match": 3
     },
     "go-gateway": {
-      "cases": 3,
-      "verdict_match": 3,
-      "findings_match": 3
+      "cases": 4,
+      "verdict_match": 4,
+      "findings_match": 4
     },
     "rust-gate": {
       "cases": 2,
@@ -90,20 +90,20 @@
       "verdict_match": 2
     },
     "test_cannot_reach_consumer": {
-      "cases": 2,
-      "verdict_match": 2
+      "cases": 3,
+      "verdict_match": 3
     }
   },
   "absorption_distribution": {
     "documented": 14,
     "wired_and_tested": 17,
     "unknown": 11,
-    "wired": 4
+    "wired": 5
   },
   "grounding_distribution": {
     "none": 23,
-    "structural": 18,
-    "lexical": 5
+    "structural": 21,
+    "lexical": 3
   },
   "case_results": [
     {
@@ -504,12 +504,12 @@
       "expected": {
         "status": "pass",
         "absorption": "wired_and_tested",
-        "grounding": "lexical"
+        "grounding": "structural"
       },
       "actual": {
         "status": "pass",
         "absorption": "wired_and_tested",
-        "grounding": "lexical"
+        "grounding": "structural"
       },
       "verdict_match": true,
       "findings_match": true
@@ -827,12 +827,12 @@
       "expected": {
         "status": "pass",
         "absorption": "wired_and_tested",
-        "grounding": "lexical"
+        "grounding": "structural"
       },
       "actual": {
         "status": "pass",
         "absorption": "wired_and_tested",
-        "grounding": "lexical"
+        "grounding": "structural"
       },
       "verdict_match": true,
       "findings_match": true
@@ -887,10 +887,27 @@
       },
       "verdict_match": true,
       "findings_match": true
+    },
+    {
+      "case_id": "CASE-047",
+      "fixture": "go-gateway",
+      "rule_id": "GO-004",
+      "expected": {
+        "status": "gap",
+        "absorption": "wired",
+        "grounding": "structural"
+      },
+      "actual": {
+        "status": "gap",
+        "absorption": "wired",
+        "grounding": "structural"
+      },
+      "verdict_match": true,
+      "findings_match": true
     }
   ],
   "mutations": {
-    "declared_mutations": 9,
+    "declared_mutations": 10,
     "enforcement_command": "python -m pytest tests/corpus/test_mutations.py -q",
     "exit_code": 0,
     "passed": true,

@@ -199,7 +199,7 @@ cases:
   fixture: go-gateway
   rule_id: GO-001
   expected_verdict: {status: pass, absorption: wired_and_tested}
-  expected_grounding: lexical
+  expected_grounding: structural
   expected_findings: []
   ground_truth: Go 表面正向对照——go_scan 识别 AdmitRequest（含测试）；兼作 comment_only_reference 负向对照（notes.go 只在注释提及 AdmitRequest）——变异验证：去掉 referenced_anywhere 即报警
 
@@ -371,7 +371,7 @@ cases:
   fixture: go-gateway
   rule_id: GO-003
   expected_verdict: {status: pass, absorption: wired_and_tested}
-  expected_grounding: lexical
+  expected_grounding: structural
   expected_findings: []
   ground_truth: documented_rule_untested 负向对照第二域——Go 强制 limiter_test.go 与 limiter.go 同目录，语言本身不允许另建 tests/；这条对照守住的是"路径启发式不能与语言惯例冲突"
 
@@ -402,3 +402,12 @@ cases:
   expected_findings:
   - {pattern_id: test_cannot_reach_consumer, severity: gap}
   ground_truth: R1 第二域（求职）——archive_material 在测试里被就地重定义成同名替身，连 Mock 都不需要；改名或删 import 都不会让这条测试变红，正是 SELF-001 bypass_note 登记的绕过路径
+
+- case_id: CASE-047
+  fixture: go-gateway
+  rule_id: GO-004
+  expected_verdict: {status: gap, absorption: wired}
+  expected_grounding: structural
+  expected_findings:
+  - {pattern_id: test_cannot_reach_consumer, severity: gap}
+  ground_truth: R1 在 Go 表面的形态——src/api/charge_test.go（package api）自定义同名替身 PostCharge，编译通过、测试全绿，生产实现 gateway.PostCharge 从未被 import；go_ast 的包/import 证据让「同包互见 + import 闭包」能识破它（Go 深度化首个用例）
