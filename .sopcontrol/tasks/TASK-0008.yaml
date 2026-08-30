@@ -1,0 +1,94 @@
+task_id: TASK-0008
+contract:
+  objective: Phase 6 第一批·TS 深度化（照 Go 模板复制）：ts_ast_scan 传感器（tree-sitter-typescript，.ts/.tsx
+    结构化引用+import 证据；.js 家族保留词法并如实标 lexical；解析失败逐文件回退），reachability 补 TS 分支（复用 import_closure/module_names，MUT-011
+    过报守卫），web-gate 判定 grounding lexical→structural；新增 .js 词法正向用例保住语料层的词法自曝覆盖（.js 家族按设计永留词法层）；基线快照刷新
+  allowed_writes:
+  - pyproject.toml
+  - plugins/__init__.py
+  - plugins/sensors/ts_ast_scan.py
+  - sopcontrol/verdict.py
+  - plugins/detectors/no_consumer.py
+  - plugins/detectors/reachability.py
+  - corpus/cases.yaml
+  - corpus/mutations.yaml
+  - corpus/baseline.json
+  - tests/corpus/mutations.py
+  - tests/patterns/test_ts_ast_scan.py
+  - tests/constitution/test_verdict.py
+  - tests/constitution/test_metrics.py
+  - corpus/fixtures/web-gate/docs/sop.md
+  - corpus/fixtures/web-gate/src/legacy.js
+  - corpus/fixtures/web-gate/tests/legacy.test.js
+  - RESIDUAL_RISKS.md
+  - ROADMAP.md
+  required_rules:
+  - CTRL-001
+  - SELF-001
+  - SELF-002
+  required_fields:
+  - ts_grounding_upgrade
+  - baseline_diff
+  max_repairs: 1
+  repairs_fingerprint: null
+  write_granularity: file
+  strict_schema: true
+  capability_note: 模型画像 fixture-weak tier=weak：边界遵循失败：文件级写入 + 强制 MUST 字段清单（场景8）
+status: delivered
+repair_count: 0
+changed_paths:
+- pyproject.toml
+- plugins/__init__.py
+- plugins/sensors/ts_ast_scan.py
+- sopcontrol/verdict.py
+- plugins/detectors/no_consumer.py
+- plugins/detectors/reachability.py
+- corpus/cases.yaml
+- corpus/mutations.yaml
+- corpus/baseline.json
+- tests/corpus/mutations.py
+- tests/patterns/test_ts_ast_scan.py
+- tests/constitution/test_verdict.py
+- tests/constitution/test_metrics.py
+- corpus/fixtures/web-gate/docs/sop.md
+- corpus/fixtures/web-gate/src/legacy.js
+- corpus/fixtures/web-gate/tests/legacy.test.js
+- RESIDUAL_RISKS.md
+- ROADMAP.md
+revision: 5
+created_at: '2026-08-30T13:23:34.899482Z'
+updated_at: '2026-08-30T13:40:12.462472Z'
+history:
+- at: '2026-08-30T13:23:35.260453Z'
+  action: accept
+  from_status: contract_proposed
+  to_status: executing
+  allowed: true
+  reason: 契约完整：目标、写入范围与可验证完成定义齐备
+  detail:
+    next_action: 执行变更后 task submit 提交改动路径
+- at: '2026-08-30T13:39:29.090591Z'
+  action: submit
+  from_status: executing
+  to_status: verification_pending
+  allowed: true
+  reason: 改动 18 个路径，全部在写入范围内；MUST 字段齐备 [ts_grounding_upgrade, baseline_diff]
+  detail:
+    next_action: 运行 task verify 由控制器独立审计
+- at: '2026-08-30T13:39:57.365902Z'
+  action: verify
+  from_status: verification_pending
+  to_status: verified
+  allowed: true
+  reason: 完成门通过：全部必需规则 [CTRL-001, SELF-001, SELF-002] 判定 pass（E4 实测：本轮执行 .venv/bin/python
+    -m pytest -q 通过（18.443s）+ E3 独立审计）
+  detail:
+    next_action: task deliver 交付
+- at: '2026-08-30T13:40:12.455965Z'
+  action: deliver
+  from_status: verified
+  to_status: delivered
+  allowed: true
+  reason: 完成门已独立验证，允许交付
+  detail:
+    next_action: 无
