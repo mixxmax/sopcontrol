@@ -210,6 +210,95 @@ def test_candidate_cli_list_show_and_triage_are_non_authoritative(tmp_path, caps
     assert decision.permissionDecision == "allow"
 
 
+def test_batch_triage_is_atomic_and_saves_once(tmp_path, monkeypatch, capsys):
+    store = CandidateStore(tmp_path)
+    records = []
+    for index in range(2):
+        record, _ = store.upsert(
+            kind="correction",
+            statement=f"策略 {index} 必须经 gateway",
+            scope_guess="payments",
+            suggested_action="register_rule",
+            suggested_modality="MUST",
+            source=CandidateSource(
+                source_type="correction",
+                ref=f"checkout-{index}",
+                occurrence_id=f"corr-{index}",
+            ),
+        )
+        records.append(record)
+
+    saves = 0
+    original_save = CandidateStore.save
+
+    def count_save(self, values):
+        nonlocal saves
+        saves += 1
+        return original_save(self, values)
+
+    monkeypatch.setattr(CandidateStore, "save", count_save)
+    assert main([
+        "candidate", "batch-triage", str(tmp_path),
+        "--candidate-id", records[0].candidate_id,
+        "--candidate-id", records[1].candidate_id,
+        "--status", "rejected",
+    ]) == 0
+    assert saves == 1
+    assert {record.status for record in CandidateStore(tmp_path).load()} == {"rejected"}
+    assert "未写入 registry" in capsys.readouterr().out
+    assert not (tmp_path / ".sopcontrol" / "rules" / "registry.yaml").exists()
+
+
+def test_batch_triage_unknown_id_changes_nothing(tmp_path):
+    store = CandidateStore(tmp_path)
+    record, _ = store.upsert(
+        kind="policy",
+        statement="必须保留原子性",
+        scope_guess="project",
+        suggested_action="register_rule",
+        suggested_modality="MUST",
+        source=CandidateSource(
+            source_type="document",
+            ref="docs/sop.md",
+            occurrence_id="doc-1",
+        ),
+    )
+    before = store.path.read_bytes()
+
+    assert main([
+        "candidate", "batch-triage", str(tmp_path),
+        "--candidate-id", record.candidate_id,
+        "--candidate-id", "CAND-missing",
+        "--status", "triaged",
+    ]) == 2
+    assert store.path.read_bytes() == before
+    assert store.get(record.candidate_id).status == "observed"
+
+
+def test_triage_rejects_non_lifecycle_statuses(tmp_path):
+    store = CandidateStore(tmp_path)
+    record, _ = store.upsert(
+        kind="policy",
+        statement="必须显式裁决",
+        scope_guess="project",
+        suggested_action="register_rule",
+        suggested_modality="MUST",
+        source=CandidateSource(
+            source_type="document",
+            ref="docs/sop.md",
+            occurrence_id="doc-2",
+        ),
+    )
+    for status in ("observed", "promoted", "accepted"):
+        try:
+            store.triage_many([record.candidate_id], status)  # type: ignore[arg-type]
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"非法状态 {status} 被接受")
+    assert store.get(record.candidate_id).status == "observed"
+
+
 def test_candidate_code_is_not_imported_by_hot_authority_paths():
     for path in (
         "sopcontrol/capability.py",

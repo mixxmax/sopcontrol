@@ -29,8 +29,9 @@
   探针不完整或 tier 不一致一律按 `unknown` 保守执行：每个 allow 项只授权该精确路径、
   强制 MUST 字段、修复预算最多 1 轮。
 - **被动行为画像**：任务拒绝会为对应模型写入独立的 `weak` 安全上限，普通遥测压缩不能解除；
-  日志或安全状态损坏时 fail-closed。成功记录只产生建议，不能自动升权或清除上限。使用
-  `sopctl capability-events . --model X` 只读查看事件完整性、建议和当前上限。
+  人工批准画像会锚定状态文件，批准有效时文件缺失或损坏均 fail-closed。同一拒绝重放不续期，
+  只有新的拒绝按原始发生时间计算 30 天到期。成功记录只产生建议，不能自动升权或清除上限。
+  使用 `sopctl capability-events . --model X` 只读查看事件完整性、建议和当前上限。
 
 B0–B3 能力见 git 历史；检测 10 模式（Python 以 AST 为准，JS/TS/Go/Rust 为词法剥离后
 的标识符级代理，边界见 RESIDUAL_RISKS.md）。
@@ -41,7 +42,7 @@ B0–B3 能力见 git 历史；检测 10 模式（Python 以 AST 为准，JS/TS/
 - 范围走私（契约外路径）拒绝该次提交，可自愈重试；revision 防旧上下文覆盖新状态
 - `sopctl intake` —— 意图编译器 v0：文档 MUST 句 → CandidateRule（observed，永不写注册表）
 - `sopctl intake --conversation chat.txt` —— 对话意图：discuss_only 锁定写工具；永久政策→Candidate
-- `sopctl candidate refresh|list|show|triage` —— 冷路径聚合重复 guard/Finding/纠正；3 个独立 occurrence 才物化，Candidate 永不自动授权或晋升
+- `sopctl candidate refresh|list|show|triage|batch-triage` —— 冷路径聚合重复 guard/Finding/纠正；3 个独立 occurrence 才物化；批量裁决全成或零变更；Candidate 永不自动授权或晋升
 - `sopctl intent show|clear` —— 查看/解除讨论锁定（14.1 场景1）
 - `sopctl repair open <finding_id>` —— 有界修复：断口 → 指纹绑定修复任务（重复开单拒绝、
   同指纹熔断转人工、预算两轮；修复智能在脊柱之外，人在契约内完成最小修复）

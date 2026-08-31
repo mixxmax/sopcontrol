@@ -138,7 +138,15 @@ def cmd_capability_events(args) -> int:
 
     root = _project(args.path)
     loaded = load_capability_events_checked(root)
-    state = load_behavior_state(root)
+    state_required = False
+    if args.model:
+        from .capability import load_profile, profile_approval_is_current
+
+        state_required = profile_approval_is_current(
+            load_profile(root),
+            current_model=args.model,
+        )
+    state = load_behavior_state(root, required=state_required)
     payload = {
         "event_integrity_ok": loaded.integrity_ok,
         "invalid_lines": loaded.invalid_lines,
@@ -158,6 +166,7 @@ def cmd_capability_events(args) -> int:
         ceiling, ceiling_ok, source_ids = effective_behavior_ceiling(
             root,
             model=args.model,
+            required=state_required,
         )
         payload["model"] = args.model
         payload["behavior"] = behavior.model_dump(mode="json")

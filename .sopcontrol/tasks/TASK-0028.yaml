@@ -1,0 +1,49 @@
+task_id: TASK-0028
+contract:
+  objective: 第五批同步修复：封闭含 sopctl 子串的复合 shell 命令绕过，只有单一受控 sopctl 调用可触碰控制面
+  allowed_writes:
+  - sopcontrol/harness.py
+  - tests/harness/test_claude_hooks.py
+  - DESIGN.md
+  required_rules:
+  - CTRL-001
+  - SELF-001
+  - SELF-002
+  required_fields:
+  - shell_parser
+  - composite_attack_regression
+  - compatibility
+  max_repairs: 1
+  repairs_fingerprint: null
+  write_granularity: file
+  strict_schema: true
+  capability_note: 当前模型未声明（已有画像 fixture-weak 不适用） tier=unknown：模型能力未知：按保守边界执行，文件级写入
+    + 强制 MUST 字段清单；行为事件建议 tier=strong（仅建议，不自动授权）
+  model_identity: ''
+status: verification_pending
+repair_count: 0
+changed_paths:
+- sopcontrol/harness.py
+- tests/harness/test_claude_hooks.py
+- DESIGN.md
+revision: 3
+created_at: '2026-08-31T04:56:02.073015Z'
+updated_at: '2026-08-31T05:53:28.136250Z'
+history:
+- at: '2026-08-31T04:56:20.903529Z'
+  action: accept
+  from_status: contract_proposed
+  to_status: executing
+  allowed: true
+  reason: 契约完整：目标、写入范围与可验证完成定义齐备
+  detail:
+    next_action: 执行变更后 task submit 提交改动路径
+- at: '2026-08-31T05:53:28.131045Z'
+  action: submit
+  from_status: executing
+  to_status: verification_pending
+  allowed: true
+  reason: 改动 3 个路径，全部在写入范围内；MUST 字段齐备 [shell_parser, composite_attack_regression,
+    compatibility]
+  detail:
+    next_action: 运行 task verify 由控制器独立审计

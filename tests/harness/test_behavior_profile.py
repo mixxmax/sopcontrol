@@ -219,6 +219,85 @@ def test_durable_ceiling_survives_telemetry_eviction(tmp_path):
     ]) == 2
 
 
+def test_missing_anchored_behavior_state_fails_closed(tmp_path):
+    from sopcontrol.behavior_state import behavior_state_path
+
+    rules = tmp_path / ".sopcontrol" / "rules"
+    rules.mkdir(parents=True)
+    (rules / "registry.yaml").write_text(
+        """rules:
+- rule_id: R-1
+  statement: 必须接线
+  modality: MUST
+  status: accepted
+  scope: x
+  owner: test
+  risk: high
+  source: {type: manual_seed, ref: test}
+  consumer_markers: [x]
+""",
+        encoding="utf-8",
+    )
+    (tmp_path / "src").mkdir()
+    _approved_live_profile(tmp_path)
+    path = behavior_state_path(tmp_path)
+    assert path.exists()
+    path.unlink()
+
+    assert main([
+        "task", "open", str(tmp_path), "--model", "model-a",
+        "--objective", "状态锚点缺失必须保守", "--allow", "src",
+        "--require-rule", "R-1", "--require-field", "status",
+    ]) == 2
+    assert not path.exists()
+
+
+def test_replaying_same_denial_does_not_slide_expiry(tmp_path):
+    from sopcontrol.behavior_state import (
+        CEILING_TTL,
+        activate_behavior_ceiling,
+        effective_behavior_ceiling,
+        ensure_behavior_state,
+        load_behavior_state,
+    )
+
+    first_at = utcnow() - timedelta(days=2)
+    assert ensure_behavior_state(tmp_path)
+    assert activate_behavior_ceiling(
+        tmp_path,
+        model="model-a",
+        source_event_id="ce-first",
+        source_observed_at=first_at,
+    )
+    first_expiry = load_behavior_state(tmp_path).state.ceilings["model-a"].expires_at
+    assert first_expiry == first_at + CEILING_TTL
+
+    assert activate_behavior_ceiling(
+        tmp_path,
+        model="model-a",
+        source_event_id="ce-first",
+        source_observed_at=first_at,
+        now=utcnow() + timedelta(days=10),
+    )
+    replay_expiry = load_behavior_state(tmp_path).state.ceilings["model-a"].expires_at
+    assert replay_expiry == first_expiry
+
+    second_at = first_at + timedelta(days=1)
+    assert activate_behavior_ceiling(
+        tmp_path,
+        model="model-a",
+        source_event_id="ce-second",
+        source_observed_at=second_at,
+    )
+    second_expiry = load_behavior_state(tmp_path).state.ceilings["model-a"].expires_at
+    assert second_expiry == second_at + CEILING_TTL
+    assert effective_behavior_ceiling(
+        tmp_path,
+        model="model-a",
+        now=second_expiry + timedelta(seconds=1),
+    )[0] is None
+
+
 def test_corrupt_behavior_state_fails_closed(tmp_path):
     from sopcontrol.behavior_state import behavior_state_path
 

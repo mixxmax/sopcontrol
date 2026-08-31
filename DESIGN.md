@@ -163,7 +163,8 @@ JSON 或指令失手 → `fragile`；边界失手 → `weak`；无画像或探�
 
 **控制税约束**：探针与人工批准属于低频冷路径；日常 `task open` 只读取小型画像并做常数时间
 字段/摘要比较，不新增仓库扫描、子进程、网络或 LLM 调用。离线 fixture 保留为零 token 校准，
-但评测事实与权限授权严格分离。harness 画像与模型画像并列，不互相覆盖。
+但评测事实与权限授权严格分离。harness 画像与模型画像并列，不互相覆盖。Bash 信任根只把单一、
+无组合符/重定向/命令替换的 `sopctl` 调用视为受控入口；复合命令中出现 `sopctl` 字样不构成豁免。
 
 **被动能力事件（第二批，第四批前修复）**：任务 open/迁移、运行时 guard 与总门只在既有
 决策完成后，把已经产生的客观结果追加到 `.sopcontrol/evidence/capability-events.jsonl`。
@@ -171,14 +172,15 @@ JSON 或指令失手 → `fragile`；边界失手 → `weak`；无画像或探�
 完整性失败。普通写入采用追加，超过松弛阈值才压缩到最近 500 条；写入失败不得改变原动作
 结果。原始遥测可压缩，只用于重放、建议和审计，本身不具有授权能力。
 
-**行为画像（第三批，第四批前修复）**：任务契约固化模型身份，迁移事件不再依赖可能被压缩的
+**行为画像（第三批，第五批前修复）**：任务契约固化模型身份，迁移事件不再依赖可能被压缩的
 `task.open` 遥测完成归属。任一任务迁移拒绝会把该模型的 `weak` 安全上限写入独立、带校验和的
-`.sopcontrol/evidence/behavior-ceilings.yaml`；普通遥测压缩不能解除它，只能在 30 天后自然过期。
-事件日志或安全状态损坏时按 `weak` fail-closed。五次独立成功交付只产生 `strong` 建议，不会
-自动授权、抬高 tier 或清除安全上限；live 人工批准仍在 30 天后回到 `unknown`。`task open`
-把已批准画像、近期行为建议和持久化安全上限取最保守交集。`sopctl capability-events --model X`
-只读显示完整性、建议与上限，不提供解除通道。该路径不扫描仓库、不启动子进程、不调用网络或
-LLM。
+`.sopcontrol/evidence/behavior-ceilings.yaml`；普通遥测压缩不能解除它。人工批准画像时会创建
+该文件作为存在性锚点：批准仍有效而文件缺失或损坏时按 `weak` fail-closed。同一拒绝 occurrence
+重放完全幂等，不会滑动续期；只有新的拒绝按其原始发生时间计算 30 天到期。五次独立成功交付
+只产生 `strong` 建议，不会自动授权、抬高 tier 或清除安全上限；live 人工批准仍在 30 天后回到
+`unknown`。`task open` 把已批准画像、近期行为建议和持久化安全上限取最保守交集。
+`sopctl capability-events --model X` 只读显示完整性、建议与上限，不提供解除通道。该路径不扫描
+仓库、不启动子进程、不调用网络或 LLM。
 
 ## 12. 场景1 决策：对话意图层 v0（2026-08-25 补）
 
@@ -198,11 +200,12 @@ LLM。
 **不做什么**：不自动开任务、不自动 accept 规则、不把「讨论」写成实施 envelope。
 清除 discuss_only 靠用户说出实施标记（或 `sopctl intent clear`）。
 
-**重复行为候选（第四批）**：运行时 guard 拒绝、Finding 指纹与结构化纠正只在显式
+**重复行为候选（第四/五批）**：运行时 guard 拒绝、Finding 指纹与结构化纠正只在显式
 `sopctl candidate refresh` 冷路径聚合；同一语义达到 3 个不同 occurrence 后才物化为
 `observed` Candidate。候选使用稳定语义指纹与内容寻址 ID，重复刷新幂等，人工 triage
-状态不会被刷新复活。文档/对话中的显式永久政策仍可立即成为候选。Candidate 仅供审查，
-不被 capability、task、harness 或 gate 权限路径消费；晋升仍须人工执行 `sopctl rule add`。
+状态不会被刷新复活。第五批补充 `candidate batch-triage`：先校验全部 ID，再一次保存；任一 ID
+未知则零变更。文档/对话中的显式永久政策仍可立即成为候选。Candidate 仅供审查，不被
+capability、task、harness 或 gate 权限路径消费；晋升仍须人工执行 `sopctl rule add`。
 
 ## 17. 垂直骨干役用闭环（2026-08-25 补）
 

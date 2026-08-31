@@ -11,6 +11,8 @@ Claude Code PreToolUse 协议。决策是纯函数（无 I/O，宪法测试守�
 from __future__ import annotations
 
 import re
+import shlex
+from pathlib import PurePosixPath
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
@@ -40,16 +42,27 @@ def touches_protected_install(file_path: str) -> bool:
     return any(hint in norm for hint in PROTECTED_HINTS)
 
 
-def command_touches_controller(command: str) -> bool:
-    """bash 命令是否绕开 sopctl 直接动控制器状态或拦截组件（大小写不敏感）。
-
-    与写入口同一个理由：`cat > .SOPCONTROL/rules/registry.yaml` 在 macOS 上
-    写的就是信任根。放行条件仍是命令走 sopctl。
-    """
-    norm = command.replace("\\", "/").casefold()
-    if "sopctl" in norm:
+def _is_single_sopctl_command(command: str) -> bool:
+    """只接受一个无 shell 组合/重定向的 sopctl 调用。"""
+    if "\n" in command or "\r" in command or "`" in command or "$(" in command:
         return False
-    return PROTECTED_DIR in norm or any(hint in norm for hint in PROTECTED_HINTS)
+    try:
+        lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|<>()")
+        lexer.whitespace_split = True
+        tokens = list(lexer)
+    except ValueError:
+        return False
+    if not tokens or any(any(char in token for char in ";&|<>()") for token in tokens):
+        return False
+    executable = PurePosixPath(tokens[0].replace("\\", "/")).name.casefold()
+    return executable == "sopctl"
+
+
+def command_touches_controller(command: str) -> bool:
+    """bash 命令是否绕开单一 sopctl 调用触碰控制器状态或拦截组件。"""
+    norm = command.replace("\\", "/").casefold()
+    protected = PROTECTED_DIR in norm or any(hint in norm for hint in PROTECTED_HINTS)
+    return protected and not _is_single_sopctl_command(command)
 
 
 # 内置 guard 的稳定 ID（手册 6.5 条件1）。稳定 ID 不是装饰：trace 事件靠它指认
@@ -177,6 +190,13 @@ def check_tool_call(
                 GUARD_NO_VERIFY,
             )
 
+        if command_touches_controller(command):
+            return _deny(
+                f"命令直接触碰控制器状态或拦截组件（{PROTECTED_DIR}/、opencode 插件、claude 钩子配置）"
+                f"但不是单一 sopctl 调用：一切经单一 sopctl 子命令；移除拦截组件需人工执行",
+                GUARD_CONTROLLER_BASH,
+            )
+
         normalized_command = command.casefold()
         capability_live = "capability-eval" in normalized_command and "--live" in normalized_command
         capability_approve = "capability-approve" in normalized_command
@@ -186,13 +206,6 @@ def check_tool_call(
                 permissionDecision="ask",
                 reason=f"{action}可能扩大后续任务权限，必须由人工在交互终端确认；agent 不得自评自批",
                 rule_ids=[GUARD_CAPABILITY_APPROVAL],
-            )
-
-        if command_touches_controller(command):
-            return _deny(
-                f"命令直接触碰控制器状态或拦截组件（{PROTECTED_DIR}/、opencode 插件、claude 钩子配置）"
-                f"但未走 sopctl：一切经 sopctl 子命令；移除拦截组件需人工执行",
-                GUARD_CONTROLLER_BASH,
             )
 
         if PUSH_RE.search(command):

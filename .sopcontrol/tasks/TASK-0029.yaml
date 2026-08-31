@@ -1,0 +1,54 @@
+task_id: TASK-0029
+contract:
+  objective: 第五批同步修复：已批准画像锚定行为状态存在性，状态文件删除时 fail-closed，历史拒绝重放不得滑动续期
+  allowed_writes:
+  - sopcontrol/behavior_state.py
+  - sopcontrol/capability.py
+  - sopcontrol/cli_task.py
+  - tests/harness/test_behavior_profile.py
+  - DESIGN.md
+  required_rules:
+  - CTRL-001
+  - SELF-001
+  - SELF-002
+  required_fields:
+  - missing_state_anchor
+  - non_sliding_ttl
+  - model_isolation
+  - compatibility
+  max_repairs: 1
+  repairs_fingerprint: null
+  write_granularity: file
+  strict_schema: true
+  capability_note: 当前模型未声明（已有画像 fixture-weak 不适用） tier=unknown：模型能力未知：按保守边界执行，文件级写入
+    + 强制 MUST 字段清单；行为事件建议 tier=strong（仅建议，不自动授权）
+  model_identity: ''
+status: verification_pending
+repair_count: 0
+changed_paths:
+- sopcontrol/behavior_state.py
+- sopcontrol/capability.py
+- sopcontrol/cli_task.py
+- tests/harness/test_behavior_profile.py
+- DESIGN.md
+revision: 3
+created_at: '2026-08-31T04:56:02.696171Z'
+updated_at: '2026-08-31T05:53:28.934668Z'
+history:
+- at: '2026-08-31T04:56:21.735515Z'
+  action: accept
+  from_status: contract_proposed
+  to_status: executing
+  allowed: true
+  reason: 契约完整：目标、写入范围与可验证完成定义齐备
+  detail:
+    next_action: 执行变更后 task submit 提交改动路径
+- at: '2026-08-31T05:53:28.927760Z'
+  action: submit
+  from_status: executing
+  to_status: verification_pending
+  allowed: true
+  reason: 改动 5 个路径，全部在写入范围内；MUST 字段齐备 [missing_state_anchor, non_sliding_ttl, model_isolation,
+    compatibility]
+  detail:
+    next_action: 运行 task verify 由控制器独立审计

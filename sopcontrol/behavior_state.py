@@ -43,10 +43,10 @@ def behavior_state_path(root: Path) -> Path:
     return Path(root) / BEHAVIOR_STATE_REL
 
 
-def load_behavior_state(root: Path) -> BehaviorStateLoad:
+def load_behavior_state(root: Path, *, required: bool = False) -> BehaviorStateLoad:
     path = behavior_state_path(root)
     if not path.exists():
-        return BehaviorStateLoad()
+        return BehaviorStateLoad(integrity_ok=not required)
     try:
         data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         state = BehaviorState.model_validate(data)
@@ -72,28 +72,42 @@ def _save_behavior_state(root: Path, state: BehaviorState) -> bool:
         return False
 
 
+def ensure_behavior_state(root: Path) -> bool:
+    """为已批准画像建立存在性锚点；已有状态必须先通过完整性校验。"""
+    path = behavior_state_path(root)
+    loaded = load_behavior_state(root, required=path.exists())
+    if not loaded.integrity_ok:
+        return False
+    return True if path.exists() else _save_behavior_state(root, loaded.state)
+
+
 def activate_behavior_ceiling(
     root: Path,
     *,
     model: str,
     source_event_id: str,
+    source_observed_at: Optional[datetime] = None,
     now: Optional[datetime] = None,
 ) -> bool:
-    """记录一次不可由普通遥测驱逐的 weak 上限；重复失败续期。"""
+    """记录 weak 上限；同一发生 ID 重放幂等，新拒绝按原始发生时间计算 TTL。"""
     if not model:
         return False
     loaded = load_behavior_state(root)
     if not loaded.integrity_ok:
         return False
     current = now or utcnow()
+    occurred_at = source_observed_at or current
     previous = loaded.state.ceilings.get(model)
     sources = list(previous.source_event_ids) if previous else []
-    if source_event_id and source_event_id not in sources:
+    if source_event_id and source_event_id in sources:
+        return True
+    if source_event_id:
         sources.append(source_event_id)
+    occurrence_expiry = occurred_at + CEILING_TTL
     loaded.state.ceilings[model] = BehaviorCeiling(
         model=model,
-        activated_at=previous.activated_at if previous else current,
-        expires_at=current + CEILING_TTL,
+        activated_at=previous.activated_at if previous else occurred_at,
+        expires_at=max(previous.expires_at, occurrence_expiry) if previous else occurrence_expiry,
         source_event_ids=sources[-MAX_SOURCE_EVENTS:],
     )
     return _save_behavior_state(root, loaded.state)
@@ -104,9 +118,10 @@ def effective_behavior_ceiling(
     *,
     model: str,
     now: Optional[datetime] = None,
+    required: bool = False,
 ) -> tuple[Optional[Literal["weak"]], bool, list[str]]:
-    """返回当前上限、完整性与来源。状态损坏时对任何身份 fail-closed 为 weak。"""
-    loaded = load_behavior_state(root)
+    """返回当前上限、完整性与来源。状态损坏/应存在却缺失时 fail-closed。"""
+    loaded = load_behavior_state(root, required=required)
     if not loaded.integrity_ok:
         return "weak", False, []
     record = loaded.state.ceilings.get(model)

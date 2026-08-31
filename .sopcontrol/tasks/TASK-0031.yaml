@@ -1,0 +1,59 @@
+task_id: TASK-0031
+contract:
+  objective: 第五批正式功能：Candidate 原子批量 triage，一次校验全部 ID、一次保存、未知 ID 零变更且绝不自动晋升
+  allowed_writes:
+  - sopcontrol/candidate.py
+  - sopcontrol/cli_candidate.py
+  - sopcontrol/cli.py
+  - tests/constitution/test_candidates.py
+  - README.md
+  - PLAYBOOK.md
+  - SKILL.md
+  - ROADMAP.md
+  required_rules:
+  - CTRL-001
+  - SELF-001
+  - SELF-002
+  required_fields:
+  - atomic_batch
+  - validation
+  - no_authority
+  - performance
+  max_repairs: 1
+  repairs_fingerprint: null
+  write_granularity: file
+  strict_schema: true
+  capability_note: 当前模型未声明（已有画像 fixture-weak 不适用） tier=unknown：模型能力未知：按保守边界执行，文件级写入
+    + 强制 MUST 字段清单；行为事件建议 tier=strong（仅建议，不自动授权）
+  model_identity: ''
+status: verification_pending
+repair_count: 0
+changed_paths:
+- sopcontrol/candidate.py
+- sopcontrol/cli_candidate.py
+- sopcontrol/cli.py
+- tests/constitution/test_candidates.py
+- README.md
+- PLAYBOOK.md
+- SKILL.md
+- ROADMAP.md
+revision: 3
+created_at: '2026-08-31T04:58:11.373071Z'
+updated_at: '2026-08-31T05:53:30.410654Z'
+history:
+- at: '2026-08-31T04:58:11.947911Z'
+  action: accept
+  from_status: contract_proposed
+  to_status: executing
+  allowed: true
+  reason: 契约完整：目标、写入范围与可验证完成定义齐备
+  detail:
+    next_action: 执行变更后 task submit 提交改动路径
+- at: '2026-08-31T05:53:30.403682Z'
+  action: submit
+  from_status: executing
+  to_status: verification_pending
+  allowed: true
+  reason: 改动 8 个路径，全部在写入范围内；MUST 字段齐备 [atomic_batch, validation, no_authority, performance]
+  detail:
+    next_action: 运行 task verify 由控制器独立审计

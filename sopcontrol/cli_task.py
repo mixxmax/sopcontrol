@@ -81,7 +81,11 @@ def cmd_task(args) -> int:
     sub = args.sub
 
     if sub == "open":
-        from .capability import apply_knobs_to_open, load_profile
+        from .capability import (
+            apply_knobs_to_open,
+            load_profile,
+            profile_approval_is_current,
+        )
 
         for p in args.allow:
             try:
@@ -103,16 +107,30 @@ def cmd_task(args) -> int:
             model=current_model or "",
             integrity_ok=loaded_events.integrity_ok,
         )
-        if current_model and behavior.ceiling_source_event_ids:
-            activate_behavior_ceiling(
-                root,
-                model=current_model,
-                source_event_id=behavior.ceiling_source_event_ids[-1],
-            )
+        state_required = profile_approval_is_current(
+            profile,
+            current_model=current_model,
+        )
         durable_ceiling, state_integrity_ok, source_ids = effective_behavior_ceiling(
             root,
             model=current_model or "",
+            required=state_required,
         )
+        if state_integrity_ok and current_model and behavior.ceiling_source_event_ids:
+            events_by_id = {event.event_id: event for event in loaded_events.events}
+            for source_event_id in behavior.ceiling_source_event_ids:
+                source_event = events_by_id.get(source_event_id)
+                activate_behavior_ceiling(
+                    root,
+                    model=current_model,
+                    source_event_id=source_event_id,
+                    source_observed_at=source_event.observed_at if source_event else None,
+                )
+            durable_ceiling, state_integrity_ok, source_ids = effective_behavior_ceiling(
+                root,
+                model=current_model,
+                required=state_required,
+            )
         if durable_ceiling == "weak" or not state_integrity_ok:
             behavior = behavior.model_copy(
                 update={

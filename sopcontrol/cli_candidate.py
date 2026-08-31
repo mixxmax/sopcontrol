@@ -75,4 +75,17 @@ def cmd_candidate(args) -> int:
         print(f"候选 {record.candidate_id} → {record.status}；未写入 registry")
         return 0
 
+    if args.sub == "batch-triage":
+        try:
+            records = store.triage_many(args.candidate_id, args.status)
+        except (KeyError, ValueError) as exc:
+            print(f"错误: {exc}", file=sys.stderr)
+            return 2
+        print(
+            f"已原子裁决 {len(records)} 条候选 → {args.status}："
+            + ", ".join(record.candidate_id for record in records)
+        )
+        print("未写入 registry；候选仍无授权力")
+        return 0
+
     return 2

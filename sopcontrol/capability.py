@@ -169,18 +169,18 @@ def evaluation_id(model: str, source: str, tier: Tier, scores: dict[str, bool]) 
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
-def effective_control_knobs(
+def profile_approval_is_current(
     profile: Optional[ModelProfile],
     *,
     current_model: Optional[str] = None,
     now: Optional[datetime] = None,
-) -> ControlKnobs:
-    """仅未过期、已人工批准、身份匹配且自洽的 live 画像可以放宽边界。"""
+) -> bool:
+    """批准链是否仍可信；同时作为行为状态文件的存在性锚点。"""
     if profile is None or not current_model or profile.model != current_model:
-        return control_knobs("unknown")
+        return False
     expected_id = evaluation_id(profile.model, profile.source, profile.tier, profile.scores)
     current = now or utcnow()
-    trusted = (
+    return (
         profile.source.startswith("live:")
         and profile.evaluation_id == expected_id
         and profile.approved_evaluation_id == expected_id
@@ -188,8 +188,18 @@ def effective_control_knobs(
         and profile.approved_at is not None
         and current <= profile.approved_at + APPROVAL_TTL
     )
-    if not trusted:
+
+
+def effective_control_knobs(
+    profile: Optional[ModelProfile],
+    *,
+    current_model: Optional[str] = None,
+    now: Optional[datetime] = None,
+) -> ControlKnobs:
+    """仅未过期、已人工批准、身份匹配且自洽的 live 画像可以放宽边界。"""
+    if not profile_approval_is_current(profile, current_model=current_model, now=now):
         return control_knobs("unknown")
+    assert profile is not None
     scored_tier = tier_from_scores(profile.scores)
     tier = scored_tier if scored_tier == profile.tier else "unknown"
     return control_knobs(tier)
@@ -238,6 +248,10 @@ def approve_profile(root: Path, *, expected_evaluation_id: str, by: str = "user"
         raise ValueError("待批准评测已变化；请重新查看最新 evaluation_id 后确认")
     if not by.strip() or by.strip().lower() == "agent":
         raise ValueError("批准必须记录人工确认人，agent 自签不算批准")
+    from .behavior_state import ensure_behavior_state
+
+    if not ensure_behavior_state(root):
+        raise ValueError("行为安全状态无法建立完整性锚点；拒绝批准")
     profile.approved_evaluation_id = current_id
     profile.approved_by = by.strip()
     profile.approved_at = utcnow()

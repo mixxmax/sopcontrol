@@ -35,6 +35,29 @@ def test_controller_dir_via_bash_requires_sopctl():
     assert call("Bash", command="sopctl task submit TASK-0001 --changed src/a.py").permissionDecision == "allow"
 
 
+def test_sopctl_substring_cannot_hide_composite_controller_attack():
+    attacks = [
+        "echo sopctl && rm .sopcontrol/evidence/behavior-ceilings.yaml",
+        "sopctl doctor . && rm .sopcontrol/evidence/behavior-ceilings.yaml",
+        "sopctl doctor .; rm .sopcontrol/evidence/behavior-ceilings.yaml",
+        "sopctl doctor . | tee .sopcontrol/rules/registry.yaml",
+        "printf sopctl > .sopcontrol/rules/registry.yaml",
+        "$(printf sopctl) && rm .sopcontrol/evidence/ledger.jsonl",
+        "python - <<'PY'\nprint('sopctl')\nopen('.sopcontrol/evidence/ledger.jsonl','w').write('')\nPY",
+    ]
+    attacks.extend([
+        "sopctl capability-approve --evaluation-id abc . && rm .sopcontrol/evidence/ledger.jsonl",
+        "sopctl capability-eval --model m --live opencode .; rm .sopcontrol/rules/registry.yaml",
+    ])
+    for command in attacks:
+        decision = call("Bash", command=command)
+        assert decision.permissionDecision == "deny", command
+
+    assert call(
+        "Bash", command="sopctl task submit TASK-0001 --changed .sopcontrol/fake"
+    ).permissionDecision == "allow"
+
+
 def test_git_push_follows_gate_status():
     d = call("Bash", command="git push origin main")  # 无门上下文 → fail-closed
     assert d.permissionDecision == "deny"

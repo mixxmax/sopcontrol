@@ -75,6 +75,9 @@
 - [x] **第四批：重复行为候选聚合（2026-08-31）**：统一运行时 Candidate schema 与稳定语义指纹；
   guard 拒绝、Finding 指纹和结构化纠正达到 3 个不同 occurrence 后，仅在显式 `candidate refresh`
   冷路径物化候选。`list/show/triage` 只供审查，不写 registry、不自动晋升、不改变任务或 harness 权限。
+- [x] **第五批：批量候选裁决与信任根收口（2026-08-31）**：`candidate batch-triage` 对全部 ID
+  预校验后一次保存，未知 ID 时零变更；复合 shell 命令不能用 `sopctl` 子串绕过控制面保护；
+  已批准画像锚定行为状态存在性，同一拒绝重放不再滑动续期。
 
 ### B5 模式库扩展 — 完成（2026-08-24 凌晨，经任务机自应用交付）
 - [x] `write_only_state`（只写不读代理，info；shop + jobflow 双域）

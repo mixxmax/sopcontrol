@@ -12,6 +12,7 @@ from sopcontrol.capability_events import (
     CapabilityEvent,
     append_capability_event,
     capability_event_path,
+    derive_behavior_profile,
     load_capability_events,
     replay_capability_events,
 )
@@ -185,6 +186,15 @@ def test_real_cli_paths_emit_objective_events(tmp_path):
         event.detail.get("action") == "submit" and event.outcome == "denied"
         for event in transitions
     )
+    assert transitions
+    assert all(event.model == "unprofiled-model" for event in transitions)
+
+
+def test_event_integrity_failure_forces_weak_behavior_ceiling():
+    behavior = derive_behavior_profile([], model="model-a", integrity_ok=False)
+
+    assert behavior.integrity_ok is False
+    assert behavior.enforced_ceiling == "weak"
 
 
 def test_harness_decision_emits_event_without_new_decision_work(tmp_path):

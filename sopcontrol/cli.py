@@ -221,6 +221,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--status", required=True, choices=["triaged", "rejected", "expired"])
     p.set_defaults(func=cmd_candidate)
 
+    p = candidate_sub.add_parser(
+        "batch-triage",
+        help="原子裁决多条候选；任一 ID 无效则全部不变",
+    )
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--candidate-id", action="append", required=True, help="候选 ID，可重复")
+    p.add_argument("--status", required=True, choices=["triaged", "rejected", "expired"])
+    p.set_defaults(func=cmd_candidate)
+
     p = candidate_sub.add_parser("observe-correction", help="记录结构化纠正观察（冷路径）")
     p.add_argument("path", nargs="?", default=".")
     p.add_argument("--object", required=True)

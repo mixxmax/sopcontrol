@@ -218,6 +218,7 @@ def _task_decide(
             root,
             model=task.contract.model_identity,
             source_event_id=event.event_id,
+            source_observed_at=event.observed_at,
         )
     mark = "迁移" if decision.allowed and decision.to_status else "拒绝"
     print(f"{mark}: {task_id} {task.status.value} (r{task.revision})")

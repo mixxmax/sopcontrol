@@ -122,7 +122,8 @@ class CandidateStore:
     def load(self) -> list[CandidateRecord]:
         if not self.path.exists():
             return []
-        data = yaml.safe_load(self.path.read_text(encoding="utf-8")) or []
+        loader = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+        data = yaml.load(self.path.read_text(encoding="utf-8"), Loader=loader) or []
         return [self._legacy_record(item) for item in data if isinstance(item, dict)]
 
     def save(self, records: list[CandidateRecord]) -> None:
@@ -186,16 +187,30 @@ class CandidateStore:
             self.save(records)
         return record, created
 
-    def triage(self, candidate_id: str, status: CandidateStatus) -> CandidateRecord:
+    def triage_many(
+        self,
+        candidate_ids: list[str],
+        status: CandidateStatus,
+    ) -> list[CandidateRecord]:
+        """原子裁决多个候选：全部校验通过后才执行唯一一次保存。"""
         if status not in {"triaged", "rejected", "expired"}:
             raise ValueError("候选只能 triaged/rejected/expired")
+        requested = list(dict.fromkeys(candidate_ids))
+        if not requested:
+            raise ValueError("至少提供一个候选 ID")
         records = self.load()
-        for record in records:
-            if record.candidate_id == candidate_id:
-                record.status = status
-                self.save(records)
-                return record
-        raise KeyError(f"未找到候选 {candidate_id}")
+        by_id = {record.candidate_id: record for record in records}
+        missing = [candidate_id for candidate_id in requested if candidate_id not in by_id]
+        if missing:
+            raise KeyError("未找到候选: " + ", ".join(missing))
+        changed = [by_id[candidate_id] for candidate_id in requested]
+        for record in changed:
+            record.status = status
+        self.save(records)
+        return changed
+
+    def triage(self, candidate_id: str, status: CandidateStatus) -> CandidateRecord:
+        return self.triage_many([candidate_id], status)[0]
 
 
 def correction_path(root: Path) -> Path:
