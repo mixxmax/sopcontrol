@@ -41,10 +41,10 @@ class Registry:
 
     def _lock_path(self) -> Path:
         resolved = self.path.resolve()
-        if self.path.parent.name == "rules" and self.path.parent.parent.name == ".sopcontrol":
-            root = self.path.parent.parent.parent
+        if resolved.parent.name == "rules" and resolved.parent.parent.name == ".sopcontrol":
+            root = resolved.parent.parent.parent
         else:
-            root = self.path.parent
+            root = resolved.parent
         return root / ".sopcontrol-local" / "locks" / f"registry-{content_hash(str(resolved))}.lock"
 
     @contextmanager

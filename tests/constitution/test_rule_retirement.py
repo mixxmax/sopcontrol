@@ -4,10 +4,12 @@ from __future__ import annotations
 import re
 import shutil
 import threading
+from pathlib import Path
 
 import pytest
 
 from sopcontrol.cli import main
+from sopcontrol.attest import record_attestation
 from sopcontrol.bootstrap import check_orders
 from sopcontrol.model import Modality, Rule, RuleStatus, SourceRef, active_rules
 from sopcontrol.registry import Registry, RegistryError
@@ -213,6 +215,44 @@ def test_projection_failure_rolls_back_registry_and_projection_files(tmp_path, c
     assert main(command + ["--confirm-preview", preview_id]) == 2
     for path, content in before.items():
         assert path.read_bytes() == content
+
+
+def test_projection_rollback_reports_restore_failures_truthfully(
+    tmp_path, capsys, monkeypatch
+):
+    work = _work(tmp_path)
+    assert main(["project", "all", str(work)]) == 0
+    capsys.readouterr()
+    registry = Registry(work / ".sopcontrol/rules/registry.yaml")
+    command = [
+        "rule", "deprecate", "DEPLOY-001", str(work),
+        "--reason", "回滚失败应如实报告",
+        "--by", "human-reviewer",
+    ]
+    assert main(command) == 0
+    preview_id = _preview_id(capsys.readouterr().out)
+
+    import sopcontrol.project
+
+    monkeypatch.setattr(
+        sopcontrol.project,
+        "write_all_projections",
+        lambda root: (_ for _ in ()).throw(OSError("projection failed")),
+    )
+    original_write_bytes = Path.write_bytes
+
+    def fail_registry_restore(path, content):
+        if path == registry.path:
+            raise OSError("registry restore failed")
+        return original_write_bytes(path, content)
+
+    monkeypatch.setattr(Path, "write_bytes", fail_registry_restore)
+
+    assert main(command + ["--confirm-preview", preview_id]) == 2
+    error = capsys.readouterr().err
+    assert "未恢复" in error
+    assert str(registry.path) in error
+    assert "已回滚" not in error
 
 
 def test_registry_rejects_agent_retirement_and_invalid_source_state(tmp_path):
@@ -569,6 +609,79 @@ def test_projection_rollback_does_not_erase_concurrent_registry_write(
     assert results == {"retire": 2, "add": "ok"}
     assert registry.get("DEPLOY-001").status == RuleStatus.accepted
     assert registry.get("CONCURRENT-ADD").status == RuleStatus.proposed
+
+
+def test_registry_aliases_share_the_same_cross_process_lock(tmp_path):
+    work = _work(tmp_path)
+    alias = tmp_path / "work-alias"
+    alias.symlink_to(work, target_is_directory=True)
+
+    canonical = Registry(work / ".sopcontrol/rules/registry.yaml")
+    through_alias = Registry(alias / ".sopcontrol/rules/registry.yaml")
+
+    assert canonical.path.resolve() == through_alias.path.resolve()
+    assert canonical._lock_path() == through_alias._lock_path()
+
+
+def test_attestation_transaction_preserves_concurrent_registry_add(tmp_path, monkeypatch):
+    work = _work(tmp_path)
+    attest_at_save = threading.Event()
+    release_attest = threading.Event()
+    add_done = threading.Event()
+    errors = []
+    original_save = Registry.save
+
+    def controlled_save(self, rules):
+        if threading.current_thread().name == "attest-rule":
+            attest_at_save.set()
+            assert release_attest.wait(timeout=5)
+        return original_save(self, rules)
+
+    monkeypatch.setattr(Registry, "save", controlled_save)
+
+    def attest_rule():
+        try:
+            record_attestation(
+                work,
+                "DEPLOY-001",
+                bypass_note="部署入口仍需防止直连绕过",
+                by="human-reviewer",
+            )
+        except Exception as exc:
+            errors.append(exc)
+
+    def add_rule():
+        try:
+            Registry(work / ".sopcontrol/rules/registry.yaml").add(Rule(
+                rule_id="CONCURRENT-ATTEST-ADD",
+                statement="并发新增规则不得被确认书旧快照覆盖",
+                modality=Modality.MUST,
+                status=RuleStatus.proposed,
+                source=SourceRef(type="document", ref="docs/runbook.md"),
+            ))
+        except Exception as exc:
+            errors.append(exc)
+        finally:
+            add_done.set()
+
+    attest_thread = threading.Thread(target=attest_rule, name="attest-rule")
+    attest_thread.start()
+    assert attest_at_save.wait(timeout=5)
+
+    add_thread = threading.Thread(target=add_rule, name="concurrent-attest-add")
+    add_thread.start()
+    add_done.wait(timeout=0.5)
+    blocked_during_attestation = not add_done.is_set()
+    release_attest.set()
+    attest_thread.join(timeout=5)
+    add_thread.join(timeout=5)
+
+    assert not attest_thread.is_alive() and not add_thread.is_alive()
+    assert blocked_during_attestation is True
+    assert errors == []
+    registry = Registry(work / ".sopcontrol/rules/registry.yaml")
+    assert registry.get("DEPLOY-001").attested_by == "human-reviewer"
+    assert registry.get("CONCURRENT-ATTEST-ADD").status == RuleStatus.proposed
 
 
 def test_retired_rule_no_longer_blocks_opposite_replacement_rule(tmp_path, capsys):

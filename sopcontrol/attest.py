@@ -52,25 +52,26 @@ def record_attestation(root: Path, rule_id: str, *, bypass_note: str, by: str) -
         raise AttestError("绕过分析不能为空（条件5）：说明这条规则能被怎么绕过、为什么可接受")
 
     reg = _registry(root)
-    rules = reg.load()
-    target = next((r for r in rules if r.rule_id == rule_id), None)
-    if target is None:
-        known = ", ".join(r.rule_id for r in rules) or "（注册表为空）"
-        raise RegistryError(f"未找到规则 {rule_id}；现有规则: {known}")
+    with reg.exclusive():
+        rules = reg.load()
+        target = next((r for r in rules if r.rule_id == rule_id), None)
+        if target is None:
+            known = ", ".join(r.rule_id for r in rules) or "（注册表为空）"
+            raise RegistryError(f"未找到规则 {rule_id}；现有规则: {known}")
 
-    path = source_file(root, target)
-    if path is None:
-        raise AttestError(
-            f"规则 {rule_id} 的出处 {target.source.ref!r} 不是仓内文件，无法绑定版本（条件7）。"
-            f"请把规则依据落成仓内文档后重新 attest"
-        )
+        path = source_file(root, target)
+        if path is None:
+            raise AttestError(
+                f"规则 {rule_id} 的出处 {target.source.ref!r} 不是仓内文件，无法绑定版本（条件7）。"
+                f"请把规则依据落成仓内文档后重新 attest"
+            )
 
-    target.source_hash = file_hash(path)
-    target.bypass_note = note
-    target.attested_by = by
-    target.attested_at = utcnow()
-    reg.save(rules)
-    return target
+        target.source_hash = file_hash(path)
+        target.bypass_note = note
+        target.attested_by = by
+        target.attested_at = utcnow()
+        reg.save(rules)
+        return target
 
 
 def attestation_evidence(root: Path, rules: list[Rule]) -> list[Evidence]:

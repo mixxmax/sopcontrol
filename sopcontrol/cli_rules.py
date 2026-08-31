@@ -142,6 +142,7 @@ def cmd_rule_retire(args) -> int:
 
             write_all_projections(root)
         except Exception as exc:  # registry 与投影构成一个用户可见事务
+            restore_failures = []
             for path, content in before.items():
                 try:
                     if content is None:
@@ -149,11 +150,22 @@ def cmd_rule_retire(args) -> int:
                     else:
                         path.parent.mkdir(parents=True, exist_ok=True)
                         path.write_bytes(content)
-                except OSError:
-                    pass
-            if isinstance(exc, RegistryError):
+                except OSError as restore_exc:
+                    restore_failures.append(f"{path}: {restore_exc}")
+            if isinstance(exc, RegistryError) and not restore_failures:
                 raise
-            print(f"错误: 规则退出未完成，registry 与投影已回滚（{exc}）", file=sys.stderr)
+            if restore_failures:
+                print(
+                    "错误: 规则退出未完成且回滚不完整；未恢复: "
+                    + "；".join(restore_failures)
+                    + f"（原始错误: {exc}）",
+                    file=sys.stderr,
+                )
+            else:
+                print(
+                    f"错误: 规则退出未完成，registry 与投影已回滚（{exc}）",
+                    file=sys.stderr,
+                )
             return 2
 
     suffix = f"；由 {replacement} 接管" if replacement else ""
