@@ -8,6 +8,7 @@ import yaml
 from .model import (
     ALLOWED_TRANSITIONS,
     ACTIVE_RULE_STATUSES,
+    RETIRED_RULE_STATUSES,
     Rule,
     RuleStatus,
     content_hash,
@@ -39,15 +40,37 @@ class Registry:
             rules.append(rule)
         return rules
 
-    def save(self, rules: list[Rule]) -> None:
+    def _write(self, rules: list[Rule]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         payload = {"rules": [r.model_dump(mode="json") for r in rules]}
         self.path.write_text(
             yaml.safe_dump(payload, allow_unicode=True, sort_keys=False), encoding="utf-8"
         )
 
+    def save(self, rules: list[Rule]) -> None:
+        """保存普通规则更新；退休记录只能由 confirm_retirement 创建且保持终态。"""
+        previous = {rule.rule_id: rule for rule in self.load()} if self.path.exists() else {}
+        incoming = {rule.rule_id: rule for rule in rules}
+        for rule in rules:
+            old = previous.get(rule.rule_id)
+            if rule.status in RETIRED_RULE_STATUSES and (
+                old is None or old.status not in RETIRED_RULE_STATUSES
+            ):
+                raise RegistryError(
+                    "永久退出状态不能通过普通 save 写入；请使用 deprecate/supersede 预览确认流程"
+                )
+        for rule_id, old in previous.items():
+            if old.status not in RETIRED_RULE_STATUSES:
+                continue
+            current = incoming.get(rule_id)
+            if current is None or current.model_dump(mode="json") != old.model_dump(mode="json"):
+                raise RegistryError(
+                    f"历史退出记录 {rule_id} 是终态，普通 save 不得删除、恢复或改写"
+                )
+        self._write(rules)
+
     def add(self, rule: Rule) -> None:
-        if rule.status in {RuleStatus.deprecated, RuleStatus.superseded}:
+        if rule.status in RETIRED_RULE_STATUSES:
             raise RegistryError(
                 "永久退出状态不能通过普通规则登记创建；请先登记非退休规则，再使用 deprecate/supersede 预览确认流程"
             )
@@ -220,7 +243,7 @@ class Registry:
                     successor.accepted_at = utcnow()
             if rule_id not in successor.supersedes:
                 successor.supersedes.append(rule_id)
-        self.save(rules)
+        self._write(rules)
         return rule
 
     def transition(self, rule_id: str, new_status: RuleStatus) -> Rule:

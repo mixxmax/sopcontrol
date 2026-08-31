@@ -66,6 +66,11 @@ ACTIVE_RULE_STATUSES = frozenset({
     RuleStatus.monitored,
 })
 
+RETIRED_RULE_STATUSES = frozenset({
+    RuleStatus.deprecated,
+    RuleStatus.superseded,
+})
+
 
 def active_rules(rules: list["Rule"]) -> list["Rule"]:
     """当前参与冲突、执法、成熟度与平台投影的唯一规则集合。"""

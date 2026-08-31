@@ -265,6 +265,80 @@ def test_retirement_states_have_only_the_governed_registry_entry(tmp_path, capsy
         assert registry.path.read_bytes() == before
 
 
+def test_public_save_rejects_active_rule_retirement_injection(tmp_path):
+    work = _work(tmp_path)
+    registry = Registry(work / ".sopcontrol/rules/registry.yaml")
+    original = [rule.model_dump(mode="json") for rule in registry.load()]
+
+    for status in (RuleStatus.deprecated, RuleStatus.superseded):
+        rules = registry.load()
+        target = next(rule for rule in rules if rule.rule_id == "DEPLOY-001")
+        target.status = status
+        with pytest.raises(RegistryError, match="永久退出"):
+            registry.save(rules)
+        assert [rule.model_dump(mode="json") for rule in registry.load()] == original
+
+
+def test_public_save_rejects_new_retired_record(tmp_path):
+    work = _work(tmp_path)
+    registry = Registry(work / ".sopcontrol/rules/registry.yaml")
+    original = [rule.model_dump(mode="json") for rule in registry.load()]
+    rules = registry.load()
+    rules.append(Rule(
+        rule_id="DIRECT-RETIRED",
+        statement="不得直接注入退休记录",
+        modality=Modality.MUST,
+        status=RuleStatus.deprecated,
+        source=SourceRef(type="document", ref="docs/runbook.md"),
+    ))
+
+    with pytest.raises(RegistryError, match="永久退出"):
+        registry.save(rules)
+    assert [rule.model_dump(mode="json") for rule in registry.load()] == original
+
+
+def test_public_save_cannot_change_or_remove_historical_retirement(tmp_path, capsys):
+    work = _work(tmp_path)
+    registry = Registry(work / ".sopcontrol/rules/registry.yaml")
+    _deprecate(work, capsys)
+    retired = registry.get("DEPLOY-001").model_dump(mode="json")
+
+    mutations = []
+    removed = [rule for rule in registry.load() if rule.rule_id != "DEPLOY-001"]
+    mutations.append(removed)
+    restored = registry.load()
+    next(rule for rule in restored if rule.rule_id == "DEPLOY-001").status = RuleStatus.accepted
+    mutations.append(restored)
+    rewritten = registry.load()
+    next(rule for rule in rewritten if rule.rule_id == "DEPLOY-001").statement = "改写历史"
+    mutations.append(rewritten)
+
+    for rules in mutations:
+        with pytest.raises(RegistryError, match="历史退出记录"):
+            registry.save(rules)
+        assert registry.get("DEPLOY-001").model_dump(mode="json") == retired
+
+
+def test_public_save_preserves_unchanged_retirement_during_ordinary_update(tmp_path, capsys):
+    work = _work(tmp_path)
+    registry = Registry(work / ".sopcontrol/rules/registry.yaml")
+    _deprecate(work, capsys)
+    retired = registry.get("DEPLOY-001").model_dump(mode="json")
+    rules = registry.load()
+    rules.append(Rule(
+        rule_id="ORDINARY-NEW",
+        statement="普通规则仍可登记",
+        modality=Modality.MUST,
+        status=RuleStatus.proposed,
+        source=SourceRef(type="document", ref="docs/runbook.md"),
+    ))
+
+    registry.save(rules)
+
+    assert registry.get("DEPLOY-001").model_dump(mode="json") == retired
+    assert registry.get("ORDINARY-NEW").status == RuleStatus.proposed
+
+
 def test_supersede_rejects_third_party_conflict_before_accepting_replacement(tmp_path, capsys):
     work = _work(tmp_path)
     registry = Registry(work / ".sopcontrol/rules/registry.yaml")
