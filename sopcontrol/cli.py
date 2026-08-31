@@ -304,6 +304,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_capability_approve)
 
     p = sub.add_parser(
+        "capability-events",
+        help="只读查看能力遥测完整性、行为建议与当前安全上限",
+    )
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--model", help="按模型身份显示行为画像与有效安全上限")
+    p.add_argument("--json", action="store_true", help="输出结构化 JSON")
+    p.set_defaults(func=cmd_capability_events)
+
+    p = sub.add_parser(
         "capability-compare",
         help="live 探针 vs 夹具基线对比 → capability-compare.yaml",
     )

@@ -73,7 +73,8 @@ sopctl rule attest MY-001 . --bypass-note "可绕过路径：直接调用底层 
 sopctl audit . --compact
 sopctl explain MY-001 .
 
-# 开任务（unknown/无画像及弱模型都会收紧到文件级范围、1 轮预算和 MUST 字段）
+# 开任务（unknown/无画像、弱模型或行为安全上限都会收紧到文件级范围、1 轮预算和 MUST 字段）
+# 如需解释当前模型为何被收紧，先只读查看：sopctl capability-events . --model <CURRENT-MODEL>
 sopctl task open . --objective "接线 MY-001" \
   --allow src/foo.py --require-rule MY-001 \
   --require-field digest --require-field status   # strict_schema 时需要

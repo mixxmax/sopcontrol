@@ -127,6 +127,69 @@ def cmd_capability_approve(args) -> int:
     return 0
 
 
+def cmd_capability_events(args) -> int:
+    """只读查看能力遥测、行为建议与不可驱逐安全上限。"""
+    from .behavior_state import effective_behavior_ceiling, load_behavior_state
+    from .capability_events import (
+        derive_behavior_profile,
+        load_capability_events_checked,
+        replay_capability_events,
+    )
+
+    root = _project(args.path)
+    loaded = load_capability_events_checked(root)
+    state = load_behavior_state(root)
+    payload = {
+        "event_integrity_ok": loaded.integrity_ok,
+        "invalid_lines": loaded.invalid_lines,
+        "events": replay_capability_events(loaded.events),
+        "behavior_state_integrity_ok": state.integrity_ok,
+        "ceilings": {
+            model: ceiling.model_dump(mode="json")
+            for model, ceiling in sorted(state.state.ceilings.items())
+        },
+    }
+    if args.model:
+        behavior = derive_behavior_profile(
+            loaded.events,
+            model=args.model,
+            integrity_ok=loaded.integrity_ok,
+        )
+        ceiling, ceiling_ok, source_ids = effective_behavior_ceiling(
+            root,
+            model=args.model,
+        )
+        payload["model"] = args.model
+        payload["behavior"] = behavior.model_dump(mode="json")
+        payload["effective_ceiling"] = ceiling
+        payload["effective_ceiling_integrity_ok"] = ceiling_ok
+        payload["effective_ceiling_source_event_ids"] = source_ids
+
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+
+    print(
+        f"能力事件: {payload['events']['event_count']} 条；"
+        f"完整性={'通过' if loaded.integrity_ok else '失败'}；"
+        f"无效行={loaded.invalid_lines}"
+    )
+    print(
+        f"行为安全状态: {'通过' if state.integrity_ok else '损坏（按 weak fail-closed）'}；"
+        f"当前上限 {len(state.state.ceilings)} 个"
+    )
+    if args.model:
+        behavior = payload["behavior"]
+        print(
+            f"模型 {args.model}: 拒绝={behavior['denied_transitions']}，"
+            f"成功交付={behavior['successful_deliveries']}，"
+            f"建议={behavior['recommended_tier'] or '无'}，"
+            f"强制上限={payload['effective_ceiling'] or behavior['enforced_ceiling'] or '无'}"
+        )
+    print("说明: 成功建议没有授权力；安全上限只能自然过期，不能由此命令解除。")
+    return 0
+
+
 def cmd_harness_check(args) -> int:
     """harness 工具调用决策：stdin JSON 或 --payload；stdout 出决策 JSON。
 

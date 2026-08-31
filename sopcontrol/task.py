@@ -54,6 +54,7 @@ class Contract(BaseModel):
     write_granularity: Optional[str] = None                    # prefix|prefer_file|file；来自模型画像
     strict_schema: bool = False                                # 弱/不稳画像：accept 时强制 required_fields
     capability_note: Optional[str] = None                      # 握手说明（只读审计）
+    model_identity: str = ""                                  # task open 时固化，供事件归属使用
 
 
 class EnvelopeRecord(BaseModel):

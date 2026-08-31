@@ -171,3 +171,81 @@ def test_behavior_profile_itself_has_no_authority():
         recommended_tier="strong",
     )
     assert apply_behavior_ceiling(control_knobs("unknown"), recommendation).tier == "unknown"
+
+
+def test_durable_ceiling_survives_telemetry_eviction(tmp_path):
+    from sopcontrol.capability_events import MAX_CAPABILITY_EVENTS
+
+    rules = tmp_path / ".sopcontrol" / "rules"
+    rules.mkdir(parents=True)
+    (rules / "registry.yaml").write_text(
+        """rules:
+- rule_id: R-1
+  statement: 必须接线
+  modality: MUST
+  status: accepted
+  scope: x
+  owner: test
+  risk: high
+  source: {type: manual_seed, ref: test}
+  consumer_markers: [x]
+""",
+        encoding="utf-8",
+    )
+    (tmp_path / "src").mkdir()
+    _approved_live_profile(tmp_path)
+
+    assert main([
+        "task", "open", str(tmp_path), "--model", "model-a",
+        "--objective", "建立 strong 任务", "--allow", "src",
+        "--require-rule", "R-1",
+    ]) == 0
+    assert main(["task", "accept", "TASK-0001", str(tmp_path)]) == 0
+    assert main([
+        "task", "submit", "TASK-0001", str(tmp_path),
+        "--changed", "outside.py",
+    ]) == 0
+
+    for index in range(MAX_CAPABILITY_EVENTS + 20):
+        append_capability_event(
+            tmp_path,
+            _event("guard.decision", f"tool-{index}", "allow", model="model-a"),
+        )
+
+    assert main([
+        "task", "open", str(tmp_path), "--model", "model-a",
+        "--objective", "驱逐后仍不得恢复目录权限", "--allow", "src",
+        "--require-rule", "R-1", "--require-field", "status",
+    ]) == 2
+
+
+def test_corrupt_behavior_state_fails_closed(tmp_path):
+    from sopcontrol.behavior_state import behavior_state_path
+
+    rules = tmp_path / ".sopcontrol" / "rules"
+    rules.mkdir(parents=True)
+    (rules / "registry.yaml").write_text(
+        """rules:
+- rule_id: R-1
+  statement: 必须接线
+  modality: MUST
+  status: accepted
+  scope: x
+  owner: test
+  risk: high
+  source: {type: manual_seed, ref: test}
+  consumer_markers: [x]
+""",
+        encoding="utf-8",
+    )
+    (tmp_path / "src").mkdir()
+    _approved_live_profile(tmp_path)
+    path = behavior_state_path(tmp_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("version: 1\nceilings: {}\nchecksum: forged\n", encoding="utf-8")
+
+    assert main([
+        "task", "open", str(tmp_path), "--model", "model-a",
+        "--objective", "状态损坏必须保守", "--allow", "src",
+        "--require-rule", "R-1", "--require-field", "status",
+    ]) == 2

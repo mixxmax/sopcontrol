@@ -52,14 +52,43 @@ def _write_registry(root: Path) -> None:
     )
 
 
-def test_event_id_is_content_addressed_and_timestamp_free():
+def test_event_has_distinct_occurrence_id_and_stable_semantic_fingerprint():
     first = _event()
     second = _event()
-    assert first.event_id == second.event_id
-    assert first.observed_at != second.observed_at
+    assert first.event_id != second.event_id
+    assert first.semantic_fingerprint() == second.semantic_fingerprint()
 
     changed = _event(outcome="allowed")
     assert changed.event_id != first.event_id
+    assert changed.semantic_fingerprint() != first.semantic_fingerprint()
+
+
+def test_forged_event_id_is_rejected_on_construct_and_load(tmp_path):
+    with pytest.raises(ValueError, match="摘要不一致"):
+        _event(event_id="ce-forged")
+
+    path = capability_event_path(tmp_path)
+    path.parent.mkdir(parents=True)
+    valid = _event()
+    forged = valid.model_dump(mode="json")
+    forged["outcome"] = "allowed"
+    path.write_text(json.dumps(forged, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    from sopcontrol.capability_events import load_capability_events_checked
+
+    loaded = load_capability_events_checked(tmp_path)
+    assert loaded.events == []
+    assert loaded.integrity_ok is False
+    assert loaded.invalid_lines == 1
+
+
+def test_append_revalidates_forged_model_copy(tmp_path):
+    valid = _event()
+    forged = valid.model_copy(update={"outcome": "allowed"})
+
+    assert forged.event_id == valid.event_id
+    assert append_capability_event(tmp_path, forged) is False
+    assert load_capability_events(tmp_path) == []
 
 
 def test_append_deduplicates_and_replay_is_deterministic(tmp_path):
@@ -185,3 +214,35 @@ def test_gate_result_emits_event(tmp_path, monkeypatch):
     assert len(gate) == 1
     assert gate[0].outcome == "pass"
     assert gate[0].detail == {"fails": 0, "gaps": 0, "ledger_tampered": False}
+
+
+def test_gate_audit_exception_emits_event_and_stays_blocking(tmp_path, monkeypatch):
+    from sopcontrol import cli_common
+
+    def fail_audit(*args, **kwargs):
+        raise RuntimeError("private details must be bounded")
+
+    monkeypatch.setattr(cli_common, "run_audit", fail_audit)
+    assert cli_common.run_gate(tmp_path) == 1
+    events = load_capability_events(tmp_path)
+    gate = [event for event in events if event.kind == "gate.result"]
+    assert len(gate) == 1
+    assert gate[0].outcome == "audit_error"
+    assert gate[0].detail["error_type"] == "RuntimeError"
+    assert len(gate[0].detail["detail"]) <= 120
+
+
+def test_capability_events_cli_is_read_only_and_explains_model(tmp_path, capsys):
+    append_capability_event(tmp_path, _event())
+
+    assert main([
+        "capability-events", str(tmp_path), "--model", "model-a", "--json",
+    ]) == 0
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["event_integrity_ok"] is True
+    assert payload["events"]["event_count"] == 1
+    assert payload["model"] == "model-a"
+    assert payload["behavior"]["enforced_ceiling"] == "weak"
+    assert payload["effective_ceiling"] is None
+    assert not (tmp_path / ".sopcontrol" / "evidence" / "behavior-ceilings.yaml").exists()

@@ -26,6 +26,7 @@ sopctl repair apply <TASK-ID> --harness opencode
 sopctl doctor . --vertical
 sopctl vertical-check .
 sopctl capability-compare --live opencode --baseline strong .
+sopctl capability-events . --model <CURRENT-MODEL>  # 只读查看遥测完整性、建议与安全上限
 sopctl identity export . --out id.yaml
 sopctl identity import . --file id.yaml
 ```

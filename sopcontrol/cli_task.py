@@ -91,12 +91,36 @@ def cmd_task(args) -> int:
                 return 2
         profile = load_profile(root)
         current_model = getattr(args, "model", None)
-        from .capability_events import derive_behavior_profile, load_capability_events
+        from .behavior_state import activate_behavior_ceiling, effective_behavior_ceiling
+        from .capability_events import (
+            derive_behavior_profile,
+            load_capability_events_checked,
+        )
 
+        loaded_events = load_capability_events_checked(root)
         behavior = derive_behavior_profile(
-            load_capability_events(root),
+            loaded_events.events,
+            model=current_model or "",
+            integrity_ok=loaded_events.integrity_ok,
+        )
+        if current_model and behavior.ceiling_source_event_ids:
+            activate_behavior_ceiling(
+                root,
+                model=current_model,
+                source_event_id=behavior.ceiling_source_event_ids[-1],
+            )
+        durable_ceiling, state_integrity_ok, source_ids = effective_behavior_ceiling(
+            root,
             model=current_model or "",
         )
+        if durable_ceiling == "weak" or not state_integrity_ok:
+            behavior = behavior.model_copy(
+                update={
+                    "enforced_ceiling": "weak",
+                    "event_ids": sorted(set(behavior.event_ids + source_ids)),
+                    "integrity_ok": behavior.integrity_ok and state_integrity_ok,
+                }
+            )
         explicit = getattr(args, "max_repairs", None) is not None
         repairs, knobs, note = apply_knobs_to_open(
             max_repairs=args.max_repairs if explicit else 2,
@@ -130,6 +154,7 @@ def cmd_task(args) -> int:
                 write_granularity=gran,
                 strict_schema=strict,
                 capability_note=note,
+                model_identity=current_model or "",
             ),
         )
         store.save(task)

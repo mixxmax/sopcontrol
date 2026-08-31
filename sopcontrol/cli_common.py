@@ -94,6 +94,20 @@ def run_gate(root: Path) -> int:
     try:
         report = run_audit(root, SENSORS, DETECTORS, persist=True)
     except Exception as exc:  # 门自身故障必须阻断，不允许静默放行
+        from .capability_events import CapabilityEvent, append_capability_event
+
+        append_capability_event(
+            root,
+            CapabilityEvent(
+                kind="gate.result",
+                subject="project",
+                outcome="audit_error",
+                detail={
+                    "error_type": type(exc).__name__,
+                    "detail": str(exc)[:120],
+                },
+            ),
+        )
         print(f"gate: 审计失败，fail-closed 阻断（{exc}）", file=sys.stderr)
         return 1
 
@@ -185,19 +199,26 @@ def _task_decide(
     task = store.apply(task, decision, action, changed_paths=changed_paths)
     from .capability_events import CapabilityEvent, append_capability_event
 
-    append_capability_event(
-        root,
-        CapabilityEvent(
-            kind="task.transition",
-            subject=task_id,
-            outcome="allowed" if decision.allowed else "denied",
-            detail={
-                "action": action,
-                "from_status": from_status,
-                "to_status": decision.to_status.value if decision.to_status else "",
-            },
-        ),
+    event = CapabilityEvent(
+        kind="task.transition",
+        subject=task_id,
+        outcome="allowed" if decision.allowed else "denied",
+        model=task.contract.model_identity,
+        detail={
+            "action": action,
+            "from_status": from_status,
+            "to_status": decision.to_status.value if decision.to_status else "",
+        },
     )
+    append_capability_event(root, event)
+    if not decision.allowed and task.contract.model_identity:
+        from .behavior_state import activate_behavior_ceiling
+
+        activate_behavior_ceiling(
+            root,
+            model=task.contract.model_identity,
+            source_event_id=event.event_id,
+        )
     mark = "迁移" if decision.allowed and decision.to_status else "拒绝"
     print(f"{mark}: {task_id} {task.status.value} (r{task.revision})")
     print(f"  理由: {decision.reason}")

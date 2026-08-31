@@ -27,7 +27,10 @@
   只有 `capability-eval --live` 的真实探针结果，经人工交互执行 `capability-approve` 并绑定本次
   `evaluation_id` 后，`task open --model X` 才可使用画像。未批准、重新评测、身份不匹配、
   探针不完整或 tier 不一致一律按 `unknown` 保守执行：每个 allow 项只授权该精确路径、
-  强制 MUST 字段、修复预算最多 1 轮。日常 open 只做小画像字段比较，不运行探针或扫描仓库。
+  强制 MUST 字段、修复预算最多 1 轮。
+- **被动行为画像**：任务拒绝会为对应模型写入独立的 `weak` 安全上限，普通遥测压缩不能解除；
+  日志或安全状态损坏时 fail-closed。成功记录只产生建议，不能自动升权或清除上限。使用
+  `sopctl capability-events . --model X` 只读查看事件完整性、建议和当前上限。
 
 B0–B3 能力见 git 历史；检测 10 模式（Python 以 AST 为准，JS/TS/Go/Rust 为词法剥离后
 的标识符级代理，边界见 RESIDUAL_RISKS.md）。
