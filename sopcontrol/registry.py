@@ -47,6 +47,10 @@ class Registry:
         )
 
     def add(self, rule: Rule) -> None:
+        if rule.status in {RuleStatus.deprecated, RuleStatus.superseded}:
+            raise RegistryError(
+                "永久退出状态不能通过普通规则登记创建；请先登记非退休规则，再使用 deprecate/supersede 预览确认流程"
+            )
         rules = self.load()
         if any(r.rule_id == rule.rule_id for r in rules):
             raise RegistryError(
@@ -222,6 +226,10 @@ class Registry:
     def transition(self, rule_id: str, new_status: RuleStatus) -> Rule:
         from .conflict import find_conflicts
 
+        if new_status in {RuleStatus.deprecated, RuleStatus.superseded}:
+            raise RegistryError(
+                "永久退出状态只能通过 deprecate/supersede 预览确认流程写入"
+            )
         rules = self.load()
         for rule in rules:
             if rule.rule_id == rule_id:

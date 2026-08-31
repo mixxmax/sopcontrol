@@ -1,0 +1,56 @@
+task_id: TASK-0038
+contract:
+  objective: 第六批验收加固 6R：封闭普通迁移和 rule add 直建退休状态的旁路，并补 M8/M15/M16/M17 行为变异回归
+  allowed_writes:
+  - sopcontrol/model.py
+  - sopcontrol/cli_rules.py
+  - sopcontrol/registry.py
+  - tests/constitution/test_rule_retirement.py
+  - ROADMAP.md
+  required_rules:
+  - CTRL-001
+  - SELF-001
+  - SELF-002
+  required_fields:
+  - retirement_single_entry
+  - m8_conflict_regression
+  - m15_maturity_regression
+  - m16_task_transition_regression
+  - m17_conflict_consumer_regression
+  - compatibility
+  max_repairs: 1
+  repairs_fingerprint: null
+  write_granularity: file
+  strict_schema: true
+  capability_note: 当前模型未声明（已有画像 fixture-weak 不适用） tier=unknown：模型能力未知：按保守边界执行，文件级写入
+    + 强制 MUST 字段清单；行为事件建议 tier=strong（仅建议，不自动授权）
+  model_identity: ''
+status: verification_pending
+repair_count: 0
+changed_paths:
+- sopcontrol/model.py
+- sopcontrol/registry.py
+- tests/constitution/test_rule_retirement.py
+- ROADMAP.md
+revision: 3
+created_at: '2026-08-31T11:37:06.932315Z'
+updated_at: '2026-08-31T11:47:09.566258Z'
+history:
+- at: '2026-08-31T11:37:11.530704Z'
+  action: accept
+  from_status: contract_proposed
+  to_status: executing
+  allowed: true
+  reason: 契约完整：目标、写入范围与可验证完成定义齐备
+  detail:
+    next_action: 执行变更后 task submit 提交改动路径
+- at: '2026-08-31T11:47:09.557968Z'
+  action: submit
+  from_status: executing
+  to_status: verification_pending
+  allowed: true
+  reason: 改动 4 个路径，全部在写入范围内；MUST 字段齐备 [retirement_single_entry, m8_conflict_regression,
+    m15_maturity_regression, m16_task_transition_regression, m17_conflict_consumer_regression,
+    compatibility]
+  detail:
+    next_action: 运行 task verify 由控制器独立审计

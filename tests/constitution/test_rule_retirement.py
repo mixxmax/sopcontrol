@@ -7,8 +7,10 @@ import shutil
 import pytest
 
 from sopcontrol.cli import main
-from sopcontrol.model import RuleStatus, active_rules
+from sopcontrol.bootstrap import check_orders
+from sopcontrol.model import Modality, Rule, RuleStatus, SourceRef, active_rules
 from sopcontrol.registry import Registry, RegistryError
+from sopcontrol.task import TaskStatus, TaskStore
 
 
 def _work(tmp_path):
@@ -227,3 +229,132 @@ def test_registry_rejects_agent_retirement_and_invalid_source_state(tmp_path):
         registry.retirement_preview(
             "DEPLOY-002", action="deprecate", reason="退出", actor="human"
         )
+
+
+def _deprecate(work, capsys, rule_id="DEPLOY-001"):
+    command = [
+        "rule", "deprecate", rule_id, str(work),
+        "--reason", "6R 回归测试退出",
+        "--by", "human-reviewer",
+    ]
+    assert main(command) == 0
+    preview_id = _preview_id(capsys.readouterr().out)
+    assert main(command + ["--confirm-preview", preview_id]) == 0
+    capsys.readouterr()
+
+
+def test_retirement_states_have_only_the_governed_registry_entry(tmp_path, capsys):
+    work = _work(tmp_path)
+    registry = Registry(work / ".sopcontrol/rules/registry.yaml")
+    before = registry.path.read_bytes()
+
+    for status in (RuleStatus.deprecated, RuleStatus.superseded):
+        with pytest.raises(RegistryError, match="永久退出"):
+            registry.transition("DEPLOY-001", status)
+        assert registry.path.read_bytes() == before
+
+        assert main([
+            "rule", "add", str(work),
+            "--id", f"DIRECT-{status.value.upper()}",
+            "--statement", "不得绕过受治理退出入口",
+            "--modality", "MUST",
+            "--status", status.value,
+            "--source-ref", "docs/runbook.md",
+        ]) == 2
+        assert "永久退出" in capsys.readouterr().err
+        assert registry.path.read_bytes() == before
+
+
+def test_supersede_rejects_third_party_conflict_before_accepting_replacement(tmp_path, capsys):
+    work = _work(tmp_path)
+    registry = Registry(work / ".sopcontrol/rules/registry.yaml")
+    for rule_id, modality, status in (
+        ("DEPLOY-BAN", "MUST_NOT", "proposed"),
+        ("DEPLOY-GUARD", "MUST", "accepted"),
+    ):
+        assert main([
+            "rule", "add", str(work),
+            "--id", rule_id,
+            "--statement", f"{rule_id} 部署策略",
+            "--modality", modality,
+            "--status", status,
+            "--scope", "ci.deploy",
+            "--source-ref", "docs/runbook.md",
+            "--consumer-marker", "deploy_gate",
+        ]) == 0
+    capsys.readouterr()
+
+    command = [
+        "rule", "supersede", "DEPLOY-001", str(work),
+        "--replacement", "DEPLOY-BAN",
+        "--reason", "新规则接管",
+        "--by", "human-reviewer",
+    ]
+    assert main(command) == 0
+    preview_id = _preview_id(capsys.readouterr().out)
+    before = registry.path.read_bytes()
+
+    assert main(command + ["--confirm-preview", preview_id]) == 2
+    assert registry.path.read_bytes() == before
+    assert registry.get("DEPLOY-001").status == RuleStatus.accepted
+    replacement = registry.get("DEPLOY-BAN")
+    assert replacement.status == RuleStatus.proposed
+    assert replacement.supersedes == []
+
+
+def test_retired_attestation_does_not_satisfy_governance_maturity(tmp_path, capsys):
+    work = _work(tmp_path)
+    registry = Registry(work / ".sopcontrol/rules/registry.yaml")
+    rules = registry.load()
+    target = next(rule for rule in rules if rule.rule_id == "DEPLOY-001")
+    target.source_hash = "attested-source-hash"
+    target.bypass_note = "仅允许经过受控部署入口"
+    target.attested_by = "human-reviewer"
+    registry.save(rules)
+
+    before = {item["order_id"]: item for item in check_orders(work, registry.load())}
+    assert before["ORDER-5"]["satisfied"] is True
+
+    _deprecate(work, capsys)
+    after = {item["order_id"]: item for item in check_orders(work, registry.load())}
+    assert after["ORDER-5"]["satisfied"] is False
+
+
+def test_task_accept_rejects_rule_retired_after_contract_creation(tmp_path, capsys):
+    work = _work(tmp_path)
+    assert main([
+        "task", "open", str(work),
+        "--objective", "验证退休后的任务迁移",
+        "--allow", "scripts/deploy.py",
+        "--require-rule", "DEPLOY-001",
+        "--require-field", "status",
+    ]) == 0
+    task_id = TaskStore(work).list_all()[-1].task_id
+    capsys.readouterr()
+
+    _deprecate(work, capsys)
+    assert main(["task", "accept", task_id, str(work)]) == 0
+    output = capsys.readouterr().out
+    task = TaskStore(work).load(task_id)
+    assert task.status == TaskStatus.contract_proposed
+    assert task.history[-1].allowed is False
+    assert "引用了不存在的规则: DEPLOY-001" in output
+
+
+def test_retired_rule_no_longer_blocks_opposite_replacement_rule(tmp_path, capsys):
+    work = _work(tmp_path)
+    _deprecate(work, capsys)
+
+    assert main([
+        "rule", "add", str(work),
+        "--id", "DEPLOY-OPPOSITE",
+        "--statement", "部署不得再经过旧 deploy_gate",
+        "--modality", "MUST_NOT",
+        "--status", "accepted",
+        "--scope", "ci.deploy",
+        "--source-ref", "docs/runbook.md",
+        "--consumer-marker", "deploy_gate",
+    ]) == 0
+    assert Registry(work / ".sopcontrol/rules/registry.yaml").get(
+        "DEPLOY-OPPOSITE"
+    ).status == RuleStatus.accepted

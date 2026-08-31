@@ -81,6 +81,9 @@
 - [x] **第六批：规则永久退出（2026-08-31）**：`rule deprecate/supersede` 以绑定 registry 快照的
   preview ID 做人工两阶段确认；旧规则退休、replacement 接管与平台投影全成或全回滚。统一
   `active_rules` 供冲突、审计、成熟度、任务、repair 与投影消费；历史记录保留但不再产生新义务。
+- [x] **第六批验收加固 6R（2026-08-31）**：普通 `Registry.transition/add` 不得进入或直建
+  `deprecated/superseded`，永久退出只留内容寻址确认入口；补第三方冲突零写入、退休确认书不计
+  当前成熟度、任务迁移只认当前有效规则、冲突检测忽略退休规则四项行为回归。
 
 ### B5 模式库扩展 — 完成（2026-08-24 凌晨，经任务机自应用交付）
 - [x] `write_only_state`（只写不读代理，info；shop + jobflow 双域）
