@@ -27,7 +27,7 @@ contract:
   capability_note: 当前模型未声明（已有画像 fixture-weak 不适用） tier=unknown：模型能力未知：按保守边界执行，文件级写入
     + 强制 MUST 字段清单；行为事件建议 tier=strong（仅建议，不自动授权）
   model_identity: ''
-status: verification_pending
+status: delivered
 repair_count: 0
 changed_paths:
 - sopcontrol/cli_candidate.py
@@ -37,9 +37,9 @@ changed_paths:
 - README.md
 - PLAYBOOK.md
 - SKILL.md
-revision: 3
+revision: 5
 created_at: '2026-08-31T01:54:13.702230Z'
-updated_at: '2026-08-31T02:08:01.471457Z'
+updated_at: '2026-08-31T02:14:05.404398Z'
 history:
 - at: '2026-08-31T01:54:43.632578Z'
   action: accept
@@ -58,3 +58,20 @@ history:
     docs]
   detail:
     next_action: 运行 task verify 由控制器独立审计
+- at: '2026-08-31T02:13:55.454495Z'
+  action: verify
+  from_status: verification_pending
+  to_status: verified
+  allowed: true
+  reason: 完成门通过：全部必需规则 [CTRL-001, SELF-001, SELF-002] 判定 pass（E4 实测：本轮执行 .venv/bin/python
+    -m pytest -q 通过（70.945s）+ E3 独立审计）
+  detail:
+    next_action: task deliver 交付
+- at: '2026-08-31T02:14:05.390408Z'
+  action: deliver
+  from_status: verified
+  to_status: delivered
+  allowed: true
+  reason: 完成门已独立验证，允许交付
+  detail:
+    next_action: 无
