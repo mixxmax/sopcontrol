@@ -15,6 +15,7 @@ import yaml
 from pydantic import BaseModel, Field
 
 from .model import utcnow
+from .scope import allowed_writes_scope_violations
 
 
 class TaskStatus(str, Enum):
@@ -186,12 +187,39 @@ def evaluate_transition(
     provided_fields: Optional[dict[str, str]] = None,
     rule_verdicts: Optional[dict[str, str]] = None,
     known_rule_ids: Optional[set[str]] = None,
+    rule_scopes: Optional[dict[str, list[str]]] = None,
     ledger_tampered: bool = False,
     controller_dirty: Optional[list[str]] = None,
     test_run: Optional[dict] = None,
 ) -> TransitionDecision:
     """纯函数迁移门：无 I/O。所有拒绝必须给出理由与下一步（手册 11.2）。"""
     status = task.status
+
+    def current_scope_problems() -> list[str]:
+        contract = task.contract
+        unknown = [
+            rule_id
+            for rule_id in contract.required_rules
+            if known_rule_ids is not None and rule_id not in known_rule_ids
+        ]
+        problems = []
+        if unknown:
+            problems.append(
+                f"引用了不存在的规则: {', '.join(unknown)}"
+                "（不存在、已退出或当前非 effective）"
+            )
+        if rule_scopes is not None:
+            scope_violations = allowed_writes_scope_violations(
+                contract.allowed_writes,
+                rule_scopes,
+                contract.required_rules,
+            )
+            if scope_violations:
+                problems.append(
+                    "allowed_writes 超出 required rule scope: "
+                    + ", ".join(scope_violations)
+                )
+        return problems
 
     if action == "accept":
         if status != TaskStatus.contract_proposed:
@@ -204,9 +232,7 @@ def evaluate_transition(
             problems.append("allowed_writes 为空（无写入范围的任务无法做范围检查）")
         if not contract.required_rules:
             problems.append("required_rules 为空（无可验证完成定义的任务不得接受——防假完成）")
-        unknown = [r for r in contract.required_rules if known_rule_ids is not None and r not in known_rule_ids]
-        if unknown:
-            problems.append(f"引用了不存在的规则: {', '.join(unknown)}")
+        problems.extend(current_scope_problems())
         if contract.strict_schema and not contract.required_fields:
             problems.append(
                 "strict_schema=true（fragile/weak/unknown/无画像）：必须声明 required_fields"
@@ -223,6 +249,12 @@ def evaluate_transition(
     if action == "submit":
         if status not in (TaskStatus.executing, TaskStatus.repair_required):
             return _reject(f"任务处于 {status.value}，不可提交")
+        scope_problems = current_scope_problems()
+        if scope_problems:
+            return _reject(
+                "当前 required rule scope 已变化，旧 allowed_writes 不再授权: "
+                + "；".join(scope_problems)
+            )
         paths = changed_paths or []
         if not paths:
             return _reject("submit 需要至少一个 --changed 路径（完成门依据改动范围审计）")
@@ -267,6 +299,18 @@ def evaluate_transition(
     if action == "verify":
         if status != TaskStatus.verification_pending:
             return _reject(f"任务处于 {status.value}，无可验证的提交")
+        scope_problems = current_scope_problems()
+        if scope_problems:
+            return TransitionDecision(
+                allowed=True,
+                to_status=TaskStatus.blocked,
+                repair_count=task.repair_count,
+                reason=(
+                    "当前 required rule scope 已变化，旧 allowed_writes 不得继续授权: "
+                    + "；".join(scope_problems)
+                ),
+                next_action="按当前 effective 规则与 scope 重新创建并确认任务契约",
+            )
         if ledger_tampered:
             return TransitionDecision(
                 allowed=True, to_status=TaskStatus.blocked, repair_count=task.repair_count,

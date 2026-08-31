@@ -8,8 +8,9 @@ from pathlib import Path
 
 from .audit import run_audit
 from .ledger import Ledger
-from .model import Finding
+from .model import Finding, effective_rules, utcnow
 from .registry import Registry
+from .scope import allowed_writes_scope_violations
 from .task import Contract, TaskRecord, TaskStatus, TaskStore, path_allowed
 from .worktree import (
     WorktreeError,
@@ -29,6 +30,41 @@ class RepairError(Exception):
 TERMINAL_FAILED = {TaskStatus.failed_unverified, TaskStatus.blocked}
 
 
+def _validate_current_rule_scopes(
+    root: Path,
+    task: TaskRecord,
+    *,
+    registry: Registry | None = None,
+) -> None:
+    """按单一时点重验修复契约仍由当前 effective 规则及其 scope 允许。"""
+    check_at = utcnow()
+    current_registry = registry or Registry(
+        root / ".sopcontrol" / "rules" / "registry.yaml"
+    )
+    rules = effective_rules(current_registry.load(), at=check_at)
+    rule_scopes = {rule.rule_id: rule.scope_paths for rule in rules}
+    missing = [
+        rule_id
+        for rule_id in task.contract.required_rules
+        if rule_id not in rule_scopes
+    ]
+    if missing:
+        raise RepairError(
+            "修复任务引用的规则当前不是 effective（不存在、已退出或已暂停）: "
+            + ", ".join(missing)
+        )
+    violations = allowed_writes_scope_violations(
+        task.contract.allowed_writes,
+        rule_scopes,
+        task.contract.required_rules,
+    )
+    if violations:
+        raise RepairError(
+            ", ".join(violations)
+            + " 超出修复任务当前 required rule scope"
+        )
+
+
 def open_repair(
     root: Path,
     finding_id: str,
@@ -44,14 +80,35 @@ def open_repair(
     if not finding.rule_id:
         raise RepairError(f"finding {finding_id} 不关联规则，无法定义完成标准，不开修复任务")
 
-    from .model import active_rules
-
+    check_at = utcnow()
     all_rules = Registry(root / ".sopcontrol" / "rules" / "registry.yaml").load()
-    rules = {rule.rule_id: rule for rule in active_rules(all_rules)}
+    known_rule = next(
+        (rule for rule in all_rules if rule.rule_id == finding.rule_id),
+        None,
+    )
+    if known_rule is None:
+        raise RepairError(f"finding 引用的规则 {finding.rule_id} 不存在，不能产生新的修复义务")
+    if known_rule.status.value in {"deprecated", "superseded"}:
+        raise RepairError(
+            f"finding 引用的规则 {finding.rule_id} 已永久退出，不能产生新的修复义务"
+        )
+    current_rules = effective_rules(all_rules, at=check_at)
+    rules = {rule.rule_id: rule for rule in current_rules}
     rule = rules.get(finding.rule_id)
     if rule is None:
         raise RepairError(
-            f"finding 引用的规则 {finding.rule_id} 不存在或已永久退出，不能产生新的修复义务"
+                f"finding 引用的规则 {finding.rule_id} 当前已暂停，不属于当前有效规则，不能产生新的修复义务；"
+                "等待自动恢复或经 reinstate 提前恢复"
+        )
+    scope_violations = allowed_writes_scope_violations(
+        allowed_writes,
+        {rule.rule_id: rule.scope_paths},
+        [rule.rule_id],
+    )
+    if scope_violations:
+        raise RepairError(
+            ", ".join(scope_violations)
+            + " 超出修复任务 finding rule scope"
         )
 
     store = TaskStore(root)
@@ -120,6 +177,9 @@ def apply_repair(
     if task.status not in (TaskStatus.contract_proposed, TaskStatus.executing, TaskStatus.repair_required):
         raise RepairError(f"任务状态 {task.status.value} 不可自动修复")
 
+    # 在产生隔离树和调用 runner 前重验，避免已暂停/缩域规则继续授权执行。
+    _validate_current_rule_scopes(root, task)
+
     try:
         work = create_repair_worktree(root, task_id)
     except WorktreeError as exc:
@@ -139,15 +199,23 @@ def apply_repair(
             raise RepairError(f"暂不支持 harness={harness!r}（当前：opencode）")
 
         changed = list_changed_files(work)
-        # 三层：契约范围（纯字符串）→ 控制器目录（大小写不敏感）→ symlink 解析后仍在树内。
-        # 前两层拦不住 `src/link -> /etc` 这类逃逸，最后一层必须碰文件系统，只能在这里做。
-        allowed = [
-            p for p in changed
-            if path_allowed(p, task.contract.allowed_writes)
-            and resolves_inside(work, p)
-        ]
-        rejected = [p for p in changed if p not in allowed]
-        copied = copy_paths_to_main(work, root, allowed)
+        registry = Registry(root / ".sopcontrol" / "rules" / "registry.yaml")
+        # 二次 scope 检查和复制共享同一可重入锁：生命周期确认不能插入 check→copy 缝。
+        with registry.exclusive():
+            _validate_current_rule_scopes(root, task, registry=registry)
+            # 三层：契约范围（纯字符串）→ 控制器目录（大小写不敏感）→ symlink 解析后仍在树内。
+            # 前两层拦不住 `src/link -> /etc` 这类逃逸，最后一层必须碰文件系统，只能在这里做。
+            allowed = [
+                p for p in changed
+                if path_allowed(
+                    p,
+                    task.contract.allowed_writes,
+                    write_granularity=task.contract.write_granularity,
+                )
+                and resolves_inside(work, p)
+            ]
+            copied = copy_paths_to_main(work, root, allowed)
+            rejected = [p for p in changed if p not in copied]
     finally:
         if not keep_worktree:
             remove_repair_worktree(root, task_id)

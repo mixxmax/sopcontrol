@@ -19,7 +19,10 @@ test_cannot_reach_consumer，判定器据此把测试信用收回。
 from __future__ import annotations
 
 from sopcontrol.context import is_production_path, is_test_path
-from sopcontrol.model import Evidence, Finding, Rule, RuleStatus
+from datetime import datetime
+
+from sopcontrol.model import Evidence, Finding, Rule, effective_rules, utcnow
+from sopcontrol.scope import effective_rule_inputs
 from sopcontrol.verdict import HARD_MODALITIES, marker_hit
 
 from plugins.sensors.go_ast_scan import (
@@ -36,20 +39,10 @@ from plugins.sensors.import_graph import (
 from plugins.sensors.rust_ast_scan import build_rust_adjacency, rust_import_closure
 from plugins.sensors.ts_ast_scan import build_ts_adjacency, ts_import_closure
 
-GOVERNANCE_ACTIVE = {
-    RuleStatus.accepted,
-    RuleStatus.compiled,
-    RuleStatus.activated,
-    RuleStatus.monitored,
-}
-
-
-def _governed_consumer_rules(rules: list[Rule]):
-    """两条语言分支共用的前置过滤：治理中 + 硬强度 + 声明了消费者标记。"""
-    for rule in rules:
-        if rule.status not in GOVERNANCE_ACTIVE or rule.modality not in HARD_MODALITIES:
-            continue
-        if rule.consumer_markers:
+def _governed_consumer_rules(rules: list[Rule], *, at: datetime | None = None):
+    """统一筛选当前有效、硬强度且声明消费者的规则。"""
+    for rule in effective_rules(rules, at=at or utcnow()):
+        if rule.modality in HARD_MODALITIES and rule.consumer_markers:
             yield rule
 
 
@@ -154,12 +147,21 @@ def _rust_marker_files(
 class ReachabilityDetector:
     detector_id = "reachability"
 
-    def detect(self, rules: list[Rule], evidence: list[Evidence]) -> list[Finding]:
+    def detect(
+        self,
+        rules: list[Rule],
+        evidence: list[Evidence],
+        *,
+        at: datetime | None = None,
+    ) -> list[Finding]:
+        check_at = at or utcnow()
         findings: list[Finding] = []
-        findings.extend(self._detect_python(rules, evidence))
-        findings.extend(self._detect_go(rules, evidence))
-        findings.extend(self._detect_ts(rules, evidence))
-        findings.extend(self._detect_rust(rules, evidence))
+        for rule in _governed_consumer_rules(rules, at=check_at):
+            scoped = effective_rule_inputs(rule, evidence)
+            findings.extend(self._detect_python([rule], scoped))
+            findings.extend(self._detect_go([rule], scoped))
+            findings.extend(self._detect_ts([rule], scoped))
+            findings.extend(self._detect_rust([rule], scoped))
         return findings
 
     def _detect_python(self, rules: list[Rule], evidence: list[Evidence]) -> list[Finding]:
@@ -178,7 +180,7 @@ class ReachabilityDetector:
         by_module = index_by_module(py_files)
 
         findings: list[Finding] = []
-        for rule in _governed_consumer_rules(rules):
+        for rule in rules:
             prod, test = _python_marker_files(rule, evidence)
             if not prod or not test:
                 continue  # 缺一侧由 no_consumer 的 documented_* 模式负责，不重复告警
@@ -232,7 +234,7 @@ class ReachabilityDetector:
         by_module = index_by_module(ts_files)
 
         findings: list[Finding] = []
-        for rule in _governed_consumer_rules(rules):
+        for rule in rules:
             prod, test = _ts_marker_files(rule, evidence)
             if not prod or not test:
                 continue  # 缺一侧由 no_consumer 的 documented_* 模式负责，不重复告警
@@ -283,7 +285,7 @@ class ReachabilityDetector:
         by_module = index_by_module(rs_files)
 
         findings: list[Finding] = []
-        for rule in _governed_consumer_rules(rules):
+        for rule in rules:
             prod, test = _rust_marker_files(rule, evidence)
             if not prod or not test:
                 continue  # 缺一侧由 no_consumer 的 documented_* 模式负责，不重复告警
@@ -324,7 +326,7 @@ class ReachabilityDetector:
         adjacency = build_go_adjacency(evidence)
 
         findings: list[Finding] = []
-        for rule in _governed_consumer_rules(rules):
+        for rule in rules:
             prod, test = _go_marker_files(rule, evidence)
             if not prod or not test:
                 continue  # 缺一侧由 no_consumer 的 documented_* 模式负责，不重复告警

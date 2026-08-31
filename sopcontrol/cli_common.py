@@ -7,7 +7,7 @@ from pathlib import Path
 
 import yaml
 
-from .audit import run_audit, run_task_verify
+from .audit import collect_test_run, run_audit, run_task_verify
 from .harness import PUSH_RE, HookDecision
 from .ledger import Ledger
 from .model import Modality, RiskLevel, Rule, RuleStatus, SourceRef
@@ -184,26 +184,36 @@ def _task_decide(
     from plugins import DETECTORS, SENSORS
 
     store = TaskStore(root)
-    task = store.load(task_id)
-    from .model import active_rules
+    from .model import effective_rules, utcnow
 
-    known = {
-        rule.rule_id
-        for rule in active_rules(
-            Registry(root / ".sopcontrol" / "rules" / "registry.yaml").load()
-        )
-    }
-    from_status = task.status.value
-    if action == "verify":
-        decision = run_task_verify(root, SENSORS, DETECTORS, task)
-    else:
-        decision = evaluate_transition(
-            task, action,
-            changed_paths=changed_paths,
-            provided_fields=provided_fields,
-            known_rule_ids=known,
-        )
-    task = store.apply(task, decision, action, changed_paths=changed_paths)
+    # 测试命令可能耗时，先在 Registry 锁外运行；最终审计、规则复核与任务落盘
+    # 必须共享锁域，避免 concurrent suspend/narrow 插入 check→save 缝。
+    test_evidence = collect_test_run(root) if action == "verify" else None
+    registry = Registry(root / ".sopcontrol" / "rules" / "registry.yaml")
+    with registry.exclusive():
+        task = store.load(task_id)
+        check_at = utcnow()
+        current_rules = effective_rules(registry.load(), at=check_at)
+        known = {rule.rule_id for rule in current_rules}
+        rule_scopes = {rule.rule_id: rule.scope_paths for rule in current_rules}
+        from_status = task.status.value
+        if action == "verify":
+            decision = run_task_verify(
+                root,
+                SENSORS,
+                DETECTORS,
+                task,
+                test_evidence=test_evidence,
+            )
+        else:
+            decision = evaluate_transition(
+                task, action,
+                changed_paths=changed_paths,
+                provided_fields=provided_fields,
+                known_rule_ids=known,
+                rule_scopes=rule_scopes,
+            )
+        task = store.apply(task, decision, action, changed_paths=changed_paths)
     from .capability_events import CapabilityEvent, append_capability_event
 
     event = CapabilityEvent(

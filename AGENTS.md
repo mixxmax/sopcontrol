@@ -142,6 +142,28 @@
 - TASK-0043 [delivered] 第六批 6R 最终并发与故障语义加固：attest 完整事务锁、符号链接别名共享跨进程锁、投影回滚失败必须如实失败且不谎
   完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
   ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
+- TASK-0044 [verification_pending] 第七批 7A：建立可逆生命周期数据模型、固定时点有效性与仓库相对路径 scope 纯函数，保持旧 registry 兼容
+  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: verify
+- TASK-0045 [verification_pending] 第七批 7B：实现 suspend、reinstate、narrow 的内容寻址预览确认、并发安全写入、幂等与普通写入口
+  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: verify
+- TASK-0046 [verification_pending] 第七批 7C：新增 suspend、reinstate、narrow CLI 和统一 Registry+AGENTS+C
+  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: verify
+- TASK-0047 [verification_pending] 第七批 7D：统一固定时点 effective rules 与路径 scope 消费，接入 audit、verdict、
+  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: verify
+- TASK-0048 [verification_pending] 第七批 7E：生命周期 revision 绑定 attestation 与 trace 新鲜度，同步公开文档、残余风险和
+  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: verify
+- TASK-0049 [verification_pending] 第七批 7E 测试迁移：确认书正例使用 Registry 权威 revision，并补 attestation/trac
+  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: verify
+- TASK-0050 [verification_pending] 第七批 7D 测试补充：验证 task open/accept 与 repair open/apply 对 effect
+  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: verify
+- TASK-0051 [verification_pending] 第七批审查修复：封闭 Registry 普通写旁路、attestation 伪造与越界、自签提级、trace 交叉续命、
+  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: verify
+- TASK-0052 [verification_pending] 第七批审查加固：静态保证生产传感器路径 Evidence kind 与 PATH_SCOPED_EVIDENCE_KIN
+  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: verify
+- TASK-0053 [verification_pending] 第七批审查兼容迁移：将退休测试从已封闭的普通 save 旁路迁移到 transition 与 record_attest
+  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: verify
+- TASK-0054 [verification_pending] 第七批第二轮审查修复：保护 retirement facts，拒绝 attestation 路径任意 symlink，原
+  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: verify
 
 ## 硬约束
 - 不得直接读写或修改 `.sopcontrol/` 内任何文件；一切经 `sopctl` 子命令。

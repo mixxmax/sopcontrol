@@ -15,7 +15,10 @@
 ```text
 sopctl audit .
 sopctl explain <RULE-ID> .
-sopctl rule deprecate <RULE-ID> . --reason "..." --by <HUMAN>  # 先预览，再带 --confirm-preview 确认
+sopctl rule suspend <RULE-ID> . --until <ISO-8601> --reason "..." --by <HUMAN>
+sopctl rule reinstate <RULE-ID> . --reason "..." --by <HUMAN>
+sopctl rule narrow <RULE-ID> . --scope <REPO-PREFIX> --reason "..." --by <HUMAN>
+sopctl rule deprecate <RULE-ID> . --reason "..." --by <HUMAN>
 sopctl rule supersede <OLD-ID> . --replacement <NEW-ID> --reason "..." --by <HUMAN>
 sopctl task open . --model <CURRENT-MODEL> --objective "..." \
   --allow <exact-file> --require-rule <ID> --require-field <name>
@@ -35,6 +38,8 @@ sopctl capability-events . --model <CURRENT-MODEL>  # 只读查看遥测完整�
 sopctl identity export . --out id.yaml
 sopctl identity import . --file id.yaml
 ```
+
+所有 `rule suspend/reinstate/narrow/deprecate/supersede` 都先预览，再由人工原样重跑并带 `--confirm-preview <ID>`；agent 不得自签。暂停到点 inclusive，只有 `at > until` 自动恢复；`deprecated/superseded` 永久不可恢复。scope v1 只接受项目级或仓库相对路径前缀。生命周期 revision 变化后旧 attestation/trace 不再有效；静态 invariant guards 不随普通规则暂停关闭。
 
 `--model` 必须填写当前执行模型，并与已存画像中的身份完全一致；省略或不匹配时按 `unknown` 保守执行。fixture/响应文件只用于离线校准，不能授权；只有人工批准的 live 评测可放宽，agent 不得自行运行 `capability-approve`。`submit` 若契约有 MUST 字段：`--field key=value`（漏字段会被拒）。
 

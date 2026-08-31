@@ -5,14 +5,11 @@
 from __future__ import annotations
 
 from sopcontrol.context import is_test_path
-from sopcontrol.model import Absorption, Evidence, Finding, Modality, Rule, RuleStatus
+from datetime import datetime
+
+from sopcontrol.model import Absorption, Evidence, Finding, Modality, Rule, effective_rules, utcnow
+from sopcontrol.scope import effective_rule_inputs
 from sopcontrol.verdict import HARD_MODALITIES, consumer_evidence, legacy_evidence
-GOVERNANCE_ACTIVE = {
-    RuleStatus.accepted,
-    RuleStatus.compiled,
-    RuleStatus.activated,
-    RuleStatus.monitored,
-}
 
 
 def referenced_anywhere(structured: list[Evidence]) -> set[str]:
@@ -45,23 +42,33 @@ def state_rule_handled_elsewhere(rule: Rule) -> bool:
 class NoConsumerDetector:
     detector_id = "no_consumer"
 
-    def detect(self, rules: list[Rule], evidence: list[Evidence]) -> list[Finding]:
+    def detect(
+        self,
+        rules: list[Rule],
+        evidence: list[Evidence],
+        *,
+        at: datetime | None = None,
+    ) -> list[Finding]:
         findings: list[Finding] = []
-        id_evidence = [e for e in evidence if e.kind == "code_scan.identifiers"]
-        structured = [
-            e for e in evidence
-            if e.kind in (
-                "ast_scan.references", "js_scan.references",
-                "go_scan.references", "rust_scan.references",
-                "go_ast.references", "ts_ast.references",
-                "rust_ast.references",
-            )
-        ]
-        structured_by_subject = {e.subject: e for e in structured}
-        real_refs = referenced_anywhere(structured)
-        for rule in rules:
-            if rule.status not in GOVERNANCE_ACTIVE or rule.modality not in HARD_MODALITIES:
+        for rule in effective_rules(rules, at=at or utcnow()):
+            if rule.modality not in HARD_MODALITIES:
                 continue
+            scoped_evidence = effective_rule_inputs(rule, evidence)
+            id_evidence = [
+                item for item in scoped_evidence
+                if item.kind == "code_scan.identifiers"
+            ]
+            structured = [
+                item for item in scoped_evidence
+                if item.kind in (
+                    "ast_scan.references", "js_scan.references",
+                    "go_scan.references", "rust_scan.references",
+                    "go_ast.references", "ts_ast.references",
+                    "rust_ast.references",
+                )
+            ]
+            structured_by_subject = {item.subject: item for item in structured}
+            real_refs = referenced_anywhere(structured)
             if state_rule_handled_elsewhere(rule):
                 continue  # 状态类规则由 state_health 检测器评估
             if not rule.consumer_markers:
@@ -75,7 +82,7 @@ class NoConsumerDetector:
                     )
                 )
                 continue
-            prod, test = consumer_evidence(rule, evidence)
+            prod, test = consumer_evidence(rule, scoped_evidence)
             markers = ", ".join(rule.consumer_markers)
             if not prod and not test:
                 findings.append(
@@ -142,7 +149,7 @@ class NoConsumerDetector:
                         )
                     )
             if rule.legacy_markers:
-                legacy = legacy_evidence(rule, evidence)
+                legacy = legacy_evidence(rule, scoped_evidence)
                 if legacy:
                     legacy_names = ", ".join(rule.legacy_markers)
                     findings.append(

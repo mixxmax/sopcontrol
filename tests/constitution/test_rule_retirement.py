@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 import shutil
 import threading
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -262,13 +263,16 @@ def test_registry_rejects_agent_retirement_and_invalid_source_state(tmp_path):
         registry.retirement_preview(
             "DEPLOY-001", action="deprecate", reason="退出", actor="agent"
         )
-    rules = registry.load()
-    proposed = next(rule for rule in rules if rule.rule_id == "DEPLOY-002")
-    proposed.status = RuleStatus.proposed
-    registry.save(rules)
+    registry.add(Rule(
+        rule_id="DEPLOY-PROPOSED",
+        statement="尚未接受的规则不能永久退出",
+        modality=Modality.MUST,
+        status=RuleStatus.proposed,
+        source=SourceRef(type="document", ref="docs/runbook.md"),
+    ))
     with pytest.raises(RegistryError, match="当前有效"):
         registry.retirement_preview(
-            "DEPLOY-002", action="deprecate", reason="退出", actor="human"
+            "DEPLOY-PROPOSED", action="deprecate", reason="退出", actor="human"
         )
 
 
@@ -336,6 +340,59 @@ def test_public_save_rejects_new_retired_record(tmp_path):
     with pytest.raises(RegistryError, match="永久退出"):
         registry.save(rules)
     assert [rule.model_dump(mode="json") for rule in registry.load()] == original
+
+
+_RETIREMENT_FACT_MUTATIONS = (
+    ("supersedes", ["DEPLOY-001"]),
+    ("superseded_by", "DEPLOY-NEW"),
+    ("retirement_reason", "普通写入伪造退出原因"),
+    ("retired_by", "ordinary-writer"),
+    ("retired_at", datetime(2026, 8, 31, 12, 0, tzinfo=timezone.utc)),
+    ("retirement_id", "forged-retirement-id"),
+)
+
+
+@pytest.mark.parametrize(("field", "value"), _RETIREMENT_FACT_MUTATIONS)
+@pytest.mark.parametrize("operation", ("save", "add"))
+def test_public_writes_reject_retirement_facts_on_new_active_rule(
+    tmp_path, field, value, operation
+):
+    work = _work(tmp_path)
+    registry = Registry(work / ".sopcontrol/rules/registry.yaml")
+    before = registry.path.read_bytes()
+    rule = Rule(
+        rule_id=f"FORGED-{field.upper()}",
+        statement="新建 active 规则不得夹带退出治理事实",
+        modality=Modality.MUST,
+        status=RuleStatus.accepted,
+        source=SourceRef(type="document", ref="docs/runbook.md"),
+    )
+    setattr(rule, field, value)
+
+    with pytest.raises(RegistryError, match="退出治理事实"):
+        if operation == "add":
+            registry.add(rule)
+        else:
+            registry.save(registry.load() + [rule])
+
+    assert registry.path.read_bytes() == before
+
+
+@pytest.mark.parametrize(("field", "value"), _RETIREMENT_FACT_MUTATIONS)
+def test_public_save_rejects_retirement_fact_changes_on_existing_active_rule(
+    tmp_path, field, value
+):
+    work = _work(tmp_path)
+    registry = Registry(work / ".sopcontrol/rules/registry.yaml")
+    before = registry.path.read_bytes()
+    rules = registry.load()
+    target = next(rule for rule in rules if rule.rule_id == "DEPLOY-001")
+    setattr(target, field, value)
+
+    with pytest.raises(RegistryError, match="退出治理事实"):
+        registry.save(rules)
+
+    assert registry.path.read_bytes() == before
 
 
 def test_public_save_cannot_change_or_remove_historical_retirement(tmp_path, capsys):
@@ -438,12 +495,12 @@ def test_supersede_rejects_third_party_conflict_before_accepting_replacement(tmp
 def test_retired_attestation_does_not_satisfy_governance_maturity(tmp_path, capsys):
     work = _work(tmp_path)
     registry = Registry(work / ".sopcontrol/rules/registry.yaml")
-    rules = registry.load()
-    target = next(rule for rule in rules if rule.rule_id == "DEPLOY-001")
-    target.source_hash = "attested-source-hash"
-    target.bypass_note = "仅允许经过受控部署入口"
-    target.attested_by = "human-reviewer"
-    registry.save(rules)
+    record_attestation(
+        work,
+        "DEPLOY-001",
+        bypass_note="仅允许经过受控部署入口",
+        by="human-reviewer",
+    )
 
     before = {item["order_id"]: item for item in check_orders(work, registry.load())}
     assert before["ORDER-5"]["satisfied"] is True
@@ -629,15 +686,15 @@ def test_attestation_transaction_preserves_concurrent_registry_add(tmp_path, mon
     release_attest = threading.Event()
     add_done = threading.Event()
     errors = []
-    original_save = Registry.save
+    original_write = Registry._write
 
-    def controlled_save(self, rules):
+    def controlled_write(self, rules):
         if threading.current_thread().name == "attest-rule":
             attest_at_save.set()
             assert release_attest.wait(timeout=5)
-        return original_save(self, rules)
+        return original_write(self, rules)
 
-    monkeypatch.setattr(Registry, "save", controlled_save)
+    monkeypatch.setattr(Registry, "_write", controlled_write)
 
     def attest_rule():
         try:

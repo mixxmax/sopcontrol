@@ -13,10 +13,19 @@
 """
 import builtins
 import json
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 from sopcontrol.harness import GUARD_IDS, GUARD_NO_VERIFY, GUARD_PUSH_GATE, check_tool_call
-from sopcontrol.model import Absorption, Evidence, Modality, Rule, RuleStatus, SourceRef, utcnow
+from sopcontrol.model import (
+    Absorption,
+    Evidence,
+    Modality,
+    Rule,
+    RuleLifecycleEvent,
+    RuleStatus,
+    SourceRef,
+    utcnow,
+)
 from sopcontrol.testrun import TEST_RUN_KIND
 from sopcontrol.trace import (
     FRESH_WINDOW,
@@ -285,3 +294,269 @@ def test_trace_judgement_stays_pure(monkeypatch, tmp_path):
     monkeypatch.setattr(builtins, "open", no_open)
     v = evaluate_rule(_rule([GUARD_PUSH_GATE]), _wired_evidence() + [_test_run(True), trace], [])
     assert v.status == "pass"
+
+
+def test_trace_cutoff_is_inclusive_and_rejects_previous_microsecond():
+    cutoff = datetime(2026, 9, 1, 12, 0, tzinfo=timezone.utc)
+    rule = Rule(
+        rule_id="TRACE-001",
+        statement="受控入口必须经拦截器决策",
+        modality=Modality.MUST,
+        status=RuleStatus.accepted,
+        source=SourceRef(type="manual_seed", ref="tests"),
+        consumer_markers=["trace_marker"],
+        guard_ids=[GUARD_PUSH_GATE],
+        scope_paths=["src", "tests"],
+        lifecycle_revision=1,
+        effective_since=cutoff,
+        lifecycle_events=[RuleLifecycleEvent(
+            action="narrow",
+            actor="human-reviewer",
+            reason="缩小作用域",
+            at=cutoff,
+            preview_id="trace-rev-1",
+            revision=1,
+            before_scope=[],
+            after_scope=["src", "tests"],
+        )],
+    )
+
+    def trace_at(at):
+        return Evidence(
+            kind=TRACE_KIND,
+            subject=".sopcontrol/evidence/trace.jsonl",
+            observed={"guards": {GUARD_PUSH_GATE: {
+                "count": 1,
+                "decisions": ["deny"],
+                "last_at": at.isoformat(),
+            }}},
+            observer="harness_trace",
+            level=4,
+            input_hash=at.isoformat(),
+        )
+
+    equal = evaluate_rule(
+        rule,
+        _wired_evidence() + [_test_run(True), trace_at(cutoff)],
+        [],
+        at=cutoff,
+    )
+    before = evaluate_rule(
+        rule,
+        _wired_evidence() + [
+            _test_run(True),
+            trace_at(cutoff - timedelta(microseconds=1)),
+        ],
+        [],
+        at=cutoff,
+    )
+
+    assert "条件6 满足" in equal.reason
+    assert "当前 lifecycle revision" in before.reason
+
+
+def _trace_fact(guards: dict[str, tuple[datetime | str, int]]) -> Evidence:
+    observed = {
+        "guards": {
+            guard_id: {
+                "count": count,
+                "decisions": ["deny"],
+                "last_at": at.isoformat() if isinstance(at, datetime) else at,
+            }
+            for guard_id, (at, count) in guards.items()
+        }
+    }
+    return Evidence(
+        kind=TRACE_KIND,
+        subject=".sopcontrol/evidence/trace.jsonl",
+        observed=observed,
+        observer="harness_trace",
+        level=4,
+        input_hash=str(observed),
+    )
+
+
+def test_unrelated_fresh_guard_does_not_renew_stale_guard():
+    """Evidence 的全局有效期不能让 B 的新事件替 A 的旧事件续命。"""
+    check_at = datetime(2026, 9, 10, 12, 0, tzinfo=timezone.utc)
+    trace = _trace_fact({
+        GUARD_PUSH_GATE: (check_at - FRESH_WINDOW - timedelta(microseconds=1), 1),
+        GUARD_NO_VERIFY: (check_at, 1),
+    })
+
+    verdict = evaluate_rule(
+        _rule([GUARD_PUSH_GATE]),
+        _wired_evidence() + [_test_run(True), trace],
+        [],
+        at=check_at,
+    )
+
+    assert verdict.absorption == Absorption.wired_and_tested
+    assert GUARD_PUSH_GATE in verdict.reason
+    assert "新鲜" in verdict.reason
+
+
+def test_all_declared_guards_must_be_fresh():
+    """多 guard 规则中任一 guard 陈旧，条件6整体失败。"""
+    check_at = datetime(2026, 9, 10, 12, 0, tzinfo=timezone.utc)
+    trace = _trace_fact({
+        GUARD_PUSH_GATE: (check_at, 3),
+        GUARD_NO_VERIFY: (check_at - FRESH_WINDOW - timedelta(microseconds=1), 2),
+    })
+
+    verdict = evaluate_rule(
+        _rule([GUARD_PUSH_GATE, GUARD_NO_VERIFY]),
+        _wired_evidence() + [_test_run(True), trace],
+        [],
+        at=check_at,
+    )
+
+    assert verdict.absorption == Absorption.wired_and_tested
+    assert GUARD_NO_VERIFY in verdict.reason
+    assert "新鲜" in verdict.reason
+
+
+def test_fresh_window_cutoff_is_inclusive_and_previous_microsecond_is_stale():
+    check_at = datetime(2026, 9, 10, 12, 0, tzinfo=timezone.utc)
+    cutoff = check_at - FRESH_WINDOW
+
+    equal = evaluate_rule(
+        _rule([GUARD_PUSH_GATE]),
+        _wired_evidence() + [_test_run(True), _trace_fact({GUARD_PUSH_GATE: (cutoff, 1)})],
+        [],
+        at=check_at,
+    )
+    before = evaluate_rule(
+        _rule([GUARD_PUSH_GATE]),
+        _wired_evidence() + [
+            _test_run(True),
+            _trace_fact({GUARD_PUSH_GATE: (cutoff - timedelta(microseconds=1), 1)}),
+        ],
+        [],
+        at=check_at,
+    )
+
+    assert "条件6 满足" in equal.reason
+    assert "新鲜" in before.reason
+
+
+def test_future_dated_guard_event_fails_closed():
+    check_at = datetime(2026, 9, 10, 12, 0, tzinfo=timezone.utc)
+    trace = _trace_fact({GUARD_PUSH_GATE: (check_at + timedelta(microseconds=1), 1)})
+
+    verdict = evaluate_rule(
+        _rule([GUARD_PUSH_GATE]),
+        _wired_evidence() + [_test_run(True), trace],
+        [],
+        at=check_at,
+    )
+
+    assert verdict.absorption == Absorption.wired_and_tested
+    assert "未来" in verdict.reason
+
+
+def test_invalid_and_naive_guard_times_fail_closed():
+    check_at = datetime(2026, 9, 10, 12, 0, tzinfo=timezone.utc)
+    for bad_time in ("not-a-time", "2026-09-10T12:00:00"):
+        verdict = evaluate_rule(
+            _rule([GUARD_PUSH_GATE]),
+            _wired_evidence() + [
+                _test_run(True),
+                _trace_fact({GUARD_PUSH_GATE: (bad_time, 1)}),
+            ],
+            [],
+            at=check_at,
+        )
+        assert verdict.absorption == Absorption.wired_and_tested
+        assert GUARD_PUSH_GATE in verdict.reason
+
+
+def test_multiple_trace_evidence_merges_each_guard_by_real_instant():
+    check_at = datetime(2026, 9, 10, 12, 0, tzinfo=timezone.utc)
+    older = _trace_fact({GUARD_PUSH_GATE: (check_at - timedelta(hours=2), 1)})
+    newer = _trace_fact({GUARD_PUSH_GATE: (check_at - timedelta(hours=1), 4)})
+
+    guards = fresh_trace_guards([newer, older], at=check_at)
+
+    assert guards[GUARD_PUSH_GATE]["count"] == 4
+    assert guards[GUARD_PUSH_GATE]["last_at"] == (check_at - timedelta(hours=1)).isoformat()
+
+
+def test_automatic_recovery_requires_trace_strictly_after_suspension_cutoff():
+    suspended_at = datetime(2026, 9, 1, 12, 0, tzinfo=timezone.utc)
+    suspended_until = suspended_at + timedelta(days=1)
+    check_at = suspended_until + timedelta(hours=1)
+    rule = Rule(
+        rule_id="TRACE-001",
+        statement="受控入口必须经拦截器决策",
+        modality=Modality.MUST,
+        status=RuleStatus.accepted,
+        source=SourceRef(type="manual_seed", ref="tests"),
+        consumer_markers=["trace_marker"],
+        guard_ids=[GUARD_PUSH_GATE],
+        lifecycle_revision=1,
+        effective_since=suspended_at,
+        suspended_until=suspended_until,
+        lifecycle_events=[RuleLifecycleEvent(
+            action="suspend",
+            actor="human-reviewer",
+            reason="临时暂停",
+            at=suspended_at,
+            until=suspended_until,
+            preview_id="trace-suspend-1",
+            revision=1,
+        )],
+    )
+
+    at_cutoff = evaluate_rule(
+        rule,
+        _wired_evidence() + [
+            _test_run(True),
+            _trace_fact({GUARD_PUSH_GATE: (suspended_until, 1)}),
+        ],
+        [],
+        at=check_at,
+    )
+    after_cutoff = evaluate_rule(
+        rule,
+        _wired_evidence() + [
+            _test_run(True),
+            _trace_fact({GUARD_PUSH_GATE: (suspended_until + timedelta(microseconds=1), 1)}),
+        ],
+        [],
+        at=check_at,
+    )
+
+    assert "恢复" in at_cutoff.reason
+    assert "条件6 满足" in after_cutoff.reason
+
+
+def test_attestation_evidence_rejects_empty_or_agent_signer():
+    check_at = datetime(2026, 9, 10, 12, 0, tzinfo=timezone.utc)
+    rule = _rule([GUARD_PUSH_GATE]).model_copy(update={"attested_revision": 0})
+    trace = _trace_fact({GUARD_PUSH_GATE: (check_at, 1)})
+
+    for signer in ("", "agent"):
+        attestation = Evidence(
+            kind="rule.attestation",
+            subject="docs/rule.md",
+            observed={
+                "rule_id": rule.rule_id,
+                "source_ref": "docs/rule.md",
+                "matches": True,
+                "bypass_note": True,
+                "attested_revision": 0,
+                "attested_by": signer,
+            },
+            observer="attestation",
+            level=3,
+            input_hash=f"attest-{signer}",
+        )
+        verdict = evaluate_rule(
+            rule,
+            _wired_evidence() + [_test_run(True), trace, attestation],
+            [],
+            at=check_at,
+        )
+        assert verdict.absorption == Absorption.wired_and_tested
+        assert "人工确认" in verdict.reason

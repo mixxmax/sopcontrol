@@ -1,5 +1,6 @@
 """B3 有界修复测试：契约生成、重复开单拒绝、同指纹熔断、已达标拒绝。"""
 import shutil
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -8,6 +9,7 @@ from plugins import DETECTORS, SENSORS
 from sopcontrol.audit import run_audit, run_task_verify
 from sopcontrol.ledger import Ledger
 from sopcontrol.model import Finding
+from sopcontrol.registry import Registry
 from sopcontrol.repair import RepairError, open_repair
 from sopcontrol.task import TaskStore, evaluate_transition
 
@@ -33,6 +35,42 @@ def test_open_repair_creates_fingerprinted_task(work):
     assert task.contract.repairs_fingerprint == finding.fingerprint
     assert task.contract.required_rules == ["DEPLOY-001"]
     assert "documented_rule_no_consumer" in task.contract.objective
+
+
+def _change_rule_lifecycle(work, action, **kwargs):
+    registry = Registry(work / ".sopcontrol" / "rules" / "registry.yaml")
+    params = {
+        "action": action,
+        "reason": "repair scope test",
+        "actor": "test-human",
+        **kwargs,
+    }
+    preview = registry.lifecycle_preview("DEPLOY-001", **params)
+    registry.confirm_lifecycle(
+        "DEPLOY-001", preview_id=preview["preview_id"], **params
+    )
+
+
+def test_open_repair_rejects_writes_outside_effective_rule_scope(work):
+    finding = gap_finding(work)
+    _change_rule_lifecycle(work, "narrow", scope_paths=["scripts"])
+
+    with pytest.raises(RepairError, match="docs.*scope"):
+        open_repair(work, finding.finding_id, ["docs"], SENSORS, DETECTORS)
+    assert TaskStore(work).list_all() == []
+
+
+def test_open_repair_rejects_suspended_finding_rule(work):
+    finding = gap_finding(work)
+    _change_rule_lifecycle(
+        work,
+        "suspend",
+        until=datetime.now(timezone.utc) + timedelta(hours=1),
+    )
+
+    with pytest.raises(RepairError, match="当前有效"):
+        open_repair(work, finding.finding_id, ["scripts"], SENSORS, DETECTORS)
+    assert TaskStore(work).list_all() == []
 
 
 def test_duplicate_active_repair_is_refused(work):

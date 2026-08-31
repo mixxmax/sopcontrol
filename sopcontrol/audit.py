@@ -5,13 +5,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
+import inspect
 from pathlib import Path
 
 from .attest import attestation_evidence
 from .bootstrap import maturity_evidence
 from .context import ProjectContext
 from .ledger import Ledger
-from .model import Evidence, Finding, Rule, Verdict, active_rules
+from .model import Evidence, Finding, Rule, Verdict, effective_rules, utcnow
 from .registry import Registry
 from .task import TaskRecord, TransitionDecision, evaluate_transition
 from .testrun import declaration_evidence
@@ -24,6 +26,7 @@ class AuditReport:
     evidence: list[Evidence]
     findings: list[Finding]
     verdicts: list[Verdict]
+    at: datetime
 
 
 def run_audit(
@@ -33,12 +36,15 @@ def run_audit(
     persist: bool = False,
     compact: bool = False,
     extra_evidence: list[Evidence] | None = None,
+    *,
+    at: datetime | None = None,
 ) -> AuditReport:
     """extra_evidence：不由传感器产生、由调用方铸好送进来的证据（如完成门的 E4 测试运行）。"""
     root = Path(root)
     ctx = ProjectContext(root)
+    audit_at = at or utcnow()
     rules = Registry(root / ".sopcontrol" / "rules" / "registry.yaml").load()
-    current_rules = active_rules(rules)
+    current_rules = effective_rules(rules, at=audit_at)
 
     evidence: list[Evidence] = list(extra_evidence or [])
     # 「项目声明了测试命令」这一事实每轮都送进判定器（零成本，不跑命令）：
@@ -53,17 +59,21 @@ def run_audit(
     evidence.extend(attestation_evidence(root, current_rules))
     # 成熟度（手册 7.3）与确认书同处一层：都要读 .sopcontrol 自身状态，传感器看不见。
     # 每轮重算而不是缓存——装了钩子、声明了验收命令，下一轮就该反映出来。
-    evidence.append(maturity_evidence(root, rules))
+    evidence.append(maturity_evidence(root, rules, at=audit_at))
     for sensor in sensors:
         evidence.extend(sensor.observe(ctx))
     # 过期证据不参与当轮判定（Haft 式衰减；v0 尚无传感器设置 valid_until，机制就位）
-    evidence = [e for e in evidence if not e.is_expired()]
+    evidence = [e for e in evidence if not e.is_expired(audit_at)]
 
     findings: list[Finding] = []
     for detector in detectors:
-        findings.extend(detector.detect(current_rules, evidence))
+        parameters = inspect.signature(detector.detect).parameters
+        if "at" in parameters:
+            findings.extend(detector.detect(current_rules, evidence, at=audit_at))
+        else:
+            findings.extend(detector.detect(current_rules, evidence))
 
-    verdicts = evaluate_all(current_rules, evidence, findings)
+    verdicts = evaluate_all(current_rules, evidence, findings, at=audit_at)
 
     if persist:
         ledger = Ledger(root / ".sopcontrol" / "evidence" / "ledger.jsonl")
@@ -76,7 +86,9 @@ def run_audit(
             for f in findings:
                 ledger.append_finding(f)
 
-    return AuditReport(rules=rules, evidence=evidence, findings=findings, verdicts=verdicts)
+    return AuditReport(
+        rules=rules, evidence=evidence, findings=findings, verdicts=verdicts, at=audit_at
+    )
 
 
 def load_controller_paths(root: Path) -> list[str]:
@@ -130,23 +142,34 @@ def collect_test_run(root: Path) -> list[Evidence]:
     return [ev] if ev is not None else []
 
 
-def run_task_verify(root: Path, sensors: list, detectors: list, task: TaskRecord) -> TransitionDecision:
+def run_task_verify(
+    root: Path,
+    sensors: list,
+    detectors: list,
+    task: TaskRecord,
+    *,
+    test_evidence: list[Evidence] | None = None,
+) -> TransitionDecision:
     """完成门编排：真跑测试(E4) → 独立审计 → 规则判定 → 纯函数迁移决策。不信任务自报。
 
     E4 只在完成门产生：普通 audit 不该每次扫描都付一次测试时间（testrun.should_run
-    另有递归自锁，避免测试子进程里再套一层完成门）。
+    另有递归自锁，避免测试子进程里再套一层完成门）。调用方可先在 registry 锁外
+    收集 E4，再让最终审计、当前规则复核与任务落盘共享同一锁域。
     """
-    report = run_audit(root, sensors, detectors, persist=True, extra_evidence=collect_test_run(root))
+    evidence = collect_test_run(root) if test_evidence is None else test_evidence
+    report = run_audit(root, sensors, detectors, persist=True, extra_evidence=evidence)
     ledger = Ledger(Path(root) / ".sopcontrol" / "evidence" / "ledger.jsonl")
     tampered = ledger.path.exists() and not ledger.verify()
     controller_dirty = dirty_controller_changes(Path(root), task)
     verdicts = {v.rule_id: v.status for v in report.verdicts}
     # 迁移门是纯函数，拿不到账本；E4 事实由这里从本轮证据里摘成普通数据递进去
     ev = latest_test_run(report.evidence)
+    current_rules = effective_rules(report.rules, at=report.at)
     return evaluate_transition(
         task, "verify",
         rule_verdicts=verdicts,
-        known_rule_ids={r.rule_id for r in active_rules(report.rules)},
+        known_rule_ids={rule.rule_id for rule in current_rules},
+        rule_scopes={rule.rule_id: rule.scope_paths for rule in current_rules},
         ledger_tampered=tampered,
         controller_dirty=controller_dirty,
         test_run=dict(ev.observed or {}) if ev is not None else None,

@@ -14,10 +14,12 @@
 """
 from __future__ import annotations
 
+import hashlib
+import os
+import stat
 from pathlib import Path
 from typing import Optional
 
-from .context import file_hash
 from .model import Evidence, Rule, content_hash, utcnow
 from .registry import Registry, RegistryError
 
@@ -33,16 +35,75 @@ def _registry(root: Path) -> Registry:
 
 
 def source_file(root: Path, rule: Rule) -> Optional[Path]:
-    """规则出处对应的仓内文件；出处不是文件（如对话引用）时返回 None。
-
-    返回 None 不是错误——大量规则来自对话，本来就没有可 hash 的版本。
-    但那样条件7 就无法机制化验证，判定只能 fail-closed 地拒绝颁发 enforced。
-    """
+    """规则出处对应的仓内常规文件；越界或符号链接 fail-closed。"""
     ref = (rule.source.ref or "").strip()
     if not ref:
         return None
-    path = Path(root) / ref
-    return path if path.is_file() else None
+    relative = Path(ref)
+    if relative.is_absolute() or ".." in relative.parts:
+        return None
+    root_path = Path(root).resolve()
+    candidate = root_path
+    for part in relative.parts:
+        candidate /= part
+        if candidate.is_symlink():
+            return None
+    try:
+        resolved = candidate.resolve(strict=True)
+        resolved.relative_to(root_path)
+    except (OSError, ValueError):
+        return None
+    return resolved if resolved.is_file() else None
+
+
+def _source_hash(root: Path, rule: Rule) -> Optional[str]:
+    """从仓根逐层无跟随打开源文件，并对同一个已打开 fd 计算摘要。"""
+    ref = (rule.source.ref or "").strip()
+    relative = Path(ref)
+    parts = relative.parts
+    if (
+        not ref
+        or relative.is_absolute()
+        or not parts
+        or any(part in {"", ".", ".."} for part in parts)
+    ):
+        return None
+
+    root_fd = current_fd = source_fd = None
+    try:
+        root_fd = os.open(
+            Path(root).resolve(),
+            os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+        )
+        current_fd = os.dup(root_fd)
+        for part in parts[:-1]:
+            next_fd = os.open(
+                part,
+                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                dir_fd=current_fd,
+            )
+            os.close(current_fd)
+            current_fd = next_fd
+        source_fd = os.open(
+            parts[-1],
+            os.O_RDONLY | os.O_NOFOLLOW,
+            dir_fd=current_fd,
+        )
+        if not stat.S_ISREG(os.fstat(source_fd).st_mode):
+            return None
+        digest = hashlib.sha256()
+        while True:
+            chunk = os.read(source_fd, 1024 * 1024)
+            if not chunk:
+                break
+            digest.update(chunk)
+        return digest.hexdigest()[:16]
+    except OSError:
+        return None
+    finally:
+        for descriptor in (source_fd, current_fd, root_fd):
+            if descriptor is not None:
+                os.close(descriptor)
 
 
 def record_attestation(root: Path, rule_id: str, *, bypass_note: str, by: str) -> Rule:
@@ -57,21 +118,23 @@ def record_attestation(root: Path, rule_id: str, *, bypass_note: str, by: str) -
         target = next((r for r in rules if r.rule_id == rule_id), None)
         if target is None:
             known = ", ".join(r.rule_id for r in rules) or "（注册表为空）"
-            raise RegistryError(f"未找到规则 {rule_id}；现有规则: {known}")
+            raise RegistryError(f"未找到规则 {rule_id}；现有: {known}")
 
-        path = source_file(root, target)
-        if path is None:
+        source_hash = _source_hash(root, target)
+        if source_hash is None:
             raise AttestError(
                 f"规则 {rule_id} 的出处 {target.source.ref!r} 不是仓内文件，无法绑定版本（条件7）。"
                 f"请把规则依据落成仓内文档后重新 attest"
             )
 
-        target.source_hash = file_hash(path)
-        target.bypass_note = note
-        target.attested_by = by
-        target.attested_at = utcnow()
-        reg.save(rules)
-        return target
+        return reg.record_attestation(
+            rule_id,
+            source_hash=source_hash,
+            bypass_note=note,
+            actor=by,
+            at=utcnow(),
+        )
+
 
 
 def attestation_evidence(root: Path, rules: list[Rule]) -> list[Evidence]:
@@ -86,8 +149,8 @@ def attestation_evidence(root: Path, rules: list[Rule]) -> list[Evidence]:
     for rule in rules:
         if not rule.source_hash:
             continue
-        path = source_file(root, rule)
-        if path is None:
+        current = _source_hash(root, rule)
+        if current is None:
             # 出处文件被删/改名：曾经绑定过，现在无从比对 → 明确记成不一致，
             # 而不是安静地不产证据（后者与「从未 attest」无法区分）。
             observed = {
@@ -99,6 +162,8 @@ def attestation_evidence(root: Path, rules: list[Rule]) -> list[Evidence]:
                 "detail": "出处文件不存在（被删除或改名）",
                 "bypass_note": bool(rule.bypass_note.strip()),
                 "attested_by": rule.attested_by,
+                "attested_revision": rule.attested_revision,
+                "lifecycle_revision": rule.lifecycle_revision,
             }
             out.append(
                 Evidence(
@@ -111,7 +176,6 @@ def attestation_evidence(root: Path, rules: list[Rule]) -> list[Evidence]:
                 )
             )
             continue
-        current = file_hash(path)
         observed = {
             "rule_id": rule.rule_id,
             "source_ref": rule.source.ref,
@@ -121,6 +185,8 @@ def attestation_evidence(root: Path, rules: list[Rule]) -> list[Evidence]:
             "detail": "" if current == rule.source_hash else "源文档在确认之后被修改",
             "bypass_note": bool(rule.bypass_note.strip()),
             "attested_by": rule.attested_by,
+            "attested_revision": rule.attested_revision,
+            "lifecycle_revision": rule.lifecycle_revision,
         }
         out.append(
             Evidence(

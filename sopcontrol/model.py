@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 def utcnow() -> datetime:
@@ -73,8 +73,30 @@ RETIRED_RULE_STATUSES = frozenset({
 
 
 def active_rules(rules: list["Rule"]) -> list["Rule"]:
-    """当前参与冲突、执法、成熟度与平台投影的唯一规则集合。"""
+    """仅按生命周期状态筛选；需要时间语义时使用 effective_rules。"""
     return [rule for rule in rules if rule.status in ACTIVE_RULE_STATUSES]
+
+
+def _require_aware(value: datetime, *, field: str) -> None:
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError(f"{field} 必须携带时区")
+
+
+def rule_is_effective(rule: "Rule", *, at: datetime) -> bool:
+    """在固定时点判断规则是否进入当前有效集合。"""
+    _require_aware(at, field="at")
+    if rule.status not in ACTIVE_RULE_STATUSES:
+        return False
+    if rule.suspended_until is not None:
+        _require_aware(rule.suspended_until, field="suspended_until")
+        if at <= rule.suspended_until:
+            return False
+    return True
+
+
+def effective_rules(rules: list["Rule"], *, at: datetime) -> list["Rule"]:
+    """返回固定时点有效规则，避免一次操作跨时间边界产生不同集合。"""
+    return [rule for rule in rules if rule_is_effective(rule, at=at)]
 
 
 class Absorption(str, Enum):
@@ -98,12 +120,48 @@ class SourceRef(BaseModel):
     observed_at: Optional[datetime] = None
 
 
+class RuleLifecycleEvent(BaseModel):
+    action: Literal["suspend", "reinstate", "narrow"]
+    actor: str
+    reason: str
+    at: datetime
+    preview_id: str
+    revision: int
+    until: Optional[datetime] = None
+    before_scope: list[str] = Field(default_factory=list)
+    after_scope: list[str] = Field(default_factory=list)
+
+    @field_validator("at", "until")
+    @classmethod
+    def _utc_time(cls, value: Optional[datetime]) -> Optional[datetime]:
+        if value is not None and (
+            value.tzinfo is None
+            or value.utcoffset() is None
+            or value.utcoffset() != timezone.utc.utcoffset(value)
+        ):
+            raise ValueError("生命周期时间必须是 aware UTC 时间")
+        return value
+
+    @field_validator("before_scope", "after_scope")
+    @classmethod
+    def _normalized_scope(cls, value: list[str]) -> list[str]:
+        from .scope import normalize_scope_paths
+
+        return normalize_scope_paths(value) if value else []
+
+
 class Rule(BaseModel):
     rule_id: str
     statement: str
     modality: Modality
     status: RuleStatus = RuleStatus.proposed
     scope: str = "project"
+    scope_paths: list[str] = Field(default_factory=list)
+    lifecycle_revision: int = 0
+    effective_since: Optional[datetime] = None
+    suspended_until: Optional[datetime] = None
+    lifecycle_events: list[RuleLifecycleEvent] = Field(default_factory=list)
+    attested_revision: Optional[int] = None
     owner: str = "user"
     risk: RiskLevel = RiskLevel.medium
     source: SourceRef
@@ -137,6 +195,80 @@ class Rule(BaseModel):
         if not v or not all(c.isalnum() or c in "-_" for c in v):
             raise ValueError("rule_id 只允许字母、数字、'-'、'_'，例如 PUSH-001")
         return v
+
+    @field_validator("scope_paths")
+    @classmethod
+    def _scope_paths_shape(cls, value: list[str]) -> list[str]:
+        from .scope import normalize_scope_paths
+
+        return normalize_scope_paths(value) if value else []
+
+    @field_validator("effective_since", "suspended_until")
+    @classmethod
+    def _lifecycle_time_is_utc(cls, value: Optional[datetime]) -> Optional[datetime]:
+        if value is not None and (
+            value.tzinfo is None
+            or value.utcoffset() is None
+            or value.utcoffset() != timezone.utc.utcoffset(value)
+        ):
+            raise ValueError("规则生命周期时间必须是 aware UTC 时间")
+        return value
+
+    @model_validator(mode="after")
+    def _lifecycle_chain_is_consistent(self) -> "Rule":
+        if self.lifecycle_revision < 0:
+            raise ValueError("lifecycle_revision 不能为负数")
+        if self.attested_revision is not None and not (
+            0 <= self.attested_revision <= self.lifecycle_revision
+        ):
+            raise ValueError("attested_revision 必须位于当前生命周期 revision 范围内")
+
+        events = self.lifecycle_events
+        if not events:
+            if self.lifecycle_revision != 0:
+                raise ValueError("无生命周期事件时 lifecycle_revision 必须为 0")
+            if self.effective_since is not None or self.suspended_until is not None:
+                raise ValueError("无生命周期事件时不得携带 effective_since 或 suspended_until")
+            if self.scope_paths:
+                raise ValueError("无生命周期事件时不得携带 scope_paths")
+            return self
+
+        expected_revisions = list(range(1, len(events) + 1))
+        if [event.revision for event in events] != expected_revisions:
+            raise ValueError("生命周期事件 revision 必须从 1 连续递增")
+        preview_ids = [event.preview_id for event in events]
+        if len(preview_ids) != len(set(preview_ids)):
+            raise ValueError("生命周期事件 preview_id 不得重复")
+        if self.lifecycle_revision != events[-1].revision:
+            raise ValueError("lifecycle_revision 必须等于最后一条事件 revision")
+        if self.effective_since != events[-1].at:
+            raise ValueError("effective_since 必须等于最后一条生命周期事件时间")
+
+        replay_scope: list[str] = []
+        replay_suspension: Optional[datetime] = None
+        for event in events:
+            if event.action == "suspend":
+                if event.until is None or event.until <= event.at:
+                    raise ValueError("suspend 事件必须携带晚于事件时间的 until")
+                replay_suspension = event.until
+            elif event.action == "reinstate":
+                if replay_suspension is None or event.until != replay_suspension:
+                    raise ValueError("reinstate 事件必须引用当前暂停窗口")
+                replay_suspension = None
+            else:
+                from .scope import scope_is_strict_narrower
+
+                if event.before_scope != replay_scope:
+                    raise ValueError("narrow 事件 before_scope 与事件链当前作用域不一致")
+                if not scope_is_strict_narrower(replay_scope, event.after_scope):
+                    raise ValueError("narrow 事件 after_scope 必须是严格缩域")
+                replay_scope = list(event.after_scope)
+
+        if self.scope_paths != replay_scope:
+            raise ValueError("scope_paths 与生命周期事件链不一致")
+        if self.suspended_until != replay_suspension:
+            raise ValueError("suspended_until 与生命周期事件链不一致")
+        return self
 
 
 class Evidence(BaseModel):

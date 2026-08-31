@@ -4,8 +4,11 @@
 """
 from __future__ import annotations
 
+import os
 import shutil
+import stat
 import subprocess
+import threading
 from pathlib import Path
 
 
@@ -107,15 +110,100 @@ def list_changed_files(work: Path) -> list[str]:
     return out
 
 
+def _open_relative_parent(
+    root_fd: int,
+    parts: tuple[str, ...],
+    *,
+    create: bool,
+) -> int:
+    """从已打开的根目录逐层打开父目录，不跟随任何 symlink。"""
+    current_fd = os.dup(root_fd)
+    try:
+        for part in parts[:-1]:
+            if create:
+                try:
+                    os.mkdir(part, dir_fd=current_fd)
+                except FileExistsError:
+                    pass
+            next_fd = os.open(
+                part,
+                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                dir_fd=current_fd,
+            )
+            os.close(current_fd)
+            current_fd = next_fd
+        return current_fd
+    except BaseException:
+        os.close(current_fd)
+        raise
+
+
+def _copy_regular_file(work_fd: int, main_fd: int, rel: str) -> bool:
+    path = Path(rel)
+    parts = path.parts
+    if path.is_absolute() or not parts or any(part in {"", ".", ".."} for part in parts):
+        return False
+
+    source_parent_fd = destination_parent_fd = source_fd = temporary_fd = None
+    temporary_name = f".sopcontrol-copy-{os.getpid()}-{threading.get_ident()}"
+    try:
+        source_parent_fd = _open_relative_parent(work_fd, parts, create=False)
+        source_fd = os.open(
+            parts[-1],
+            os.O_RDONLY | os.O_NOFOLLOW,
+            dir_fd=source_parent_fd,
+        )
+        source_stat = os.fstat(source_fd)
+        if not stat.S_ISREG(source_stat.st_mode):
+            return False
+
+        destination_parent_fd = _open_relative_parent(main_fd, parts, create=True)
+        temporary_fd = os.open(
+            temporary_name,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+            source_stat.st_mode & 0o777,
+            dir_fd=destination_parent_fd,
+        )
+        while True:
+            chunk = os.read(source_fd, 1024 * 1024)
+            if not chunk:
+                break
+            view = memoryview(chunk)
+            while view:
+                written = os.write(temporary_fd, view)
+                view = view[written:]
+        os.close(temporary_fd)
+        temporary_fd = None
+        os.replace(
+            temporary_name,
+            parts[-1],
+            src_dir_fd=destination_parent_fd,
+            dst_dir_fd=destination_parent_fd,
+        )
+        return True
+    except (FileNotFoundError, FileExistsError, NotADirectoryError, OSError):
+        if destination_parent_fd is not None:
+            try:
+                os.unlink(temporary_name, dir_fd=destination_parent_fd)
+            except OSError:
+                pass
+        return False
+    finally:
+        for fd in (temporary_fd, source_fd, destination_parent_fd, source_parent_fd):
+            if fd is not None:
+                os.close(fd)
+
+
 def copy_paths_to_main(work: Path, main: Path, rel_paths: list[str]) -> list[str]:
-    """把隔离树中的相对路径复制回主工作区。"""
+    """安全地把隔离树中的普通文件复制回主工作区。"""
     copied = []
-    for rel in rel_paths:
-        src = work / rel
-        dst = main / rel
-        if not src.exists():
-            continue
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, dst)
-        copied.append(rel)
+    work_fd = os.open(Path(work).resolve(), os.O_RDONLY | os.O_DIRECTORY)
+    main_fd = os.open(Path(main).resolve(), os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for rel in rel_paths:
+            if _copy_regular_file(work_fd, main_fd, rel):
+                copied.append(rel)
+    finally:
+        os.close(main_fd)
+        os.close(work_fd)
     return copied

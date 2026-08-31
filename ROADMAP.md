@@ -84,6 +84,11 @@
 - [x] **第六批验收加固 6R（2026-08-31）**：普通 `Registry.transition/add` 不得进入或直建
   `deprecated/superseded`，永久退出只留内容寻址确认入口；补第三方冲突零写入、退休确认书不计
   当前成熟度、任务迁移只认当前有效规则、冲突检测忽略退休规则四项行为回归。
+- [x] **第七批 7E：规则可逆生命周期（2026-08-31）**：以内容寻址两阶段确认实现 `suspend --until`、
+  `reinstate` 与 `narrow --scope`；截止时刻 inclusive，生命周期 revision 使旧 attestation/trace 失效，
+  各投影与消费者统一使用固定时点 effective rules，普通入口不得绕过 lifecycle。scope v1 仅覆盖项目级/
+  仓库相对路径前缀；任务、平台、时间级 scope 与非路径 Evidence subject 后置；静态 invariant guards 不随暂停关闭。
+  审查加固进一步封闭 Registry 治理事实旁路、task/repair 竞态和 attestation/repair symlink TOCTOU。
 
 ### B5 模式库扩展 — 完成（2026-08-24 凌晨，经任务机自应用交付）
 - [x] `write_only_state`（只写不读代理，info；shop + jobflow 双域）

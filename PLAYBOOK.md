@@ -53,12 +53,25 @@ sopctl rule add --id MY-001 \
   --consumer-marker my_gate_function
 sopctl rule accept MY-001 .
 
-# 永久退出先预览；确认时必须带回同一快照的 preview_id
+# 所有 lifecycle 动作都先预览；确认时原样重跑并带回同一快照的 preview_id
+sopctl rule suspend MY-001 . --until 2026-09-01T12:00:00Z \
+  --reason "维护窗口" --by human-reviewer
+sopctl rule suspend MY-001 . --until 2026-09-01T12:00:00Z \
+  --reason "维护窗口" --by human-reviewer --confirm-preview <PREVIEW-ID>
+sopctl rule reinstate MY-001 . --reason "维护提前结束" --by human-reviewer
+sopctl rule narrow MY-001 . --scope src/payments \
+  --reason "仅保留支付路径" --by human-reviewer
+
+# 永久退出同样先预览再确认；用新规则接管时改用 supersede --replacement NEW
 sopctl rule deprecate MY-001 . --reason "结构保证已替代" --by human-reviewer
 sopctl rule deprecate MY-001 . --reason "结构保证已替代" --by human-reviewer \
   --confirm-preview <PREVIEW-ID>
-# 用新规则接管时改用 rule supersede OLD --replacement NEW；可原子接受 proposed replacement
 ```
+
+暂停在截止时刻仍有效（`at <= until` 规则不生效），只有 `at > until` 自动恢复；也可在窗口内
+`reinstate`。`narrow` 只能严格缩小，v1 scope 仅支持项目级或仓库相对路径前缀，不支持任务、平台、
+时间级或 Evidence 非路径 subject。`deprecated/superseded` 永久不可恢复。每次 lifecycle 确认都会递增
+revision，旧 attestation/trace 需重做；静态系统 invariant guards 不随普通规则暂停关闭。
 
 Candidate 可先 `sopctl intake .` 或 `sopctl intake . --conversation chat.txt`；重复 guard/Finding/结构化纠正用 `sopctl candidate refresh .` 冷路径聚合，达到 3 个独立 occurrence 才物化。用 `candidate list/show/triage` 审查；批量裁决使用 `sopctl candidate batch-triage . --candidate-id CAND-X --candidate-id CAND-Y --status triaged`，任一 ID 无效则全部不变。**晋升必须显式 `sopctl rule add`，候选本身没有授权力**。
 

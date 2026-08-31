@@ -93,22 +93,37 @@ def cmd_task(args) -> int:
             except ValueError as exc:
                 print(f"错误: {exc}", file=sys.stderr)
                 return 2
-        from .model import active_rules
+        from .model import effective_rules, utcnow
+        from .scope import allowed_writes_scope_violations
 
         required_rule_ids = list(args.require_rule or [])
-        current_rule_ids = {
-            rule.rule_id
-            for rule in active_rules(
-                Registry(root / ".sopcontrol" / "rules" / "registry.yaml").load()
-            )
-        }
+        writes = list(args.allow)
+        check_at = utcnow()
+        current_rules = effective_rules(
+            Registry(root / ".sopcontrol" / "rules" / "registry.yaml").load(),
+            at=check_at,
+        )
+        current_rule_ids = {rule.rule_id for rule in current_rules}
         invalid_rule_ids = [
             rule_id for rule_id in required_rule_ids if rule_id not in current_rule_ids
         ]
         if invalid_rule_ids:
             print(
-                "错误: 任务完成条件只能引用当前有效规则；不存在或已退出: "
+                "错误: 任务完成条件只能引用当前有效规则；不存在、已退出或已暂停: "
                 + ", ".join(invalid_rule_ids),
+                file=sys.stderr,
+            )
+            return 2
+        rule_scopes = {rule.rule_id: rule.scope_paths for rule in current_rules}
+        scope_violations = allowed_writes_scope_violations(
+            writes,
+            rule_scopes,
+            required_rule_ids,
+        )
+        if scope_violations:
+            print(
+                "错误: allowed_writes 超出 required rule scope: "
+                + ", ".join(scope_violations),
                 file=sys.stderr,
             )
             return 2
@@ -180,22 +195,53 @@ def cmd_task(args) -> int:
         gran = knobs.write_granularity
         strict = knobs.strict_schema
         fields = list(args.require_field or [])
-        task_id = store.next_task_id()
-        task = TaskRecord(
-            task_id=task_id,
-            contract=Contract(
-                objective=args.objective,
-                allowed_writes=writes,
-                required_rules=list(args.require_rule or []),
-                required_fields=fields,
-                max_repairs=repairs,
-                write_granularity=gran,
-                strict_schema=strict,
-                capability_note=note,
-                model_identity=current_model or "",
-            ),
-        )
-        store.save(task)
+        registry = Registry(root / ".sopcontrol" / "rules" / "registry.yaml")
+        # 能力画像可在锁外计算；真正授权与任务落盘必须共享 Registry 锁，
+        # 否则 concurrent narrow/suspend 可插入最后一次检查与 save 之间。
+        with registry.exclusive():
+            check_at = utcnow()
+            current_rules = effective_rules(registry.load(), at=check_at)
+            current_rule_ids = {rule.rule_id for rule in current_rules}
+            invalid_rule_ids = [
+                rule_id for rule_id in required_rule_ids
+                if rule_id not in current_rule_ids
+            ]
+            if invalid_rule_ids:
+                print(
+                    "错误: 任务完成条件只能引用当前有效规则；不存在、已退出或已暂停: "
+                    + ", ".join(invalid_rule_ids),
+                    file=sys.stderr,
+                )
+                return 2
+            rule_scopes = {rule.rule_id: rule.scope_paths for rule in current_rules}
+            scope_violations = allowed_writes_scope_violations(
+                writes,
+                rule_scopes,
+                required_rule_ids,
+            )
+            if scope_violations:
+                print(
+                    "错误: allowed_writes 超出 required rule scope: "
+                    + ", ".join(scope_violations),
+                    file=sys.stderr,
+                )
+                return 2
+            task_id = store.next_task_id()
+            task = TaskRecord(
+                task_id=task_id,
+                contract=Contract(
+                    objective=args.objective,
+                    allowed_writes=writes,
+                    required_rules=list(args.require_rule or []),
+                    required_fields=fields,
+                    max_repairs=repairs,
+                    write_granularity=gran,
+                    strict_schema=strict,
+                    capability_note=note,
+                    model_identity=current_model or "",
+                ),
+            )
+            store.save(task)
         from .capability_events import CapabilityEvent, append_capability_event
 
         append_capability_event(

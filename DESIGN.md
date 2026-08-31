@@ -207,7 +207,9 @@ JSON 或指令失手 → `fragile`；边界失手 → `weak`；无画像或探�
 未知则零变更。文档/对话中的显式永久政策仍可立即成为候选。Candidate 仅供审查，不被
 capability、task、harness 或 gate 权限路径消费；晋升仍须人工执行 `sopctl rule add`。
 
-**规则永久退出（第六批）**：`rule deprecate` / `rule supersede` 采用内容寻址的两阶段确认；预览绑定完整 registry 快照、动作、理由和人工确认人，registry 变化后旧 preview 立即失效。确认时一次保存旧规则退休事实与 replacement 的 `supersedes` 关系；proposed/clarified replacement 可在同一事务中原子 accepted，但仍须通过第三方冲突校验。registry 与 AGENTS/CLAUDE 投影构成用户可见事务，投影失败时恢复三者原字节。历史规则、证据与 Finding 保留用于解释，但只有统一的 `active_rules()` 集合参与冲突、审计、成熟度、任务、repair 与平台投影；退休规则不能产生新的执法义务。
+**规则永久退出（第六批）**：`rule deprecate` / `rule supersede` 采用内容寻址的两阶段确认；预览绑定完整 registry 快照、动作、理由和人工确认人，registry 变化后旧 preview 立即失效。确认时一次保存旧规则退休事实与 replacement 的 `supersedes` 关系；proposed/clarified replacement 可在同一事务中原子 accepted，但仍须通过第三方冲突校验。registry 与 AGENTS/CLAUDE 投影构成用户可见事务，投影失败时恢复三者原字节。历史规则、证据与 Finding 保留用于解释；`deprecated/superseded` 是永久终态，不能恢复或产生新的执法义务。
+
+**规则可逆生命周期（第七批 7E，已完成，2026-08-31）**：`rule suspend --until`、`reinstate`、`narrow --scope` 与永久退出共用绑定完整 registry 快照和动作参数的内容寻址两阶段确认；普通 add/transition/save 入口不得直接注入或改写 lifecycle 事实。暂停截止时刻 inclusive：`at <= until` 不生效，只有 `at > until` 自动恢复；reinstate 只提前结束仍在窗口内的暂停，narrow 只能严格缩小作用域。scope v1 仅表示项目级（空路径集）或仓库相对路径前缀，不表达 Evidence 的非路径 subject，也不支持任务、平台或时间级 scope。每次确认递增 `lifecycle_revision`，旧 revision 的 attestation/trace 不证明新状态；投影、冲突、审计、成熟度、任务与 repair 在一次操作开始时捕获同一 `at`，统一消费该固定时点的 `effective_rules()`。静态系统 invariant guards 属于控制平面信任边界，不随普通规则 suspend 而关闭。
 
 ## 17. 垂直骨干役用闭环（2026-08-25 补）
 

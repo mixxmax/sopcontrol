@@ -79,6 +79,23 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--confirm-preview", help="回传首次预览输出的 preview_id 才执行")
         p.set_defaults(func=cmd_rule_retire)
 
+    for name, help_text in (
+        ("suspend", "临时暂停当前有效规则至指定 UTC 时点（先预览，再确认）"),
+        ("reinstate", "在暂停窗口内提前恢复规则（先预览，再确认）"),
+        ("narrow", "把规则缩窄到仓库内路径 scope（先预览，再确认）"),
+    ):
+        p = rule_sub.add_parser(name, help=help_text)
+        p.add_argument("rule_id")
+        p.add_argument("path", nargs="?", default=".")
+        if name == "suspend":
+            p.add_argument("--until", required=True, help="暂停截止时点，必须是 ISO 8601 UTC")
+        if name == "narrow":
+            p.add_argument("--scope", action="append", required=True, help="仓库相对路径，可重复")
+        p.add_argument("--reason", required=True, help="生命周期变更的审计理由")
+        p.add_argument("--by", required=True, help="人工确认人；agent 自签无效")
+        p.add_argument("--confirm-preview", help="回传首次预览输出的 preview_id 才执行")
+        p.set_defaults(func=cmd_rule_lifecycle)
+
     p = rule_sub.add_parser(
         "attest", help="记录规则确认书：绑定源文档版本 + bypass 分析（手册 6.5 条件5/7）"
     )

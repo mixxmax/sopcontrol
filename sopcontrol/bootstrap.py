@@ -30,13 +30,14 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 import yaml
 
 from .context import ProjectContext, is_production_path
-from .model import Evidence, Modality, RuleStatus, active_rules, content_hash
+from .model import Evidence, Modality, RuleStatus, content_hash, effective_rules, utcnow
 
 MATURITY_KIND = "project.maturity"
 CONSTITUTION_REL = ".sopcontrol/constitution.yaml"
@@ -139,15 +140,17 @@ def _interceptors(root: Path) -> list[str]:
     return found
 
 
-def check_orders(root: Path, rules: Optional[list] = None) -> list[dict]:
-    """逐条报告五项秩序有没有机制。只报告，不判罚。
-
-    rules 可由调用方传入（run_audit 已经加载过，别读第二遍）；不传就自己读。
-    """
+def check_orders(
+    root: Path,
+    rules: Optional[list] = None,
+    *,
+    at: Optional[datetime] = None,
+) -> list[dict]:
+    """逐条报告五项秩序有没有机制；规则有效性固定在同一时点。"""
     root = Path(root)
     if rules is None:
         rules = _load_rules(root)
-    active = active_rules(rules)
+    active = effective_rules(rules, at=at or utcnow())
     interceptors = _interceptors(root)
     guarded = [r for r in active if r.guard_ids]
     attested = [r for r in active if r.source_hash and r.bypass_note.strip() and r.attested_by]
@@ -213,13 +216,18 @@ class MaturityReport:
     reason: str
 
 
-def assess_maturity(root: Path, rules: Optional[list] = None) -> MaturityReport:
+def assess_maturity(
+    root: Path,
+    rules: Optional[list] = None,
+    *,
+    at: Optional[datetime] = None,
+) -> MaturityReport:
     """定成熟度级别：从 L0 起连续满足的最高一级。
 
     连续是要点。满足了 L4 却缺 L2，不是「L4 有点瑕疵」，是治理悬空——
     规则有人签字，却没有任何东西能证明活干完了。所以断在缺口处。
     """
-    orders = check_orders(root, rules)
+    orders = check_orders(root, rules, at=at)
     by_rung = {o["rung"]: o for o in orders}
 
     level = None
@@ -267,13 +275,18 @@ def assess_maturity(root: Path, rules: Optional[list] = None) -> MaturityReport:
     )
 
 
-def maturity_evidence(root: Path, rules: Optional[list] = None) -> Evidence:
+def maturity_evidence(
+    root: Path,
+    rules: Optional[list] = None,
+    *,
+    at: Optional[datetime] = None,
+) -> Evidence:
     """把成熟度铸成一条 E3 证据，让每轮审计都能看见项目站在哪一级。
 
     level=3 不是 4：这些都是控制器读文件得出的结论（「声明了验收命令」），
-    不是运行时事实（「测试真的跑过并通过」）。后者由完成门的 test_run 提供。
+    不是运行时事实（「测试真的跑过并通过」）。后者由完成门另行铸造；把「机制在位」说成「已经验证过」就是治理幻觉。
     """
-    report = assess_maturity(root, rules)
+    report = assess_maturity(root, rules, at=at)
     observed = {
         "level": report.level,
         "level_desc": report.level_desc,

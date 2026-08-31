@@ -12,11 +12,20 @@
 """
 import builtins
 import shutil
+from datetime import datetime, timedelta, timezone
 
 from sopcontrol.attest import ATTEST_KIND, AttestError, attestation_evidence, record_attestation
 from sopcontrol.cli import main
 from sopcontrol.harness import GUARD_PUSH_GATE
-from sopcontrol.model import Absorption, Evidence, Modality, Rule, RuleStatus, SourceRef
+from sopcontrol.model import (
+    Absorption,
+    Evidence,
+    Modality,
+    Rule,
+    RuleLifecycleEvent,
+    RuleStatus,
+    SourceRef,
+)
 from sopcontrol.registry import Registry
 from sopcontrol.testrun import TEST_RUN_KIND
 from sopcontrol.trace import append_event, trace_evidence
@@ -68,6 +77,13 @@ def _rule(guard_ids=None) -> Rule:
     )
 
 
+def _authoritative_rule(work) -> Rule:
+    """使用 registry 的 lifecycle/attestation 事实，仅切换判定所需状态。"""
+    return _registry(work).get("ATT-001").model_copy(
+        update={"status": RuleStatus.accepted}
+    )
+
+
 def _wired() -> list[Evidence]:
     return [
         Evidence(kind="ast_scan.references", subject="src/app.py",
@@ -116,12 +132,76 @@ def test_attest_reaches_the_registry(tmp_path):
     assert rule.attested_at is not None
 
 
-def test_attest_by_records_who_signed(tmp_path):
-    """确认人要留名：agent 自签与人工确认在审计里必须能区分。"""
+def test_attest_requires_a_human_signer(tmp_path):
+    """确认书必须由人签署；大小写或空白不能让 agent 自签变得有效。"""
     work = _project(tmp_path)
     assert _add(work) == 0
-    assert _attest(work, "ATT-001", NOTE, "--by", "agent") == 0
-    assert _registry(work).get("ATT-001").attested_by == "agent"
+    before = _registry(work).path.read_bytes()
+
+    for actor in ("", "  ", "agent", " AGENT "):
+        assert _attest(work, "ATT-001", NOTE, "--by", actor) == 2
+        assert _registry(work).path.read_bytes() == before
+        assert _registry(work).get("ATT-001").source_hash == ""
+
+
+def test_attest_rejects_source_paths_outside_the_project_or_through_symlinks(tmp_path):
+    work = _project(tmp_path)
+    outside = tmp_path / "outside.md"
+    outside.write_text("outside", encoding="utf-8")
+    escaped = work / "docs" / "escaped.md"
+    escaped.symlink_to(outside)
+
+    for index, source_ref in enumerate((str(outside), "../outside.md", "docs/escaped.md"), 1):
+        rule_id = f"ATT-ESCAPE-{index}"
+        assert _add(work, rule_id, source_ref=source_ref) == 0
+        before = _registry(work).path.read_bytes()
+        assert _attest(work, rule_id) == 2
+        assert _registry(work).path.read_bytes() == before
+        assert _registry(work).get(rule_id).source_hash == ""
+
+
+def test_attest_rejects_source_path_through_symlinked_parent_directory(tmp_path):
+    work = _project(tmp_path)
+    real_docs = work / "real-docs"
+    real_docs.mkdir()
+    (real_docs / "rule.md").write_text("仓内真实规则文档", encoding="utf-8")
+    (work / "linked-docs").symlink_to(real_docs, target_is_directory=True)
+    assert _add(work, "ATT-SYMLINK-PARENT", source_ref="linked-docs/rule.md") == 0
+    before = _registry(work).path.read_bytes()
+
+    assert _attest(work, "ATT-SYMLINK-PARENT") == 2
+    assert _registry(work).path.read_bytes() == before
+    assert _registry(work).get("ATT-SYMLINK-PARENT").source_hash == ""
+
+
+def test_attest_rejects_leaf_replaced_by_symlink_at_open_seam(tmp_path, monkeypatch):
+    work = _project(tmp_path)
+    assert _add(work) == 0
+    registry = _registry(work)
+    before = registry.path.read_bytes()
+    source = work / DOC
+    outside = tmp_path / "outside-raced.md"
+    outside.write_text("EXTERNAL SECRET", encoding="utf-8")
+
+    import sopcontrol.attest as attest_module
+
+    original_open = attest_module.os.open
+    replaced = False
+
+    def replace_before_leaf_open(path, flags, *args, **kwargs):
+        nonlocal replaced
+        if path == source.name and kwargs.get("dir_fd") is not None and not replaced:
+            replaced = True
+            source.unlink()
+            source.symlink_to(outside)
+        return original_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(attest_module.os, "open", replace_before_leaf_open)
+
+    assert _attest(work) == 2
+    assert replaced is True
+    assert registry.path.read_bytes() == before
+    assert registry.get("ATT-001").source_hash == ""
 
 
 def test_empty_bypass_note_is_rejected(tmp_path):
@@ -213,6 +293,37 @@ def test_deleted_source_file_is_recorded_as_mismatch(tmp_path):
     assert "不存在" in ev.observed["detail"]
 
 
+def test_evidence_rejects_leaf_replaced_by_symlink_at_open_seam(tmp_path, monkeypatch):
+    work = _project(tmp_path)
+    assert _add(work) == 0
+    assert _attest(work) == 0
+    rules = _registry(work).load()
+    source = work / DOC
+    outside = tmp_path / "outside-evidence-raced.md"
+    outside.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+
+    import sopcontrol.attest as attest_module
+
+    original_open = attest_module.os.open
+    replaced = False
+
+    def replace_before_leaf_open(path, flags, *args, **kwargs):
+        nonlocal replaced
+        if path == source.name and kwargs.get("dir_fd") is not None and not replaced:
+            replaced = True
+            source.unlink()
+            source.symlink_to(outside)
+        return original_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(attest_module.os, "open", replace_before_leaf_open)
+
+    ev = attestation_evidence(work, rules)[0]
+    assert replaced is True
+    assert ev.observed["matches"] is False
+    assert ev.observed["current"] is None
+    assert ev.input_hash != rules[0].source_hash
+
+
 def test_unattested_rule_produces_no_evidence(tmp_path):
     """没做确认书的规则不产证据 → 判定器看不到就不颁 enforced（fail-closed）。"""
     work = _project(tmp_path)
@@ -255,7 +366,11 @@ def test_enforced_is_granted_when_all_seven_conditions_hold(tmp_path):
     assert _add(work) == 0
     assert _attest(work) == 0
 
-    v = evaluate_rule(_rule(), _full_evidence(work, _registry(work).load()), [])
+    v = evaluate_rule(
+        _authoritative_rule(work),
+        _full_evidence(work, _registry(work).load()),
+        [],
+    )
     assert v.status == "pass"
     assert v.absorption == Absorption.enforced
     assert "七条件齐备" in v.reason
@@ -270,7 +385,11 @@ def test_enforced_is_revoked_when_source_doc_changes(tmp_path):
     doc = work / DOC
     doc.write_text(doc.read_text(encoding="utf-8") + "\n补充一句。\n", encoding="utf-8")
 
-    v = evaluate_rule(_rule(), _full_evidence(work, _registry(work).load()), [])
+    v = evaluate_rule(
+        _authoritative_rule(work),
+        _full_evidence(work, _registry(work).load()),
+        [],
+    )
     assert v.absorption == Absorption.wired_and_tested
     assert "确认书失效" in v.reason
     assert "attest" in v.next_action
@@ -332,11 +451,79 @@ def test_attestation_judgement_stays_pure(monkeypatch, tmp_path):
     work = _project(tmp_path)
     assert _add(work) == 0
     assert _attest(work) == 0
-    evidence = _full_evidence(work, _registry(work).load())
+    rules = _registry(work).load()
+    rule = next(item for item in rules if item.rule_id == "ATT-001").model_copy(
+        update={"status": RuleStatus.accepted}
+    )
+    evidence = _full_evidence(work, rules)
 
     def no_open(*args, **kwargs):
         raise AssertionError("判定器不得做任何 I/O（宪法：纯函数）")
 
     monkeypatch.setattr(builtins, "open", no_open)
-    v = evaluate_rule(_rule(), evidence, [])
+    v = evaluate_rule(rule, evidence, [])
     assert v.absorption == Absorption.enforced
+
+
+def test_attestation_revision_must_equal_current_lifecycle_revision():
+    at = datetime(2026, 9, 1, 12, 0, tzinfo=timezone.utc)
+    rule = Rule(
+        rule_id="ATT-001",
+        statement="推送必须经过验证钩子",
+        modality=Modality.MUST,
+        status=RuleStatus.accepted,
+        source=SourceRef(type="document", ref=DOC),
+        consumer_markers=["trace_marker"],
+        guard_ids=[GUARD_PUSH_GATE],
+        scope_paths=["src", "tests"],
+        lifecycle_revision=1,
+        effective_since=at,
+        attested_revision=1,
+        lifecycle_events=[RuleLifecycleEvent(
+            action="narrow",
+            actor="human-reviewer",
+            reason="缩小作用域",
+            at=at,
+            preview_id="rev-1",
+            revision=1,
+            before_scope=[],
+            after_scope=["src", "tests"],
+        )],
+    )
+    trace = Evidence(
+        kind="harness.trace",
+        subject=".sopcontrol/evidence/trace.jsonl",
+        observed={"guards": {GUARD_PUSH_GATE: {
+            "count": 1,
+            "decisions": ["deny"],
+            "last_at": at.isoformat(),
+        }}},
+        observer="harness_trace",
+        level=4,
+        input_hash="trace",
+    )
+
+    for revision in (0, 2):
+        attestation = Evidence(
+            kind=ATTEST_KIND,
+            subject=DOC,
+            observed={
+                "rule_id": "ATT-001",
+                "source_ref": DOC,
+                "matches": True,
+                "bypass_note": True,
+                "attested_by": "human-reviewer",
+                "attested_revision": revision,
+            },
+            observer="attestation",
+            level=3,
+            input_hash=f"attest-{revision}",
+        )
+        verdict = evaluate_rule(
+            rule,
+            _wired() + [_test_run(True), trace, attestation],
+            [],
+            at=at,
+        )
+        assert verdict.absorption == Absorption.wired_and_tested
+        assert "lifecycle revision" in verdict.reason

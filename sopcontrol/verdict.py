@@ -4,6 +4,8 @@
 """
 from __future__ import annotations
 
+from datetime import datetime
+
 from .context import is_production_path, is_test_path
 from .model import (
     Absorption,
@@ -12,8 +14,12 @@ from .model import (
     Modality,
     Rule,
     Verdict,
-    active_rules,
+    effective_rules,
+    rule_is_effective,
+    utcnow,
 )
+from .scope import effective_rule_inputs
+from .trace import FRESH_WINDOW
 
 HARD_MODALITIES = {Modality.MUST, Modality.MUST_NOT}
 
@@ -102,19 +108,44 @@ def declared_test_command(evidence: list[Evidence]) -> str | None:
     return None
 
 
-def fresh_trace_guards(evidence: list[Evidence]) -> dict[str, dict]:
-    """本轮仍新鲜的运行时 trace 里，哪些 guard 真的作出过决策（手册 6.5 条件6）。
+def _parse_aware_time(value) -> datetime | None:
+    try:
+        parsed = datetime.fromisoformat(str(value))
+    except (TypeError, ValueError):
+        return None
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return None
+    return parsed
 
-    判定器不读日志文件、也不判断新鲜度：过期的 trace 证据在 run_audit 的
-    is_expired 过滤里就被丢掉了，能走到这里的就是有效的。纯函数属性不变。
+
+def fresh_trace_guards(
+    evidence: list[Evidence],
+    *,
+    at: datetime | None = None,
+) -> dict[str, dict]:
+    """按 guard 的真实时点合并 E4 trace；非法/naive 时间不能提供信用。
+
+    新鲜度与未来时间由 ``_trace_note`` 使用同一判定时点检查。这里保留最新的
+    可解析事实，既避免 Evidence 顺序影响合并，也能让判定说明事件为何被拒绝。
+    ``at`` 保留为公开契约的一部分；naive 判定时点直接 fail closed。
     """
+    check_at = at or utcnow()
+    if check_at.tzinfo is None or check_at.utcoffset() is None:
+        return {}
     guards: dict[str, dict] = {}
+    latest: dict[str, datetime] = {}
     for ev in evidence:
         if ev.kind != "harness.trace" or ev.level < 4:
             continue
         for gid, info in ((ev.observed or {}).get("guards") or {}).items():
-            if isinstance(info, dict):
-                guards[str(gid)] = info
+            if not isinstance(info, dict):
+                continue
+            last_at = _parse_aware_time(info.get("last_at"))
+            key = str(gid)
+            if last_at is None or (key in latest and last_at <= latest[key]):
+                continue
+            latest[key] = last_at
+            guards[key] = info
     return guards
 
 
@@ -148,6 +179,27 @@ def _attest_note(rule: Rule, attestations: dict[str, dict]) -> tuple[bool, str, 
             "规则无确认书，条件5（bypass 分析）与条件7（文档-实现版本一致）无据可查",
             f"运行 sopctl rule attest {rule.rule_id} --bypass-note '...' 记录绕过分析并绑定源文档版本",
         )
+    signer = str(info.get("attested_by") or "").strip()
+    if not signer or signer.lower() == "agent":
+        return (
+            False,
+            "确认书缺少有效人工确认者，或由 agent 自签（条件5/7 不满足）",
+            f"由人工重新 sopctl rule attest {rule.rule_id}，记录确认者并复核规则",
+        )
+    evidence_revision = info.get("attested_revision")
+    revision_bound = (
+        rule.attested_revision is not None
+        and isinstance(evidence_revision, int)
+        and not isinstance(evidence_revision, bool)
+        and rule.attested_revision == rule.lifecycle_revision
+        and evidence_revision == rule.lifecycle_revision
+    )
+    if not revision_bound:
+        return (
+            False,
+            "确认书未绑定当前 lifecycle revision（条件7 不满足）",
+            f"重新 sopctl rule attest {rule.rule_id}，绑定 revision {rule.lifecycle_revision}",
+        )
     if not info.get("matches"):
         detail = info.get("detail") or "源文档与确认时不一致"
         return (
@@ -168,11 +220,16 @@ def _attest_note(rule: Rule, attestations: dict[str, dict]) -> tuple[bool, str, 
     )
 
 
-def _trace_note(rule: Rule, trace_guards: dict[str, dict]) -> tuple[bool, str, str]:
+def _trace_note(
+    rule: Rule,
+    trace_guards: dict[str, dict],
+    *,
+    at: datetime,
+) -> tuple[bool, str, str]:
     """(条件6是否满足, 写进 reason 的说明, 未满足时的下一步)。
 
-    没绑 guard 的规则不算「未通过」——绝大多数规则靠代码接线而非运行时拦截执行，
-    强求它们产 trace 会把判定变成噪音。但没绑就永远拿不到 enforced，这是诚实的代价。
+    每个声明 guard 都必须在同一显式判定时点下新鲜，且晚于任何自动恢复截止。
+    一般 lifecycle 边界允许等号；自动恢复因截止时刻仍暂停，要求严格晚于截止。
     """
     if not rule.guard_ids:
         return False, "规则未绑定运行时 guard，拿不到 trace 证据", "若该规则由拦截器执行，为其声明 guard_ids"
@@ -180,8 +237,51 @@ def _trace_note(rule: Rule, trace_guards: dict[str, dict]) -> tuple[bool, str, s
     if missing:
         return (
             False,
-            f"声明的 guard [{', '.join(missing)}] 在本轮 trace 中无决策记录",
+            f"声明的 guard [{', '.join(missing)}] 在本轮 trace 中无决策记录（缺失或不新鲜）",
             f"确认拦截器已安装并被真实调用（sopctl hook ...），使 {missing[0]} 留下运行时事件",
+        )
+
+    future: list[str] = []
+    stale: list[str] = []
+    lifecycle_stale: list[str] = []
+    recovery_stale: list[str] = []
+    freshness_cutoff = at - FRESH_WINDOW
+    for guard_id in rule.guard_ids:
+        last_at = _parse_aware_time(trace_guards[guard_id].get("last_at"))
+        if last_at is None:
+            stale.append(guard_id)
+        elif last_at > at:
+            future.append(guard_id)
+        elif last_at < freshness_cutoff:
+            stale.append(guard_id)
+        elif rule.suspended_until is not None and last_at <= rule.suspended_until:
+            recovery_stale.append(guard_id)
+        elif rule.effective_since is not None and last_at < rule.effective_since:
+            lifecycle_stale.append(guard_id)
+
+    if future:
+        return (
+            False,
+            f"声明的 guard [{', '.join(future)}] trace 来自判定时点之后的未来，不能提供信用",
+            f"在当前时点真实触发 {future[0]} 并重新判定",
+        )
+    if stale:
+        return (
+            False,
+            f"声明的 guard [{', '.join(stale)}] 没有七天窗口内的新鲜 trace",
+            f"真实触发 {stale[0]}，使其留下新鲜 aware 运行时事件",
+        )
+    if recovery_stale:
+        return (
+            False,
+            f"声明的 guard [{', '.join(recovery_stale)}] 没有自动恢复截止之后的 trace",
+            f"恢复后真实触发 {recovery_stale[0]}（事件必须严格晚于 {rule.suspended_until.isoformat()}）",
+        )
+    if lifecycle_stale:
+        return (
+            False,
+            f"声明的 guard [{', '.join(lifecycle_stale)}] 没有当前 lifecycle revision 之后的有效 trace",
+            f"真实触发 {lifecycle_stale[0]}，使其在规则本次生效时点之后留下 aware 运行时事件",
         )
     parts = [
         f"{g}×{trace_guards[g].get('count', '?')}"
@@ -215,20 +315,33 @@ def legacy_evidence(rule: Rule, evidence: list[Evidence]) -> list[Evidence]:
     return hits
 
 
-def evaluate_rule(rule: Rule, evidence: list[Evidence], findings: list[Finding]) -> Verdict:
+def evaluate_rule(
+    rule: Rule,
+    evidence: list[Evidence],
+    findings: list[Finding],
+    *,
+    at=None,
+) -> Verdict:
+    check_at = at or utcnow()
     related = [f for f in findings if f.rule_id == rule.rule_id]
     fids = [f.finding_id for f in related]
 
-    if rule not in active_rules([rule]):
+    if not rule_is_effective(rule, at=check_at):
+        suspended = rule.suspended_until is not None and check_at <= rule.suspended_until
         return Verdict(
             rule_id=rule.rule_id,
             status="unknown",
             absorption=None,
-            reason=f"规则处于 {rule.status.value}，尚未被接受，没有吸收义务",
-            next_action=f"运行 sopctl rule accept {rule.rule_id} 接受它，或保持观察",
+            reason=(
+                f"规则暂停至 {rule.suspended_until.isoformat()}，当前没有吸收义务"
+                if suspended
+                else f"规则处于 {rule.status.value}，当前没有吸收义务"
+            ),
+            next_action="等待自动恢复或经 lifecycle reinstate 提前恢复" if suspended else "无需动作",
             finding_ids=fids,
         )
 
+    evidence = effective_rule_inputs(rule, evidence)
     if rule.modality not in HARD_MODALITIES:
         return Verdict(
             rule_id=rule.rule_id,
@@ -245,10 +358,11 @@ def evaluate_rule(rule: Rule, evidence: list[Evidence], findings: list[Finding])
         related_findings=related,
         test_run=latest_test_run(evidence),
         declared_command=declared_test_command(evidence),
-        trace_guards=fresh_trace_guards(evidence),
+        trace_guards=fresh_trace_guards(evidence, at=check_at),
         trace_ids=[e.evidence_id for e in evidence if e.kind == "harness.trace"],
         attestations=fresh_attestations(evidence),
         attest_ids=[e.evidence_id for e in evidence if e.kind == "rule.attestation"],
+        at=check_at,
     )
     # 依据强度自曝：只要判定建立在消费证据上，就说明它是哪一级证据撑起来的。
     # 写进 reason 而不是只挂结构化字段，因为用户读的是渲染出来的那句话。
@@ -286,6 +400,7 @@ def _absorption_verdict(
     trace_ids: list[str] | None = None,
     attestations: dict[str, dict] | None = None,
     attest_ids: list[str] | None = None,
+    at: datetime,
 ) -> Verdict:
     if rule.state_markers and not rule.consumer_markers:
         unread = [
@@ -396,7 +511,7 @@ def _absorption_verdict(
                 evidence_ids=ids + [test_run.evidence_id],
                 finding_ids=fids,
             )
-        trace_ok, trace_say, trace_next = _trace_note(rule, trace_guards or {})
+        trace_ok, trace_say, trace_next = _trace_note(rule, trace_guards or {}, at=at)
         attest_ok, attest_say, attest_next = _attest_note(rule, attestations or {})
         base_ids = ids + [test_run.evidence_id] + (trace_ids or []) + (attest_ids or [])
         # 七条件齐备才颁 enforced：1/2/3 由本函数走到这里已证（有稳定 id、有生产
@@ -469,6 +584,16 @@ def _absorption_verdict(
     )
 
 
-def evaluate_all(rules: list[Rule], evidence: list[Evidence], findings: list[Finding]) -> list[Verdict]:
-    """只为当前有效规则产出执法判定；退休记录仍留在 registry 供解释。"""
-    return [evaluate_rule(r, evidence, findings) for r in active_rules(rules)]
+def evaluate_all(
+    rules: list[Rule],
+    evidence: list[Evidence],
+    findings: list[Finding],
+    *,
+    at=None,
+) -> list[Verdict]:
+    """只为固定时点的有效规则产出执法判定。"""
+    check_at = at or utcnow()
+    return [
+        evaluate_rule(rule, evidence, findings, at=check_at)
+        for rule in effective_rules(rules, at=check_at)
+    ]

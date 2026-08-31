@@ -1,0 +1,71 @@
+task_id: TASK-0047
+contract:
+  objective: 第七批 7D：统一固定时点 effective rules 与路径 scope 消费，接入 audit、verdict、conflict、maturity、task、repair
+    和 detectors，消除局部状态集合
+  allowed_writes:
+  - sopcontrol/audit.py
+  - sopcontrol/verdict.py
+  - sopcontrol/conflict.py
+  - sopcontrol/bootstrap.py
+  - sopcontrol/cli_task.py
+  - sopcontrol/cli_common.py
+  - sopcontrol/task.py
+  - sopcontrol/repair.py
+  - sopcontrol/project.py
+  - plugins/detectors/no_consumer.py
+  - plugins/detectors/reachability.py
+  - tests/constitution/test_rule_lifecycle.py
+  required_rules:
+  - CTRL-001
+  - SELF-001
+  - SELF-002
+  required_fields:
+  - effective_consumer_set
+  - scoped_evidence
+  - scoped_conflicts
+  - task_scope
+  - repair_scope
+  - compatibility
+  max_repairs: 1
+  repairs_fingerprint: null
+  write_granularity: file
+  strict_schema: true
+  capability_note: 当前模型未声明（已有画像 fixture-weak 不适用） tier=unknown：模型能力未知：按保守边界执行，文件级写入
+    + 强制 MUST 字段清单；行为事件建议 tier=strong（仅建议，不自动授权）
+  model_identity: ''
+status: verification_pending
+repair_count: 0
+changed_paths:
+- sopcontrol/audit.py
+- sopcontrol/verdict.py
+- sopcontrol/conflict.py
+- sopcontrol/bootstrap.py
+- sopcontrol/cli_task.py
+- sopcontrol/cli_common.py
+- sopcontrol/task.py
+- sopcontrol/repair.py
+- sopcontrol/project.py
+- plugins/detectors/no_consumer.py
+- plugins/detectors/reachability.py
+- tests/constitution/test_rule_lifecycle.py
+revision: 3
+created_at: '2026-08-31T13:39:13.518963Z'
+updated_at: '2026-08-31T16:08:02.817959Z'
+history:
+- at: '2026-08-31T13:40:41.382879Z'
+  action: accept
+  from_status: contract_proposed
+  to_status: executing
+  allowed: true
+  reason: 契约完整：目标、写入范围与可验证完成定义齐备
+  detail:
+    next_action: 执行变更后 task submit 提交改动路径
+- at: '2026-08-31T16:08:02.812729Z'
+  action: submit
+  from_status: executing
+  to_status: verification_pending
+  allowed: true
+  reason: 改动 12 个路径，全部在写入范围内；MUST 字段齐备 [effective_consumer_set, scoped_evidence, scoped_conflicts,
+    task_scope, repair_scope, compatibility]
+  detail:
+    next_action: 运行 task verify 由控制器独立审计

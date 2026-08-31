@@ -1,6 +1,12 @@
 """宪法测试：任务迁移门是纯函数、拒绝必可解释、路径规范化拒绝上跳。"""
 import builtins
+from datetime import datetime, timedelta, timezone
+import shutil
 
+from sopcontrol.audit import run_audit
+from sopcontrol.bootstrap import MATURITY_KIND
+from sopcontrol.model import effective_rules
+from sopcontrol.registry import Registry
 from sopcontrol.task import (
     Contract,
     TaskRecord,
@@ -54,6 +60,34 @@ def test_contract_without_completion_definition_is_rejected():
     decision = evaluate_transition(task, "accept", known_rule_ids=set())
     assert not decision.allowed
     assert "required_rules" in decision.reason
+
+
+def test_accept_rejects_allowed_writes_outside_required_rule_scope():
+    task = make_task(
+        contract=Contract(
+            objective="接线规则",
+            allowed_writes=["src", "docs"],
+            required_rules=["R-1"],
+        )
+    )
+    decision = evaluate_transition(
+        task,
+        "accept",
+        known_rule_ids={"R-1"},
+        rule_scopes={"R-1": ["src"]},
+    )
+    assert not decision.allowed
+    assert "docs" in decision.reason and "scope" in decision.reason
+
+
+def test_accept_keeps_project_scope_compatible():
+    decision = evaluate_transition(
+        make_task(),
+        "accept",
+        known_rule_ids={"R-1"},
+        rule_scopes={"R-1": []},
+    )
+    assert decision.allowed
 
 
 def test_unknown_rule_reference_is_rejected():
@@ -181,3 +215,71 @@ def test_file_granularity_uses_exact_paths_not_filename_shapes():
 
 def test_prefix_granularity_keeps_directory_scope():
     assert path_allowed("src/a.py", ["src"], write_granularity="prefix") is True
+
+
+def test_submit_rechecks_current_required_rule_scope():
+    task = make_task(status=TaskStatus.executing)
+    decision = evaluate_transition(
+        task,
+        "submit",
+        changed_paths=["src/app.py"],
+        known_rule_ids={"R-1"},
+        rule_scopes={"R-1": ["docs"]},
+    )
+    assert not decision.allowed
+    assert "src" in decision.reason and "scope" in decision.reason
+
+
+def test_verify_rechecks_current_required_rule_scope_fail_closed():
+    task = _pending_task()
+    task.changed_paths = ["src/app.py"]
+    decision = evaluate_transition(
+        task,
+        "verify",
+        rule_verdicts={"R-1": "pass"},
+        known_rule_ids=set(),
+        rule_scopes={},
+    )
+    assert decision.to_status == TaskStatus.blocked
+    assert "R-1" in decision.reason and "effective" in decision.reason
+
+
+def test_run_audit_uses_one_fixed_time_for_verdicts_and_maturity(tmp_path):
+    work = tmp_path / "project"
+    shutil.copytree("corpus/fixtures/jobflow-preview", work)
+    registry = Registry(work / ".sopcontrol" / "rules" / "registry.yaml")
+    until = datetime.now(timezone.utc) + timedelta(hours=1)
+    active = effective_rules(registry.load(), at=until - timedelta(hours=2))
+    active_ids = [rule.rule_id for rule in active]
+    for rule in active:
+        params = {
+            "action": "suspend",
+            "reason": "fixed audit boundary",
+            "actor": "test-human",
+            "until": until,
+        }
+        preview = registry.lifecycle_preview(rule.rule_id, **params)
+        registry.confirm_lifecycle(
+            rule.rule_id, preview_id=preview["preview_id"], **params
+        )
+
+    before = run_audit(work, [], [], at=until - timedelta(seconds=1))
+    after = run_audit(work, [], [], at=until + timedelta(seconds=1))
+
+    before_maturity = next(
+        evidence for evidence in before.evidence if evidence.kind == MATURITY_KIND
+    )
+    after_maturity = next(
+        evidence for evidence in after.evidence if evidence.kind == MATURITY_KIND
+    )
+    before_l1 = next(
+        order for order in before_maturity.observed["orders"] if order["rung"] == "L1"
+    )
+    after_l1 = next(
+        order for order in after_maturity.observed["orders"] if order["rung"] == "L1"
+    )
+
+    assert [verdict.rule_id for verdict in before.verdicts] == []
+    assert [verdict.rule_id for verdict in after.verdicts] == active_ids
+    assert before_l1["satisfied"] is False
+    assert after_l1["satisfied"] is True

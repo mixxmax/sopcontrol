@@ -116,3 +116,15 @@ Rust 集成测试是独立 crate：零 use 的测试文件经空边 modules 证�
 其正确性完全靠事后的完成门独立审计兜住；`--keep-worktree` 之外没有人工 review
 断点。当前仅支持 `harness=opencode`。
 
+## R12 可逆生命周期的事务与作用域边界（第七批 7E）
+
+生命周期 mutation 的 registry 互斥使用 `fcntl.flock`，当前只支持 POSIX/macOS；Windows 等
+无 `fcntl` 平台尚无等价锁实现。registry 与 AGENTS/CLAUDE 投影失败时按原字节回滚，但这只是
+进程内异常补偿，不是断电安全 journal：进程被杀或机器断电仍可能留下 registry/投影不一致，需
+`project check` / `doctor` 发现后人工恢复。
+
+scope v1 只建模项目级与仓库相对路径前缀，不覆盖 Evidence 的非路径 subject，也不表达任务、
+平台或时间级 scope；这些维度不能借现有路径 scope 假装已治理。普通规则 suspend 只移出该固定
+时点的 effective rules；控制面写保护等静态系统 invariant guards 是更底层信任边界，不随暂停关闭。
+反过来，v1 也没有让静态 guard 理解任意动态 scope 例外，需例外语义时仍走显式控制面变更。
+

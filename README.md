@@ -36,8 +36,10 @@
 B0–B3 能力见 git 历史；检测 10 模式（Python 以 AST 为准，JS/TS/Go/Rust 为词法剥离后
 的标识符级代理，边界见 RESIDUAL_RISKS.md）。
 
-- `sopctl rule deprecate|supersede` —— 规则永久退出的两阶段流程：先生成绑定完整 registry 快照的 preview ID，再由人工确认；确认后原子更新 registry 与 AGENTS/CLAUDE 投影
-- `sopctl task open/accept/submit/verify/deliver` —— 任务契约 → 受控执行 → 完成门 → 交付；任务与 repair 只能引用当前有效规则
+- `sopctl rule suspend --until` / `reinstate` / `narrow --scope` —— 第七批已完成的可逆生命周期；全部先生成绑定完整 registry 快照与动作参数的内容寻址 preview，再由人工原样确认。暂停在 `at <= until` 时仍无效，只有 `at > until` 自动恢复；narrow v1 只接受项目级或仓库相对路径前缀
+- `sopctl rule deprecate|supersede` —— 永久退出沿用同一两阶段确认，但 `deprecated/superseded` 绝不可恢复。普通 add/transition/save 入口不能绕过 lifecycle
+- 每次生命周期变更递增 revision，旧 attestation/trace 不证明新状态；投影、审计与其他消费者在一次操作内使用同一固定时点的 effective rules。静态系统 invariant guards 不因普通规则暂停而关闭
+- `sopctl task open/accept/submit/verify/deliver` —— 任务契约 → 受控执行 → 完成门 → 交付；任务与 repair 只能引用该固定时点的有效规则
 - 完成门只信独立审计（E3）：required_rules 全部 pass 才 verified；fail → blocked（人工）；
   gap → repair_required（按任务契约的能力预算熔断；unknown/无画像默认 1 轮）
 - 范围走私（契约外路径）拒绝该次提交，可自愈重试；revision 防旧上下文覆盖新状态

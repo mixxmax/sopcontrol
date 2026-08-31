@@ -1,0 +1,51 @@
+task_id: TASK-0044
+contract:
+  objective: 第七批 7A：建立可逆生命周期数据模型、固定时点有效性与仓库相对路径 scope 纯函数，保持旧 registry 兼容
+  allowed_writes:
+  - sopcontrol/model.py
+  - sopcontrol/scope.py
+  - tests/constitution/test_rule_lifecycle.py
+  required_rules:
+  - CTRL-001
+  - SELF-001
+  - SELF-002
+  required_fields:
+  - lifecycle_schema
+  - time_boundary
+  - scope_semantics
+  - legacy_compatibility
+  - tests
+  max_repairs: 1
+  repairs_fingerprint: null
+  write_granularity: file
+  strict_schema: true
+  capability_note: 当前模型未声明（已有画像 fixture-weak 不适用） tier=unknown：模型能力未知：按保守边界执行，文件级写入
+    + 强制 MUST 字段清单；行为事件建议 tier=strong（仅建议，不自动授权）
+  model_identity: ''
+status: verification_pending
+repair_count: 0
+changed_paths:
+- sopcontrol/model.py
+- sopcontrol/scope.py
+- tests/constitution/test_rule_lifecycle.py
+revision: 3
+created_at: '2026-08-31T13:38:40.353654Z'
+updated_at: '2026-08-31T16:07:58.938904Z'
+history:
+- at: '2026-08-31T13:40:04.766363Z'
+  action: accept
+  from_status: contract_proposed
+  to_status: executing
+  allowed: true
+  reason: 契约完整：目标、写入范围与可验证完成定义齐备
+  detail:
+    next_action: 执行变更后 task submit 提交改动路径
+- at: '2026-08-31T16:07:58.934586Z'
+  action: submit
+  from_status: executing
+  to_status: verification_pending
+  allowed: true
+  reason: 改动 3 个路径，全部在写入范围内；MUST 字段齐备 [lifecycle_schema, time_boundary, scope_semantics,
+    legacy_compatibility, tests]
+  detail:
+    next_action: 运行 task verify 由控制器独立审计

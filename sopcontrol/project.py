@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .model import Rule, active_rules
+from .model import Rule, effective_rules, utcnow
 from .registry import Registry
 from .task import LEGAL_ACTIONS
 
@@ -30,6 +30,7 @@ def render_projection(
     *,
     refresh_hint: str = "sopctl project codex",
     maturity=None,
+    at=None,
 ) -> str:
     """maturity 是 bootstrap.MaturityReport 或 None。
 
@@ -56,11 +57,14 @@ def render_projection(
         lines.append("- 明细与依据: `sopctl bootstrap`。低于 L3 时门以建议为主，"
                      "沉默不等于许可。")
         lines.append("")
-    hard = [r for r in active_rules(rules) if r.modality.value in _HARD]
+    projection_at = at or utcnow()
+    hard = [r for r in effective_rules(rules, at=projection_at) if r.modality.value in _HARD]
     if hard:
         lines.append("## 必须遵守的规则")
         for r in hard:
             bits = [f"[{r.rule_id}][{r.modality.value}] {r.statement}"]
+            if r.scope_paths:
+                bits.append(f"（作用域: {', '.join(r.scope_paths)}）")
             if r.consumer_markers:
                 bits.append(f"（生产消费者标记: {', '.join(r.consumer_markers)}）")
             if r.legacy_markers:
@@ -131,8 +135,8 @@ def merge_section(path: Path, section: str) -> Path:
     return path
 
 
-def _projection_inputs(root: Path):
-    """投影的全部输入源。写和查必须走同一条路径，否则 check 会报永久漂移。"""
+def _projection_inputs(root: Path, *, at):
+    """在固定时点读取投影输入，避免规则集合与成熟度跨边界分裂。"""
     rules = Registry(Path(root) / ".sopcontrol" / "rules" / "registry.yaml").load()
     from .bootstrap import assess_maturity
     from .task import TaskStore
@@ -141,7 +145,7 @@ def _projection_inputs(root: Path):
         tasks = TaskStore(root).list_all()
     except Exception:
         tasks = None
-    return rules, tasks, assess_maturity(root, rules)
+    return rules, tasks, assess_maturity(root, rules, at=at)
 
 
 def write_projection(root: Path, target: str = "codex") -> Path:
@@ -149,8 +153,11 @@ def write_projection(root: Path, target: str = "codex") -> Path:
     if target not in PROJECTION_TARGETS:
         raise ValueError(f"未知投影目标 {target!r}；可选: {', '.join(PROJECTION_TARGETS)}")
     filename, hint = PROJECTION_TARGETS[target]
-    rules, tasks, maturity = _projection_inputs(root)
-    section = render_projection(rules, tasks, refresh_hint=hint, maturity=maturity)
+    projection_at = utcnow()
+    rules, tasks, maturity = _projection_inputs(root, at=projection_at)
+    section = render_projection(
+        rules, tasks, refresh_hint=hint, maturity=maturity, at=projection_at
+    )
     return merge_section(Path(root) / filename, section)
 
 
@@ -158,9 +165,14 @@ def write_all_projections(root: Path) -> list[Path]:
     """同步写入 AGENTS.md 与 CLAUDE.md（codex/opencode 共用 AGENTS.md，只写一次）。"""
     written: list[Path] = []
     seen: set[str] = set()
-    rules, tasks, maturity = _projection_inputs(root)
+    projection_at = utcnow()
+    rules, tasks, maturity = _projection_inputs(root, at=projection_at)
     section = render_projection(
-        rules, tasks, refresh_hint="sopctl project all", maturity=maturity
+        rules,
+        tasks,
+        refresh_hint="sopctl project all",
+        maturity=maturity,
+        at=projection_at,
     )
     for _name, (filename, _hint) in PROJECTION_TARGETS.items():
         if filename in seen:
@@ -170,9 +182,11 @@ def write_all_projections(root: Path) -> list[Path]:
     return written
 
 
-def _expected_section(root: Path, refresh_hint: str) -> str:
-    rules, tasks, maturity = _projection_inputs(root)
-    return render_projection(rules, tasks, refresh_hint=refresh_hint, maturity=maturity)
+def _expected_section(root: Path, refresh_hint: str, *, at) -> str:
+    rules, tasks, maturity = _projection_inputs(root, at=at)
+    return render_projection(
+        rules, tasks, refresh_hint=refresh_hint, maturity=maturity, at=at
+    )
 
 
 def _disk_section(path: Path) -> str | None:
@@ -193,7 +207,8 @@ def check_projections(root: Path) -> list[dict]:
         (Path(root) / "AGENTS.md", "sopctl project all"),
         (Path(root) / "CLAUDE.md", "sopctl project all"),
     ]
-    # 去重文件
+    # 整次检查固定同一时点，避免暂停边界落在两个目标文件之间。
+    projection_at = utcnow()
     seen: set[str] = set()
     reports: list[dict] = []
     for path, hint in targets:
@@ -201,7 +216,7 @@ def check_projections(root: Path) -> list[dict]:
         if key in seen:
             continue
         seen.add(key)
-        expected = _expected_section(root, hint).rstrip() + "\n"
+        expected = _expected_section(root, hint, at=projection_at).rstrip() + "\n"
         disk = _disk_section(path)
         if disk is None:
             reports.append({

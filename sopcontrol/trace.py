@@ -105,37 +105,54 @@ def trace_evidence(root: Path) -> Optional[Evidence]:
         return None
 
     seen: dict[str, dict] = {}
-    latest_at = None
+    latest: Optional[tuple[datetime, str]] = None
+    saw_guard = False
     for ev in events:
-        at = str(ev.get("at") or "")
-        if latest_at is None or at > latest_at:
-            latest_at = at
-        for rid in ev.get("rule_ids") or []:
-            slot = seen.setdefault(str(rid), {"count": 0, "decisions": set(), "last_at": ""})
+        rule_ids = ev.get("rule_ids") or []
+        saw_guard = saw_guard or bool(rule_ids)
+        at_text = str(ev.get("at") or "")
+        at = _parse_at(at_text)
+        if at is None:
+            continue
+        if latest is None or at > latest[0]:
+            latest = (at, at_text)
+        for rid in rule_ids:
+            slot = seen.setdefault(
+                str(rid),
+                {"count": 0, "decisions": set(), "last": None},
+            )
             slot["count"] += 1
             slot["decisions"].add(str(ev.get("decision") or "?"))
-            if at > slot["last_at"]:
-                slot["last_at"] = at
-    if not seen:
+            if slot["last"] is None or at > slot["last"][0]:
+                slot["last"] = (at, at_text)
+    if not saw_guard:
         return None
+    if not seen or latest is None:
+        observed = {"guards": {}, "event_count": len(events), "latest_at": ""}
+        return Evidence(
+            kind=TRACE_KIND,
+            subject=TRACE_REL,
+            observed=observed,
+            observer="harness_trace",
+            level=4,
+            input_hash=content_hash(observed),
+            valid_until=utcnow() - FRESH_WINDOW,
+        )
 
     observed = {
         "guards": {
             rid: {
                 "count": slot["count"],
                 "decisions": sorted(slot["decisions"]),
-                "last_at": slot["last_at"],
+                "last_at": slot["last"][1],
             }
             for rid, slot in sorted(seen.items())
+            if slot["last"] is not None
         },
         "event_count": len(events),
-        "latest_at": latest_at,
+        "latest_at": latest[1],
     }
-    # 时间戳读不出来 = 无法证明新鲜 → valid_until 取一个确定的过去时刻，
-    # 证据必定被 run_audit 的过期过滤丢掉（fail-closed）。不用 utcnow()：
-    # 那是「刚好还没过期」的刀锋值，is_expired 用的是严格大于。
-    parsed = _parse_at(latest_at or "")
-    valid_until = (parsed + FRESH_WINDOW) if parsed is not None else utcnow() - FRESH_WINDOW
+    valid_until = latest[0] + FRESH_WINDOW
     return Evidence(
         kind=TRACE_KIND,
         subject=TRACE_REL,
