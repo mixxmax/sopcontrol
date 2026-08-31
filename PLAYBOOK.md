@@ -52,6 +52,12 @@ sopctl rule add --id MY-001 \
   --source-ref docs/sop.md --source-type document \
   --consumer-marker my_gate_function
 sopctl rule accept MY-001 .
+
+# 永久退出先预览；确认时必须带回同一快照的 preview_id
+sopctl rule deprecate MY-001 . --reason "结构保证已替代" --by human-reviewer
+sopctl rule deprecate MY-001 . --reason "结构保证已替代" --by human-reviewer \
+  --confirm-preview <PREVIEW-ID>
+# 用新规则接管时改用 rule supersede OLD --replacement NEW；可原子接受 proposed replacement
 ```
 
 Candidate 可先 `sopctl intake .` 或 `sopctl intake . --conversation chat.txt`；重复 guard/Finding/结构化纠正用 `sopctl candidate refresh .` 冷路径聚合，达到 3 个独立 occurrence 才物化。用 `candidate list/show/triage` 审查；批量裁决使用 `sopctl candidate batch-triage . --candidate-id CAND-X --candidate-id CAND-Y --status triaged`，任一 ID 无效则全部不变。**晋升必须显式 `sopctl rule add`，候选本身没有授权力**。

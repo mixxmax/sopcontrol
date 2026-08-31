@@ -36,13 +36,10 @@ from typing import Optional
 import yaml
 
 from .context import ProjectContext, is_production_path
-from .model import Evidence, Modality, RuleStatus, content_hash
+from .model import Evidence, Modality, RuleStatus, active_rules, content_hash
 
 MATURITY_KIND = "project.maturity"
 CONSTITUTION_REL = ".sopcontrol/constitution.yaml"
-
-# 规则处于这些状态才算「当前有效的记录目标」（与 project.py 的投影口径一致）
-_ACTIVE = {RuleStatus.accepted, RuleStatus.compiled, RuleStatus.activated, RuleStatus.monitored}
 
 
 # ---------------------------------------------------------------- 7.1 五项秩序
@@ -150,10 +147,10 @@ def check_orders(root: Path, rules: Optional[list] = None) -> list[dict]:
     root = Path(root)
     if rules is None:
         rules = _load_rules(root)
-    active = [r for r in rules if r.status in _ACTIVE]
+    active = active_rules(rules)
     interceptors = _interceptors(root)
     guarded = [r for r in active if r.guard_ids]
-    attested = [r for r in rules if r.source_hash and r.bypass_note.strip() and r.attested_by]
+    attested = [r for r in active if r.source_hash and r.bypass_note.strip() and r.attested_by]
     test_command = str(_manifest(root).get("test_command") or "").strip()
 
     sink = _evidence_sink_ready(root)

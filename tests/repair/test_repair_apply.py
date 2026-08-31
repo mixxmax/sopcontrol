@@ -7,6 +7,8 @@ from sopcontrol.audit import run_audit
 from sopcontrol.cli import main
 from sopcontrol.repair import apply_repair, open_repair
 from sopcontrol.task import TaskStatus, TaskStore
+from sopcontrol.worktree import WorktreeError, worktree_path
+from sopcontrol.worktree import WorktreeError, worktree_path
 
 
 def test_apply_repair_merges_allowed_paths_only(tmp_path):
@@ -90,3 +92,25 @@ def test_apply_repair_rejects_symlink_escaping_worktree(tmp_path):
     assert "src/evil.py" not in result["copied"]
     assert not (work / "src" / "evil.py").exists()
     assert outside.read_text() == "SECRET\n"
+
+
+def test_worktree_path_rejects_non_atomic_task_ids(tmp_path):
+    for task_id in (
+        "../evidence",
+        "../../.sopcontrol/evidence",
+        "TASK-1/../../evidence",
+        r"..\\evidence",
+        "/tmp/escape",
+        "",
+        ".",
+        "..",
+    ):
+        try:
+            worktree_path(tmp_path, task_id)
+        except WorktreeError:
+            pass
+        else:
+            raise AssertionError(f"非单一路径分量 task_id 被接受: {task_id!r}")
+
+    expected = tmp_path / ".sopcontrol" / "worktrees" / "TASK-0001"
+    assert worktree_path(tmp_path, "TASK-0001") == expected

@@ -1,0 +1,67 @@
+task_id: TASK-0033
+contract:
+  objective: 第六批核心：规则永久退出，支持 deprecate 与 supersede 的原子、可审计生命周期，并统一当前有效规则集合
+  allowed_writes:
+  - sopcontrol/model.py
+  - sopcontrol/registry.py
+  - sopcontrol/cli_rules.py
+  - sopcontrol/cli.py
+  - sopcontrol/project.py
+  - tests/constitution/test_rule_retirement.py
+  - DESIGN.md
+  - README.md
+  - ROADMAP.md
+  - PLAYBOOK.md
+  - SKILL.md
+  required_rules:
+  - CTRL-001
+  - SELF-001
+  - SELF-002
+  required_fields:
+  - lifecycle_fact
+  - supersede_validation
+  - active_rule_set
+  - atomicity
+  - docs
+  max_repairs: 1
+  repairs_fingerprint: null
+  write_granularity: file
+  strict_schema: true
+  capability_note: 当前模型未声明（已有画像 fixture-weak 不适用） tier=unknown：模型能力未知：按保守边界执行，文件级写入
+    + 强制 MUST 字段清单；行为事件建议 tier=strong（仅建议，不自动授权）
+  model_identity: ''
+status: verification_pending
+repair_count: 0
+changed_paths:
+- sopcontrol/model.py
+- sopcontrol/registry.py
+- sopcontrol/cli_rules.py
+- sopcontrol/cli.py
+- sopcontrol/project.py
+- tests/constitution/test_rule_retirement.py
+- DESIGN.md
+- README.md
+- ROADMAP.md
+- PLAYBOOK.md
+- SKILL.md
+revision: 3
+created_at: '2026-08-31T09:16:52.308123Z'
+updated_at: '2026-08-31T09:39:03.793605Z'
+history:
+- at: '2026-08-31T09:17:16.987415Z'
+  action: accept
+  from_status: contract_proposed
+  to_status: executing
+  allowed: true
+  reason: 契约完整：目标、写入范围与可验证完成定义齐备
+  detail:
+    next_action: 执行变更后 task submit 提交改动路径
+- at: '2026-08-31T09:39:03.789638Z'
+  action: submit
+  from_status: executing
+  to_status: verification_pending
+  allowed: true
+  reason: 改动 11 个路径，全部在写入范围内；MUST 字段齐备 [lifecycle_fact, supersede_validation, active_rule_set,
+    atomicity, docs]
+  detail:
+    next_action: 运行 task verify 由控制器独立审计

@@ -5,14 +5,8 @@
 """
 from __future__ import annotations
 
-from .model import Modality, Rule, RuleStatus
+from .model import ACTIVE_RULE_STATUSES, Modality, Rule
 
-GOVERNANCE_ACTIVE = {
-    RuleStatus.accepted,
-    RuleStatus.compiled,
-    RuleStatus.activated,
-    RuleStatus.monitored,
-}
 HARD = {Modality.MUST, Modality.MUST_NOT}
 
 
@@ -29,7 +23,7 @@ def find_conflicts(candidate: Rule, rules: list[Rule]) -> list[dict]:
     for other in rules:
         if other.rule_id == candidate.rule_id:
             continue
-        if other.status not in GOVERNANCE_ACTIVE or other.modality not in HARD:
+        if other.status not in ACTIVE_RULE_STATUSES or other.modality not in HARD:
             continue
         if candidate.rule_id in (other.supersedes or []):
             continue  # 显式取代关系，不算未治理冲突

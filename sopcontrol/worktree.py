@@ -23,7 +23,18 @@ def ensure_git_repo(root: Path) -> None:
 
 
 def worktree_path(root: Path, task_id: str) -> Path:
-    return Path(root) / ".sopcontrol" / "worktrees" / task_id
+    """返回隔离树路径；task_id 必须是单一路径分量。"""
+    value = str(task_id)
+    if (
+        not value
+        or value in {".", ".."}
+        or "/" in value
+        or "\\" in value
+        or Path(value).is_absolute()
+        or Path(value).name != value
+    ):
+        raise WorktreeError(f"非法 task_id {task_id!r}：只允许单一路径分量")
+    return Path(root) / ".sopcontrol" / "worktrees" / value
 
 
 def create_repair_worktree(root: Path, task_id: str) -> Path:

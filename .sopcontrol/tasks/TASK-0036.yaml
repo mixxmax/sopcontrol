@@ -1,0 +1,54 @@
+task_id: TASK-0036
+contract:
+  objective: 第六批伴随接线：审计检测器、任务契约与 repair 只接受当前有效规则，退休规则保留历史但不能产生新执法义务
+  allowed_writes:
+  - sopcontrol/audit.py
+  - sopcontrol/cli_common.py
+  - sopcontrol/cli_task.py
+  - sopcontrol/repair.py
+  - tests/constitution/test_rule_retirement.py
+  required_rules:
+  - CTRL-001
+  - SELF-001
+  - SELF-002
+  required_fields:
+  - active_audit_set
+  - task_rule_validation
+  - repair_rule_validation
+  - compatibility
+  max_repairs: 1
+  repairs_fingerprint: null
+  write_granularity: file
+  strict_schema: true
+  capability_note: 当前模型未声明（已有画像 fixture-weak 不适用） tier=unknown：模型能力未知：按保守边界执行，文件级写入
+    + 强制 MUST 字段清单；行为事件建议 tier=strong（仅建议，不自动授权）
+  model_identity: ''
+status: verification_pending
+repair_count: 0
+changed_paths:
+- sopcontrol/audit.py
+- sopcontrol/cli_common.py
+- sopcontrol/cli_task.py
+- sopcontrol/repair.py
+- tests/constitution/test_rule_retirement.py
+revision: 3
+created_at: '2026-08-31T09:28:12.579344Z'
+updated_at: '2026-08-31T09:39:04.600601Z'
+history:
+- at: '2026-08-31T09:28:12.790506Z'
+  action: accept
+  from_status: contract_proposed
+  to_status: executing
+  allowed: true
+  reason: 契约完整：目标、写入范围与可验证完成定义齐备
+  detail:
+    next_action: 执行变更后 task submit 提交改动路径
+- at: '2026-08-31T09:39:04.597802Z'
+  action: submit
+  from_status: executing
+  to_status: verification_pending
+  allowed: true
+  reason: 改动 5 个路径，全部在写入范围内；MUST 字段齐备 [active_audit_set, task_rule_validation, repair_rule_validation,
+    compatibility]
+  detail:
+    next_action: 运行 task verify 由控制器独立审计

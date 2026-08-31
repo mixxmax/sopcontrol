@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .model import Rule, RuleStatus
+from .model import Rule, active_rules
 from .registry import Registry
 from .task import LEGAL_ACTIONS
 
@@ -21,7 +21,6 @@ PROJECTION_TARGETS = {
     "claude": ("CLAUDE.md", "sopctl project claude"),
 }
 
-_ACTIVE = {RuleStatus.accepted, RuleStatus.compiled, RuleStatus.activated, RuleStatus.monitored}
 _HARD = {"MUST", "MUST_NOT"}
 
 
@@ -57,7 +56,7 @@ def render_projection(
         lines.append("- 明细与依据: `sopctl bootstrap`。低于 L3 时门以建议为主，"
                      "沉默不等于许可。")
         lines.append("")
-    hard = [r for r in rules if r.status in _ACTIVE and r.modality.value in _HARD]
+    hard = [r for r in active_rules(rules) if r.modality.value in _HARD]
     if hard:
         lines.append("## 必须遵守的规则")
         for r in hard:

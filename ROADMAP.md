@@ -78,6 +78,9 @@
 - [x] **第五批：批量候选裁决与信任根收口（2026-08-31）**：`candidate batch-triage` 对全部 ID
   预校验后一次保存，未知 ID 时零变更；复合 shell 命令不能用 `sopctl` 子串绕过控制面保护；
   已批准画像锚定行为状态存在性，同一拒绝重放不再滑动续期。
+- [x] **第六批：规则永久退出（2026-08-31）**：`rule deprecate/supersede` 以绑定 registry 快照的
+  preview ID 做人工两阶段确认；旧规则退休、replacement 接管与平台投影全成或全回滚。统一
+  `active_rules` 供冲突、审计、成熟度、任务、repair 与投影消费；历史记录保留但不再产生新义务。
 
 ### B5 模式库扩展 — 完成（2026-08-24 凌晨，经任务机自应用交付）
 - [x] `write_only_state`（只写不读代理，info；shop + jobflow 双域）

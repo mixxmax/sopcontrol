@@ -185,7 +185,14 @@ def _task_decide(
 
     store = TaskStore(root)
     task = store.load(task_id)
-    known = {r.rule_id for r in Registry(root / ".sopcontrol" / "rules" / "registry.yaml").load()}
+    from .model import active_rules
+
+    known = {
+        rule.rule_id
+        for rule in active_rules(
+            Registry(root / ".sopcontrol" / "rules" / "registry.yaml").load()
+        )
+    }
     from_status = task.status.value
     if action == "verify":
         decision = run_task_verify(root, SENSORS, DETECTORS, task)

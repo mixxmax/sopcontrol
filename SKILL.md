@@ -15,6 +15,8 @@
 ```text
 sopctl audit .
 sopctl explain <RULE-ID> .
+sopctl rule deprecate <RULE-ID> . --reason "..." --by <HUMAN>  # 先预览，再带 --confirm-preview 确认
+sopctl rule supersede <OLD-ID> . --replacement <NEW-ID> --reason "..." --by <HUMAN>
 sopctl task open . --model <CURRENT-MODEL> --objective "..." \
   --allow <exact-file> --require-rule <ID> --require-field <name>
 sopctl task accept|submit|verify|deliver <TASK-ID> .

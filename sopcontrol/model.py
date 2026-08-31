@@ -59,6 +59,18 @@ ALLOWED_TRANSITIONS: dict[RuleStatus, frozenset] = {
     RuleStatus.deprecated: frozenset(),
 }
 
+ACTIVE_RULE_STATUSES = frozenset({
+    RuleStatus.accepted,
+    RuleStatus.compiled,
+    RuleStatus.activated,
+    RuleStatus.monitored,
+})
+
+
+def active_rules(rules: list["Rule"]) -> list["Rule"]:
+    """当前参与冲突、执法、成熟度与平台投影的唯一规则集合。"""
+    return [rule for rule in rules if rule.status in ACTIVE_RULE_STATUSES]
+
 
 class Absorption(str, Enum):
     documented = "documented"              # 只存在于文档/对话，无任何代码消费者
@@ -105,6 +117,11 @@ class Rule(BaseModel):
     attested_by: str = ""
     attested_at: Optional[datetime] = None
     supersedes: list[str] = Field(default_factory=list)
+    superseded_by: str = ""
+    retirement_reason: str = ""
+    retired_by: str = ""
+    retired_at: Optional[datetime] = None
+    retirement_id: str = ""
     tags: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=utcnow)
     accepted_at: Optional[datetime] = None

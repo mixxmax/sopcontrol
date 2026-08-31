@@ -11,7 +11,7 @@ from .attest import attestation_evidence
 from .bootstrap import maturity_evidence
 from .context import ProjectContext
 from .ledger import Ledger
-from .model import Evidence, Finding, Rule, Verdict
+from .model import Evidence, Finding, Rule, Verdict, active_rules
 from .registry import Registry
 from .task import TaskRecord, TransitionDecision, evaluate_transition
 from .testrun import declaration_evidence
@@ -38,6 +38,7 @@ def run_audit(
     root = Path(root)
     ctx = ProjectContext(root)
     rules = Registry(root / ".sopcontrol" / "rules" / "registry.yaml").load()
+    current_rules = active_rules(rules)
 
     evidence: list[Evidence] = list(extra_evidence or [])
     # 「项目声明了测试命令」这一事实每轮都送进判定器（零成本，不跑命令）：
@@ -49,7 +50,7 @@ def run_audit(
     # 确认书的版本比对每轮重算（手册 6.5 条件5/7）：源文档改一个字节，上一轮的
     # 「文档-实现一致」就不再算数。放在这里而不是传感器里，因为它要读注册表，
     # 而传感器只看项目文件。
-    evidence.extend(attestation_evidence(root, rules))
+    evidence.extend(attestation_evidence(root, current_rules))
     # 成熟度（手册 7.3）与确认书同处一层：都要读 .sopcontrol 自身状态，传感器看不见。
     # 每轮重算而不是缓存——装了钩子、声明了验收命令，下一轮就该反映出来。
     evidence.append(maturity_evidence(root, rules))
@@ -60,9 +61,9 @@ def run_audit(
 
     findings: list[Finding] = []
     for detector in detectors:
-        findings.extend(detector.detect(rules, evidence))
+        findings.extend(detector.detect(current_rules, evidence))
 
-    verdicts = evaluate_all(rules, evidence, findings)
+    verdicts = evaluate_all(current_rules, evidence, findings)
 
     if persist:
         ledger = Ledger(root / ".sopcontrol" / "evidence" / "ledger.jsonl")
@@ -145,7 +146,7 @@ def run_task_verify(root: Path, sensors: list, detectors: list, task: TaskRecord
     return evaluate_transition(
         task, "verify",
         rule_verdicts=verdicts,
-        known_rule_ids={r.rule_id for r in report.rules},
+        known_rule_ids={r.rule_id for r in active_rules(report.rules)},
         ledger_tampered=tampered,
         controller_dirty=controller_dirty,
         test_run=dict(ev.observed or {}) if ev is not None else None,

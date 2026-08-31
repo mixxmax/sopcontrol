@@ -207,6 +207,8 @@ JSON 或指令失手 → `fragile`；边界失手 → `weak`；无画像或探�
 未知则零变更。文档/对话中的显式永久政策仍可立即成为候选。Candidate 仅供审查，不被
 capability、task、harness 或 gate 权限路径消费；晋升仍须人工执行 `sopctl rule add`。
 
+**规则永久退出（第六批）**：`rule deprecate` / `rule supersede` 采用内容寻址的两阶段确认；预览绑定完整 registry 快照、动作、理由和人工确认人，registry 变化后旧 preview 立即失效。确认时一次保存旧规则退休事实与 replacement 的 `supersedes` 关系；proposed/clarified replacement 可在同一事务中原子 accepted，但仍须通过第三方冲突校验。registry 与 AGENTS/CLAUDE 投影构成用户可见事务，投影失败时恢复三者原字节。历史规则、证据与 Finding 保留用于解释，但只有统一的 `active_rules()` 集合参与冲突、审计、成熟度、任务、repair 与平台投影；退休规则不能产生新的执法义务。
+
 ## 17. 垂直骨干役用闭环（2026-08-25 补）
 
 标准：控制闭环齐备（检测智力与多语言留给插卡）。收官三项：

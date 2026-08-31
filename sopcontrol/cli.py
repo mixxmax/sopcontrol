@@ -65,6 +65,20 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("path", nargs="?", default=".")
     p.set_defaults(func=cmd_rule_accept)
 
+    for name, help_text in (
+        ("deprecate", "永久废弃当前有效规则（先预览，再确认）"),
+        ("supersede", "用另一条当前有效规则永久取代旧规则（先预览，再确认）"),
+    ):
+        p = rule_sub.add_parser(name, help=help_text)
+        p.add_argument("rule_id")
+        p.add_argument("path", nargs="?", default=".")
+        if name == "supersede":
+            p.add_argument("--replacement", required=True, help="接管旧规则的当前有效 rule_id")
+        p.add_argument("--reason", required=True, help="永久退出的审计理由")
+        p.add_argument("--by", required=True, help="人工确认人；agent 自签无效")
+        p.add_argument("--confirm-preview", help="回传首次预览输出的 preview_id 才执行")
+        p.set_defaults(func=cmd_rule_retire)
+
     p = rule_sub.add_parser(
         "attest", help="记录规则确认书：绑定源文档版本 + bypass 分析（手册 6.5 条件5/7）"
     )

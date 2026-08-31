@@ -11,16 +11,10 @@ from .model import (
     Finding,
     Modality,
     Rule,
-    RuleStatus,
     Verdict,
+    active_rules,
 )
 
-GOVERNANCE_ACTIVE = {
-    RuleStatus.accepted,
-    RuleStatus.compiled,
-    RuleStatus.activated,
-    RuleStatus.monitored,
-}
 HARD_MODALITIES = {Modality.MUST, Modality.MUST_NOT}
 
 
@@ -225,7 +219,7 @@ def evaluate_rule(rule: Rule, evidence: list[Evidence], findings: list[Finding])
     related = [f for f in findings if f.rule_id == rule.rule_id]
     fids = [f.finding_id for f in related]
 
-    if rule.status not in GOVERNANCE_ACTIVE:
+    if rule not in active_rules([rule]):
         return Verdict(
             rule_id=rule.rule_id,
             status="unknown",
@@ -476,4 +470,5 @@ def _absorption_verdict(
 
 
 def evaluate_all(rules: list[Rule], evidence: list[Evidence], findings: list[Finding]) -> list[Verdict]:
-    return [evaluate_rule(r, evidence, findings) for r in rules]
+    """只为当前有效规则产出执法判定；退休记录仍留在 registry 供解释。"""
+    return [evaluate_rule(r, evidence, findings) for r in active_rules(rules)]

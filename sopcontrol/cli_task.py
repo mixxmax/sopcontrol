@@ -93,6 +93,26 @@ def cmd_task(args) -> int:
             except ValueError as exc:
                 print(f"错误: {exc}", file=sys.stderr)
                 return 2
+        from .model import active_rules
+
+        required_rule_ids = list(args.require_rule or [])
+        current_rule_ids = {
+            rule.rule_id
+            for rule in active_rules(
+                Registry(root / ".sopcontrol" / "rules" / "registry.yaml").load()
+            )
+        }
+        invalid_rule_ids = [
+            rule_id for rule_id in required_rule_ids if rule_id not in current_rule_ids
+        ]
+        if invalid_rule_ids:
+            print(
+                "错误: 任务完成条件只能引用当前有效规则；不存在或已退出: "
+                + ", ".join(invalid_rule_ids),
+                file=sys.stderr,
+            )
+            return 2
+
         profile = load_profile(root)
         current_model = getattr(args, "model", None)
         from .behavior_state import activate_behavior_ceiling, effective_behavior_ceiling

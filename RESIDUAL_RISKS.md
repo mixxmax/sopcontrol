@@ -107,7 +107,9 @@ Rust 集成测试是独立 crate：零 use 的测试文件经空边 modules 证�
 
 `sopctl repair apply`（自动修复者 v0）已补上 git worktree 隔离：模型只在
 `.sopcontrol/worktrees/<task_id>` 内改动，回主树时按 `allowed_writes` 过滤并
-硬排除 `.sopcontrol/`，契约外改动留在隔离树中随之销毁。
+硬排除 `.sopcontrol/`，契约外改动留在隔离树中随之销毁。`worktree_path` 自身要求
+`task_id` 是单一路径分量，绝对路径、`..`、正反斜杠穿越均在底层拒绝，不依赖上游
+`TaskStore.load` 偶然兜底。
 
 **仍存的边界**：合并回主树用文件复制，不是 git 合并——主树同一文件的未提交改动
 会被覆盖（无三方合并、无冲突检测）。修复者产出的补丁本身未经审阅即落主树，

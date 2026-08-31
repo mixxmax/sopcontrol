@@ -36,7 +36,8 @@
 B0–B3 能力见 git 历史；检测 10 模式（Python 以 AST 为准，JS/TS/Go/Rust 为词法剥离后
 的标识符级代理，边界见 RESIDUAL_RISKS.md）。
 
-- `sopctl task open/accept/submit/verify/deliver` —— 任务契约 → 受控执行 → 完成门 → 交付
+- `sopctl rule deprecate|supersede` —— 规则永久退出的两阶段流程：先生成绑定完整 registry 快照的 preview ID，再由人工确认；确认后原子更新 registry 与 AGENTS/CLAUDE 投影
+- `sopctl task open/accept/submit/verify/deliver` —— 任务契约 → 受控执行 → 完成门 → 交付；任务与 repair 只能引用当前有效规则
 - 完成门只信独立审计（E3）：required_rules 全部 pass 才 verified；fail → blocked（人工）；
   gap → repair_required（按任务契约的能力预算熔断；unknown/无画像默认 1 轮）
 - 范围走私（契约外路径）拒绝该次提交，可自愈重试；revision 防旧上下文覆盖新状态

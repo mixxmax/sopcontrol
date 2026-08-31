@@ -44,10 +44,15 @@ def open_repair(
     if not finding.rule_id:
         raise RepairError(f"finding {finding_id} 不关联规则，无法定义完成标准，不开修复任务")
 
-    rules = {r.rule_id: r for r in Registry(root / ".sopcontrol" / "rules" / "registry.yaml").load()}
+    from .model import active_rules
+
+    all_rules = Registry(root / ".sopcontrol" / "rules" / "registry.yaml").load()
+    rules = {rule.rule_id: rule for rule in active_rules(all_rules)}
     rule = rules.get(finding.rule_id)
     if rule is None:
-        raise RepairError(f"finding 引用的规则 {finding.rule_id} 不在注册表")
+        raise RepairError(
+            f"finding 引用的规则 {finding.rule_id} 不存在或已永久退出，不能产生新的修复义务"
+        )
 
     store = TaskStore(root)
     same = [t for t in store.list_all() if t.contract.repairs_fingerprint == finding.fingerprint]
