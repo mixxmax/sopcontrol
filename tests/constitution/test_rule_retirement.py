@@ -319,6 +319,24 @@ def test_public_save_cannot_change_or_remove_historical_retirement(tmp_path, cap
         assert registry.get("DEPLOY-001").model_dump(mode="json") == retired
 
 
+def test_public_save_rejects_duplicate_id_before_retirement_validation(tmp_path, capsys):
+    work = _work(tmp_path)
+    registry = Registry(work / ".sopcontrol/rules/registry.yaml")
+    _deprecate(work, capsys)
+    retired = registry.get("DEPLOY-001").model_dump(mode="json")
+    rules = registry.load()
+    original = next(rule for rule in rules if rule.rule_id == "DEPLOY-001")
+    rewritten = original.model_copy(update={"statement": "重复项改写历史"})
+    rules.extend([rewritten, original.model_copy(deep=True)])
+
+    with pytest.raises(RegistryError, match="重复 rule_id: DEPLOY-001"):
+        registry.save(rules)
+
+    loaded = registry.load()
+    assert len([rule for rule in loaded if rule.rule_id == "DEPLOY-001"]) == 1
+    assert registry.get("DEPLOY-001").model_dump(mode="json") == retired
+
+
 def test_public_save_preserves_unchanged_retirement_during_ordinary_update(tmp_path, capsys):
     work = _work(tmp_path)
     registry = Registry(work / ".sopcontrol/rules/registry.yaml")

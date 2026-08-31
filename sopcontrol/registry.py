@@ -49,6 +49,11 @@ class Registry:
 
     def save(self, rules: list[Rule]) -> None:
         """保存普通规则更新；退休记录只能由 confirm_retirement 创建且保持终态。"""
+        seen: set[str] = set()
+        for rule in rules:
+            if rule.rule_id in seen:
+                raise RegistryError(f"注册表中存在重复 rule_id: {rule.rule_id}")
+            seen.add(rule.rule_id)
         previous = {rule.rule_id: rule for rule in self.load()} if self.path.exists() else {}
         incoming = {rule.rule_id: rule for rule in rules}
         for rule in rules:
@@ -249,7 +254,7 @@ class Registry:
     def transition(self, rule_id: str, new_status: RuleStatus) -> Rule:
         from .conflict import find_conflicts
 
-        if new_status in {RuleStatus.deprecated, RuleStatus.superseded}:
+        if new_status in RETIRED_RULE_STATUSES:
             raise RegistryError(
                 "永久退出状态只能通过 deprecate/supersede 预览确认流程写入"
             )
