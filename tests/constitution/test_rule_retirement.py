@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 import shutil
+import threading
 
 import pytest
 
@@ -431,6 +432,143 @@ def test_task_accept_rejects_rule_retired_after_contract_creation(tmp_path, caps
     assert task.status == TaskStatus.contract_proposed
     assert task.history[-1].allowed is False
     assert "引用了不存在的规则: DEPLOY-001" in output
+
+
+def test_concurrent_retirement_confirmation_cannot_restore_retired_history(
+    tmp_path, monkeypatch
+):
+    work = _work(tmp_path)
+    registry_a = Registry(work / ".sopcontrol/rules/registry.yaml")
+    registry_b = Registry(work / ".sopcontrol/rules/registry.yaml")
+    preview_a = registry_a.retirement_preview(
+        "DEPLOY-001", action="deprecate", reason="并发退出 A", actor="human-reviewer"
+    )["preview_id"]
+    preview_b = registry_b.retirement_preview(
+        "ROLLBACK-001", action="deprecate", reason="并发退出 B", actor="human-reviewer"
+    )["preview_id"]
+
+    first_at_write = threading.Event()
+    release_first = threading.Event()
+    second_done = threading.Event()
+    original_write = Registry._write
+
+    def controlled_write(self, rules):
+        if threading.current_thread().name == "retire-a":
+            first_at_write.set()
+            assert release_first.wait(timeout=5)
+        original_write(self, rules)
+
+    monkeypatch.setattr(Registry, "_write", controlled_write)
+    results = []
+    errors = []
+
+    def confirm(registry, rule_id, reason, preview_id, done=None):
+        try:
+            registry.confirm_retirement(
+                rule_id,
+                action="deprecate",
+                reason=reason,
+                actor="human-reviewer",
+                preview_id=preview_id,
+            )
+            results.append(rule_id)
+        except Exception as exc:  # 线程中的异常必须回传主测试断言
+            errors.append(exc)
+        finally:
+            if done is not None:
+                done.set()
+
+    thread_a = threading.Thread(
+        target=confirm,
+        name="retire-a",
+        args=(registry_a, "DEPLOY-001", "并发退出 A", preview_a),
+    )
+    thread_a.start()
+    assert first_at_write.wait(timeout=5)
+
+    thread_b = threading.Thread(
+        target=confirm,
+        name="retire-b",
+        args=(registry_b, "ROLLBACK-001", "并发退出 B", preview_b, second_done),
+    )
+    thread_b.start()
+    second_done.wait(timeout=0.5)
+    release_first.set()
+    thread_a.join(timeout=5)
+    thread_b.join(timeout=5)
+
+    assert not thread_a.is_alive() and not thread_b.is_alive()
+    assert results == ["DEPLOY-001"]
+    assert len(errors) == 1
+    assert isinstance(errors[0], RegistryError)
+    assert "preview_id 已失效" in str(errors[0])
+    assert registry_a.get("DEPLOY-001").status == RuleStatus.deprecated
+    assert registry_a.get("ROLLBACK-001").status == RuleStatus.accepted
+
+
+def test_projection_rollback_does_not_erase_concurrent_registry_write(
+    tmp_path, monkeypatch
+):
+    work = _work(tmp_path)
+    registry = Registry(work / ".sopcontrol/rules/registry.yaml")
+    preview_id = registry.retirement_preview(
+        "DEPLOY-001",
+        action="deprecate",
+        reason="投影失败回滚",
+        actor="human-reviewer",
+    )["preview_id"]
+    projection_started = threading.Event()
+    release_projection = threading.Event()
+    add_done = threading.Event()
+    results = {}
+
+    def fail_projection(root):
+        projection_started.set()
+        assert release_projection.wait(timeout=5)
+        raise OSError("projection failed")
+
+    import sopcontrol.project
+
+    monkeypatch.setattr(sopcontrol.project, "write_all_projections", fail_projection)
+
+    def retire():
+        results["retire"] = main([
+            "rule", "deprecate", "DEPLOY-001", str(work),
+            "--reason", "投影失败回滚",
+            "--by", "human-reviewer",
+            "--confirm-preview", preview_id,
+        ])
+
+    def add_rule():
+        try:
+            Registry(work / ".sopcontrol/rules/registry.yaml").add(Rule(
+                rule_id="CONCURRENT-ADD",
+                statement="并发合法写入不得被回滚抹除",
+                modality=Modality.MUST,
+                status=RuleStatus.proposed,
+                source=SourceRef(type="document", ref="docs/runbook.md"),
+            ))
+            results["add"] = "ok"
+        finally:
+            add_done.set()
+
+    retire_thread = threading.Thread(target=retire, name="retire-with-projection")
+    retire_thread.start()
+    assert projection_started.wait(timeout=5)
+
+    add_thread = threading.Thread(target=add_rule, name="concurrent-add")
+    add_thread.start()
+    add_done.wait(timeout=0.5)
+    blocked_during_projection = not add_done.is_set()
+    release_projection.set()
+    retire_thread.join(timeout=5)
+    add_thread.join(timeout=5)
+
+    assert not retire_thread.is_alive() and not add_thread.is_alive()
+    assert blocked_during_projection is True
+    assert results == {"retire": 2, "add": "ok"}
+    assert registry.get("DEPLOY-001").status == RuleStatus.accepted
+    assert registry.get("CONCURRENT-ADD").status == RuleStatus.proposed
 
 
 def test_retired_rule_no_longer_blocks_opposite_replacement_rule(tmp_path, capsys):

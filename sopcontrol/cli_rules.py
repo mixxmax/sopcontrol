@@ -127,33 +127,34 @@ def cmd_rule_retire(args) -> int:
         return 0
 
     tracked = [registry.path, root / "AGENTS.md", root / "CLAUDE.md"]
-    before = {path: path.read_bytes() if path.exists() else None for path in tracked}
-    try:
-        retired = registry.confirm_retirement(
-            args.rule_id,
-            action=action,
-            reason=args.reason,
-            actor=args.by,
-            preview_id=supplied,
-            replacement=replacement,
-        )
-        from .project import write_all_projections
+    with registry.exclusive():
+        before = {path: path.read_bytes() if path.exists() else None for path in tracked}
+        try:
+            retired = registry.confirm_retirement(
+                args.rule_id,
+                action=action,
+                reason=args.reason,
+                actor=args.by,
+                preview_id=supplied,
+                replacement=replacement,
+            )
+            from .project import write_all_projections
 
-        write_all_projections(root)
-    except Exception as exc:  # registry 与投影构成一个用户可见事务
-        for path, content in before.items():
-            try:
-                if content is None:
-                    path.unlink(missing_ok=True)
-                else:
-                    path.parent.mkdir(parents=True, exist_ok=True)
-                    path.write_bytes(content)
-            except OSError:
-                pass
-        if isinstance(exc, RegistryError):
-            raise
-        print(f"错误: 规则退出未完成，registry 与投影已回滚（{exc}）", file=sys.stderr)
-        return 2
+            write_all_projections(root)
+        except Exception as exc:  # registry 与投影构成一个用户可见事务
+            for path, content in before.items():
+                try:
+                    if content is None:
+                        path.unlink(missing_ok=True)
+                    else:
+                        path.parent.mkdir(parents=True, exist_ok=True)
+                        path.write_bytes(content)
+                except OSError:
+                    pass
+            if isinstance(exc, RegistryError):
+                raise
+            print(f"错误: 规则退出未完成，registry 与投影已回滚（{exc}）", file=sys.stderr)
+            return 2
 
     suffix = f"；由 {replacement} 接管" if replacement else ""
     print(

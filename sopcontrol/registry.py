@@ -1,7 +1,12 @@
 """规则注册表：.sopcontrol/rules/registry.yaml 的载入、校验与生命周期迁移。"""
 from __future__ import annotations
 
+from contextlib import contextmanager
+import fcntl
+import os
 from pathlib import Path
+import tempfile
+import threading
 
 import yaml
 
@@ -20,9 +25,52 @@ class RegistryError(Exception):
     pass
 
 
+class _RegistryPathLock:
+    def __init__(self) -> None:
+        self.thread_lock = threading.RLock()
+        self.local = threading.local()
+
+
+_PATH_LOCKS: dict[str, _RegistryPathLock] = {}
+_PATH_LOCKS_GUARD = threading.Lock()
+
+
 class Registry:
     def __init__(self, path: Path):
         self.path = Path(path)
+
+    def _lock_path(self) -> Path:
+        resolved = self.path.resolve()
+        if self.path.parent.name == "rules" and self.path.parent.parent.name == ".sopcontrol":
+            root = self.path.parent.parent.parent
+        else:
+            root = self.path.parent
+        return root / ".sopcontrol-local" / "locks" / f"registry-{content_hash(str(resolved))}.lock"
+
+    @contextmanager
+    def exclusive(self):
+        """同一路径的进程内与跨进程可重入写锁。"""
+        key = str(self.path.resolve())
+        with _PATH_LOCKS_GUARD:
+            state = _PATH_LOCKS.setdefault(key, _RegistryPathLock())
+        with state.thread_lock:
+            depth = getattr(state.local, "depth", 0)
+            if depth == 0:
+                lock_path = self._lock_path()
+                lock_path.parent.mkdir(parents=True, exist_ok=True)
+                descriptor = lock_path.open("a+")
+                fcntl.flock(descriptor.fileno(), fcntl.LOCK_EX)
+                state.local.descriptor = descriptor
+            state.local.depth = depth + 1
+            try:
+                yield
+            finally:
+                state.local.depth -= 1
+                if state.local.depth == 0:
+                    descriptor = state.local.descriptor
+                    fcntl.flock(descriptor.fileno(), fcntl.LOCK_UN)
+                    descriptor.close()
+                    del state.local.descriptor
 
     def load(self) -> list[Rule]:
         if not self.path.exists():
@@ -43,12 +91,26 @@ class Registry:
     def _write(self, rules: list[Rule]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         payload = {"rules": [r.model_dump(mode="json") for r in rules]}
-        self.path.write_text(
-            yaml.safe_dump(payload, allow_unicode=True, sort_keys=False), encoding="utf-8"
+        serialized = yaml.safe_dump(payload, allow_unicode=True, sort_keys=False)
+        descriptor, temporary = tempfile.mkstemp(
+            prefix=f".{self.path.name}.", suffix=".tmp", dir=self.path.parent
         )
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                handle.write(serialized)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, self.path)
+            directory = os.open(self.path.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
 
-    def save(self, rules: list[Rule]) -> None:
-        """保存普通规则更新；退休记录只能由 confirm_retirement 创建且保持终态。"""
+    def _save_locked(self, rules: list[Rule]) -> None:
         seen: set[str] = set()
         for rule in rules:
             if rule.rule_id in seen:
@@ -74,18 +136,24 @@ class Registry:
                 )
         self._write(rules)
 
+    def save(self, rules: list[Rule]) -> None:
+        """保存普通规则更新；退休记录只能由 confirm_retirement 创建且保持终态。"""
+        with self.exclusive():
+            self._save_locked(rules)
+
     def add(self, rule: Rule) -> None:
-        if rule.status in RETIRED_RULE_STATUSES:
-            raise RegistryError(
-                "永久退出状态不能通过普通规则登记创建；请先登记非退休规则，再使用 deprecate/supersede 预览确认流程"
-            )
-        rules = self.load()
-        if any(r.rule_id == rule.rule_id for r in rules):
-            raise RegistryError(
-                f"rule_id {rule.rule_id} 已存在；如要替换旧规则请使用 supersede 流程，而不是覆盖"
-            )
-        rules.append(rule)
-        self.save(rules)
+        with self.exclusive():
+            if rule.status in RETIRED_RULE_STATUSES:
+                raise RegistryError(
+                    "永久退出状态不能通过普通规则登记创建；请先登记非退休规则，再使用 deprecate/supersede 预览确认流程"
+                )
+            rules = self.load()
+            if any(r.rule_id == rule.rule_id for r in rules):
+                raise RegistryError(
+                    f"rule_id {rule.rule_id} 已存在；如要替换旧规则请使用 supersede 流程，而不是覆盖"
+                )
+            rules.append(rule)
+            self._save_locked(rules)
 
     def get(self, rule_id: str) -> Rule:
         for rule in self.load():
@@ -191,65 +259,72 @@ class Registry:
         replacement: str = "",
     ) -> Rule:
         """确认内容寻址预览；一次保存更新旧规则和 replacement 两端。"""
-        rules = self.load()
-        by_id = {rule.rule_id: rule for rule in rules}
-        existing = by_id.get(rule_id)
-        expected_status = RuleStatus.deprecated if action == "deprecate" else RuleStatus.superseded
-        if (
-            existing is not None
-            and existing.status == expected_status
-            and existing.retirement_id == preview_id
-            and existing.retirement_reason == reason.strip()
-            and existing.retired_by == actor.strip()
-            and existing.superseded_by == replacement
-        ):
-            return existing
-
-        preview = self._retirement_preview(
-            rules,
-            rule_id,
-            action=action,
-            reason=reason,
-            actor=actor,
-            replacement=replacement,
-        )
-        if not preview_id or preview_id != preview["preview_id"]:
-            raise RegistryError(
-                "preview_id 已失效或不匹配；registry/参数已变化，请重新运行不带 --confirm-preview 的预览"
+        with self.exclusive():
+            rules = self.load()
+            by_id = {rule.rule_id: rule for rule in rules}
+            existing = by_id.get(rule_id)
+            expected_status = (
+                RuleStatus.deprecated
+                if action == "deprecate"
+                else RuleStatus.superseded
             )
+            if (
+                existing is not None
+                and existing.status == expected_status
+                and existing.retirement_id == preview_id
+                and existing.retirement_reason == reason.strip()
+                and existing.retired_by == actor.strip()
+                and existing.superseded_by == replacement
+            ):
+                return existing
 
-        rule = by_id[rule_id]
-        if action == "supersede":
-            from .conflict import find_conflicts
-
-            successor = by_id[replacement]
-            prospective = successor.model_copy(deep=True)
-            prospective.status = RuleStatus.accepted
-            if rule_id not in prospective.supersedes:
-                prospective.supersedes.append(rule_id)
-            conflicts = find_conflicts(prospective, rules)
-            if conflicts:
-                detail = "；".join(conflict["reason"] for conflict in conflicts)
+            preview = self._retirement_preview(
+                rules,
+                rule_id,
+                action=action,
+                reason=reason,
+                actor=actor,
+                replacement=replacement,
+            )
+            if not preview_id or preview_id != preview["preview_id"]:
                 raise RegistryError(
-                    f"替代规则仍与其他当前有效规则冲突：{detail}；退出操作未写入"
+                    "preview_id 已失效或不匹配；registry/参数已变化，请重新运行不带 --confirm-preview 的预览"
                 )
 
-        rule.status = expected_status
-        rule.retirement_reason = preview["reason"]
-        rule.retired_by = preview["actor"]
-        rule.retired_at = utcnow()
-        rule.retirement_id = preview_id
-        if action == "supersede":
-            rule.superseded_by = replacement
-            successor = by_id[replacement]
-            if successor.status in {RuleStatus.proposed, RuleStatus.clarified}:
-                successor.status = RuleStatus.accepted
-                if successor.accepted_at is None:
-                    successor.accepted_at = utcnow()
-            if rule_id not in successor.supersedes:
-                successor.supersedes.append(rule_id)
-        self._write(rules)
-        return rule
+            rule = by_id[rule_id]
+            if action == "supersede":
+                from .conflict import find_conflicts
+
+                successor = by_id[replacement]
+                prospective = successor.model_copy(deep=True)
+                prospective.status = RuleStatus.accepted
+                if rule_id not in prospective.supersedes:
+                    prospective.supersedes.append(rule_id)
+                conflicts = find_conflicts(prospective, rules)
+                if conflicts:
+                    detail = "；".join(
+                        conflict["reason"] for conflict in conflicts
+                    )
+                    raise RegistryError(
+                        f"替代规则仍与其他当前有效规则冲突：{detail}；退出操作未写入"
+                    )
+
+            rule.status = expected_status
+            rule.retirement_reason = preview["reason"]
+            rule.retired_by = preview["actor"]
+            rule.retired_at = utcnow()
+            rule.retirement_id = preview_id
+            if action == "supersede":
+                rule.superseded_by = replacement
+                successor = by_id[replacement]
+                if successor.status in {RuleStatus.proposed, RuleStatus.clarified}:
+                    successor.status = RuleStatus.accepted
+                    if successor.accepted_at is None:
+                        successor.accepted_at = utcnow()
+                if rule_id not in successor.supersedes:
+                    successor.supersedes.append(rule_id)
+            self._write(rules)
+            return rule
 
     def transition(self, rule_id: str, new_status: RuleStatus) -> Rule:
         from .conflict import find_conflicts
@@ -258,27 +333,34 @@ class Registry:
             raise RegistryError(
                 "永久退出状态只能通过 deprecate/supersede 预览确认流程写入"
             )
-        rules = self.load()
-        for rule in rules:
-            if rule.rule_id == rule_id:
-                allowed = ALLOWED_TRANSITIONS[rule.status]
-                if new_status not in allowed:
-                    options = ", ".join(s.value for s in sorted(allowed, key=lambda s: s.value)) or "（终态）"
-                    raise RegistryError(
-                        f"非法生命周期迁移 {rule.status.value} → {new_status.value}；"
-                        f"从 {rule.status.value} 出发允许: {options}"
-                    )
-                if new_status == RuleStatus.accepted:
-                    conflicts = find_conflicts(rule, rules)
-                    if conflicts:
-                        detail = "；".join(c["reason"] for c in conflicts)
-                        raise RegistryError(
-                            f"规则冲突（14.1 场景10）：{detail}。"
-                            f"请先 supersede/废弃旧规则，或调整 consumer_markers，不得让相反模态并存"
+        with self.exclusive():
+            rules = self.load()
+            for rule in rules:
+                if rule.rule_id == rule_id:
+                    allowed = ALLOWED_TRANSITIONS[rule.status]
+                    if new_status not in allowed:
+                        options = (
+                            ", ".join(
+                                status.value
+                                for status in sorted(allowed, key=lambda status: status.value)
+                            )
+                            or "（终态）"
                         )
-                rule.status = new_status
-                if new_status == RuleStatus.accepted and rule.accepted_at is None:
-                    rule.accepted_at = utcnow()
-                self.save(rules)
-                return rule
-        raise RegistryError(f"未找到规则 {rule_id}")
+                        raise RegistryError(
+                            f"非法生命周期迁移 {rule.status.value} → {new_status.value}；"
+                            f"从 {rule.status.value} 出发允许: {options}"
+                        )
+                    if new_status == RuleStatus.accepted:
+                        conflicts = find_conflicts(rule, rules)
+                        if conflicts:
+                            detail = "；".join(c["reason"] for c in conflicts)
+                            raise RegistryError(
+                                f"规则冲突（14.1 场景10）：{detail}。"
+                                f"请先 supersede/废弃旧规则，或调整 consumer_markers，不得让相反模态并存"
+                            )
+                    rule.status = new_status
+                    if new_status == RuleStatus.accepted and rule.accepted_at is None:
+                        rule.accepted_at = utcnow()
+                    self._save_locked(rules)
+                    return rule
+            raise RegistryError(f"未找到规则 {rule_id}")

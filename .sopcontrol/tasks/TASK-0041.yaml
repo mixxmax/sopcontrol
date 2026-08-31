@@ -1,0 +1,48 @@
+task_id: TASK-0041
+contract:
+  objective: 第六批 6R 并发修正：串行化 Registry 退休确认事务，旧 preview 在并发写入后必须失效且不得恢复已退休历史
+  allowed_writes:
+  - sopcontrol/registry.py
+  - tests/constitution/test_rule_retirement.py
+  required_rules:
+  - CTRL-001
+  - SELF-001
+  - SELF-002
+  required_fields:
+  - concurrent_confirmation_serialization
+  - stale_preview_fail_closed
+  - no_retirement_lost_update
+  - compatibility
+  max_repairs: 1
+  repairs_fingerprint: null
+  write_granularity: file
+  strict_schema: true
+  capability_note: 当前模型未声明（已有画像 fixture-weak 不适用） tier=unknown：模型能力未知：按保守边界执行，文件级写入
+    + 强制 MUST 字段清单；行为事件建议 tier=strong（仅建议，不自动授权）
+  model_identity: ''
+status: verification_pending
+repair_count: 0
+changed_paths:
+- sopcontrol/registry.py
+- tests/constitution/test_rule_retirement.py
+revision: 3
+created_at: '2026-08-31T12:41:40.695366Z'
+updated_at: '2026-08-31T12:53:30.783817Z'
+history:
+- at: '2026-08-31T12:43:08.148634Z'
+  action: accept
+  from_status: contract_proposed
+  to_status: executing
+  allowed: true
+  reason: 契约完整：目标、写入范围与可验证完成定义齐备
+  detail:
+    next_action: 执行变更后 task submit 提交改动路径
+- at: '2026-08-31T12:53:30.769681Z'
+  action: submit
+  from_status: executing
+  to_status: verification_pending
+  allowed: true
+  reason: 改动 2 个路径，全部在写入范围内；MUST 字段齐备 [concurrent_confirmation_serialization, stale_preview_fail_closed,
+    no_retirement_lost_update, compatibility]
+  detail:
+    next_action: 运行 task verify 由控制器独立审计
