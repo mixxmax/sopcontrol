@@ -54,7 +54,7 @@ sopctl rule add --id MY-001 \
 sopctl rule accept MY-001 .
 ```
 
-Candidate 可先 `sopctl intake .` 或 `sopctl intake . --conversation chat.txt`，**晋升必须显式 accept/add**。
+Candidate 可先 `sopctl intake .` 或 `sopctl intake . --conversation chat.txt`；重复 guard/Finding/结构化纠正用 `sopctl candidate refresh .` 冷路径聚合，达到 3 个独立 occurrence 才物化。用 `candidate list/show/triage` 审查，**晋升必须显式 `sopctl rule add`，候选本身没有授权力**。
 
 想让规则有机会拿到 `enforced`（手册 6.5 七条件）还要补一次确认书：
 

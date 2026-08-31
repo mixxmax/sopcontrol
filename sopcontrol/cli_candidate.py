@@ -1,0 +1,78 @@
+"""Candidate 观察与人工 triage CLI；候选没有规则授权力。"""
+from __future__ import annotations
+
+import json
+import sys
+
+from .candidate import CandidateStore, correction_observation, refresh_candidates
+from .cli_common import _project
+
+
+def cmd_candidate(args) -> int:
+    root = _project(args.path)
+    store = CandidateStore(root)
+
+    if args.sub == "refresh":
+        result = refresh_candidates(root)
+        print(
+            f"候选刷新完成：观察 {result['observations']} 条，"
+            f"语义组 {result['groups']} 个，新物化 {result['materialized']} 条"
+        )
+        print("候选没有授权力；晋升仍须人工执行 sopctl rule add")
+        return 0
+
+    if args.sub == "observe-correction":
+        observation = correction_observation(
+            root,
+            object_name=args.object,
+            actual=args.actual,
+            expected=args.expected,
+            scope=args.scope,
+        )
+        print(f"已记录纠正观察 {observation.observation_id}；达到重复阈值后由 candidate refresh 物化")
+        return 0
+
+    if args.sub == "list":
+        records = store.load()
+        if args.status:
+            records = [record for record in records if record.status == args.status]
+        if args.json:
+            print(json.dumps([record.model_dump(mode="json") for record in records], ensure_ascii=False, indent=2))
+            return 0
+        if not records:
+            print("无候选")
+            return 0
+        for record in records:
+            print(
+                f"{record.candidate_id} [{record.status}] {record.kind} "
+                f"frequency={record.frequency} {record.statement}"
+            )
+        return 0
+
+    if args.sub == "show":
+        try:
+            record = store.get(args.candidate_id)
+        except KeyError as exc:
+            print(f"错误: {exc}", file=sys.stderr)
+            return 2
+        if args.json:
+            print(json.dumps(record.model_dump(mode="json"), ensure_ascii=False, indent=2))
+        else:
+            print(f"候选: {record.candidate_id}")
+            print(f"状态: {record.status}；类型: {record.kind}；频次: {record.frequency}")
+            print(f"陈述: {record.statement}")
+            print(f"建议动作: {record.suggested_action}（仅建议，不自动晋升）")
+            for source in record.sources:
+                print(f"  ← {source.source_type}:{source.ref} [{source.occurrence_id}]")
+        return 0
+
+    if args.sub == "triage":
+        try:
+            record = store.triage(args.candidate_id, args.status)
+        except (KeyError, ValueError) as exc:
+            print(f"错误: {exc}", file=sys.stderr)
+            return 2
+        print(f"候选 {record.candidate_id} → {record.status}；未写入 registry")
+        return 0
+
+    return 2

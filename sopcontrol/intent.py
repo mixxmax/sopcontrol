@@ -157,13 +157,6 @@ def apply_utterance(root: Path, text: str) -> dict:
         return result
 
     if cls.intent == "rule_candidate" and cls.statement:
-        candidates_path = Path(root) / ".sopcontrol" / "rules" / "candidates.yaml"
-        candidates_path.parent.mkdir(parents=True, exist_ok=True)
-        existing = []
-        if candidates_path.exists():
-            existing = yaml.safe_load(candidates_path.read_text(encoding="utf-8")) or []
-        if any(c.get("statement") == cls.statement for c in existing):
-            return result
         registry_path = Path(root) / ".sopcontrol" / "rules" / "registry.yaml"
         if registry_path.exists():
             from .registry import Registry
@@ -171,19 +164,23 @@ def apply_utterance(root: Path, text: str) -> dict:
             known = {r.statement for r in Registry(registry_path).load()}
             if cls.statement in known:
                 return result
-        seq = len(existing) + 1
-        existing.append({
-            "candidate_id": f"CAND-{seq:03d}",
-            "statement": cls.statement,
-            "suggested_modality": cls.suggested_modality,
-            "source": {"type": "user_conversation", "ref": "intake-conversation"},
-            "status": "observed",
-            "note": "由对话意图层提取；晋升需显式 sopctl rule add（Candidate 不写终态）",
-        })
-        candidates_path.write_text(
-            yaml.safe_dump(existing, allow_unicode=True, sort_keys=False), encoding="utf-8"
+        from .candidate import CandidateSource, CandidateStore
+        from .model import content_hash
+
+        _, created = CandidateStore(root).upsert(
+            kind="policy",
+            statement=cls.statement,
+            scope_guess="project",
+            suggested_action="register_rule",
+            suggested_modality=cls.suggested_modality or "MUST",
+            source=CandidateSource(
+                source_type="user_conversation",
+                ref="intake-conversation",
+                occurrence_id="conversation-" + content_hash({"statement": cls.statement}),
+            ),
+            note="由对话意图层提取；晋升需显式 sopctl rule add（Candidate 不写终态）",
         )
-        result["candidates_added"] = 1
+        result["candidates_added"] = int(created)
         return result
 
     return result

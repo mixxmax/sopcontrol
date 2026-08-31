@@ -48,38 +48,39 @@ def cmd_intake(args) -> int:
     registry_path = root / ".sopcontrol" / "rules" / "registry.yaml"
     known_statements = {r.statement for r in Registry(registry_path).load()}
 
-    candidates_path = root / ".sopcontrol" / "rules" / "candidates.yaml"
-    existing = []
-    if candidates_path.exists():
-        existing = yaml.safe_load(candidates_path.read_text(encoding="utf-8")) or []
+    from .candidate import CandidateSource, CandidateStore
 
-    seq = len(existing) + 1
+    store = CandidateStore(root)
     new = []
     for ev in report.evidence:
         if ev.kind != "doc_scan.must_statement":
             continue
         statement = str(ev.observed).strip().lstrip("- ").rstrip("。.")
-        if any(c.get("statement") == statement for c in existing) or statement in known_statements:
+        if statement in known_statements:
             continue
-        new.append({
-            "candidate_id": f"CAND-{seq:03d}",
-            "statement": statement,
-            "suggested_modality": _suggest_modality(statement),
-            "source": {"type": "document", "ref": ev.subject},
-            "status": "observed",
-            "note": "由 doc_scan 提取；晋升需显式 sopctl rule add（Candidate 不写终态）",
-        })
-        seq += 1
+        record, created = store.upsert(
+            kind="policy",
+            statement=statement,
+            scope_guess="project",
+            suggested_action="register_rule",
+            suggested_modality=_suggest_modality(statement),
+            source=CandidateSource(
+                source_type="document",
+                ref=ev.subject,
+                occurrence_id=ev.evidence_id,
+                observed_at=ev.observed_at,
+            ),
+            note="由 doc_scan 提取；晋升需显式 sopctl rule add（Candidate 不写终态）",
+        )
+        if created:
+            new.append(record)
 
     if not new:
         print("没有新的候选规则（文档 MUST 句已全部登记或在候选中）")
         return 0
-    candidates_path.write_text(
-        yaml.safe_dump(existing + new, allow_unicode=True, sort_keys=False), encoding="utf-8"
-    )
-    print(f"提取 {len(new)} 条候选规则 → {candidates_path}（status=observed，未进注册表）")
-    for c in new:
-        print(f"  {c['candidate_id']}: {c['statement'][:50]}  ← {c['source']['ref']}")
+    print(f"提取 {len(new)} 条候选规则 → {store.path}（status=observed，未进注册表）")
+    for record in new:
+        print(f"  {record.candidate_id}: {record.statement[:50]}  ← {record.sources[-1].ref}")
     print("晋升方式: sopctl rule add --statement '...'（人工确认后进入 registry）")
     return 0
 

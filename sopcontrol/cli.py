@@ -15,6 +15,7 @@ from .cli_intent import *
 from .cli_identity import *
 from .cli_harness import *
 from .cli_rules import *
+from .cli_candidate import *
 from .registry import RegistryError
 from .repair import RepairError
 
@@ -194,6 +195,39 @@ def build_parser() -> argparse.ArgumentParser:
         help="处理对话时同时扫描文档 MUST 句（默认对话路径单独运行）",
     )
     p.set_defaults(func=cmd_intake)
+
+    candidate = sub.add_parser("candidate", help="重复观察聚合为可审查候选（无授权力）")
+    candidate_sub = candidate.add_subparsers(dest="sub", required=True)
+
+    p = candidate_sub.add_parser("refresh", help="离线聚合 guard/finding/纠正观察；达到阈值才物化")
+    p.add_argument("path", nargs="?", default=".")
+    p.set_defaults(func=cmd_candidate)
+
+    p = candidate_sub.add_parser("list", help="列出候选")
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--status", choices=["observed", "triaged", "rejected", "expired"])
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_candidate)
+
+    p = candidate_sub.add_parser("show", help="显示候选及来源 occurrence")
+    p.add_argument("candidate_id")
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_candidate)
+
+    p = candidate_sub.add_parser("triage", help="人工裁决候选状态；不会创建 Rule")
+    p.add_argument("candidate_id")
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--status", required=True, choices=["triaged", "rejected", "expired"])
+    p.set_defaults(func=cmd_candidate)
+
+    p = candidate_sub.add_parser("observe-correction", help="记录结构化纠正观察（冷路径）")
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--object", required=True)
+    p.add_argument("--actual", required=True)
+    p.add_argument("--expected", required=True)
+    p.add_argument("--scope", default="project")
+    p.set_defaults(func=cmd_candidate)
 
     p = sub.add_parser(
         "bootstrap",

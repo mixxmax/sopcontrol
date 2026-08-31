@@ -20,6 +20,8 @@ sopctl task open . --model <CURRENT-MODEL> --objective "..." \
 sopctl task accept|submit|verify|deliver <TASK-ID> .
 sopctl task takeover <TASK-ID> .          # 换会话最小接手包
 sopctl intake . --conversation chat.txt  # 讨论/政策句 → Candidate 或 discuss_only
+sopctl candidate refresh .              # 冷路径聚合重复事实；3 次才物化，不自动授权
+sopctl candidate list .                  # 查看/人工 triage 候选
 sopctl intent clear .                    # 解除讨论锁定
 sopctl repair open <finding_id> --allow <path>
 sopctl repair apply <TASK-ID> --harness opencode

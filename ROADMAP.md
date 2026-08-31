@@ -72,6 +72,9 @@
   清除上限；批准与行为证据过期均回到保守边界。事件/状态损坏时 fail-closed。
 - [x] **二三批联合复核修复**：封闭 FIFO 驱逐恢复 strong 与伪造 event_id 路径；补 gate 审计异常
   留证和 `capability-events` 只读查看入口。
+- [x] **第四批：重复行为候选聚合（2026-08-31）**：统一运行时 Candidate schema 与稳定语义指纹；
+  guard 拒绝、Finding 指纹和结构化纠正达到 3 个不同 occurrence 后，仅在显式 `candidate refresh`
+  冷路径物化候选。`list/show/triage` 只供审查，不写 registry、不自动晋升、不改变任务或 harness 权限。
 
 ### B5 模式库扩展 — 完成（2026-08-24 凌晨，经任务机自应用交付）
 - [x] `write_only_state`（只写不读代理，info；shop + jobflow 双域）

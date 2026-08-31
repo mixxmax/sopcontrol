@@ -198,6 +198,12 @@ LLM。
 **不做什么**：不自动开任务、不自动 accept 规则、不把「讨论」写成实施 envelope。
 清除 discuss_only 靠用户说出实施标记（或 `sopctl intent clear`）。
 
+**重复行为候选（第四批）**：运行时 guard 拒绝、Finding 指纹与结构化纠正只在显式
+`sopctl candidate refresh` 冷路径聚合；同一语义达到 3 个不同 occurrence 后才物化为
+`observed` Candidate。候选使用稳定语义指纹与内容寻址 ID，重复刷新幂等，人工 triage
+状态不会被刷新复活。文档/对话中的显式永久政策仍可立即成为候选。Candidate 仅供审查，
+不被 capability、task、harness 或 gate 权限路径消费；晋升仍须人工执行 `sopctl rule add`。
+
 ## 17. 垂直骨干役用闭环（2026-08-25 补）
 
 标准：控制闭环齐备（检测智力与多语言留给插卡）。收官三项：
