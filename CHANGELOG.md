@@ -24,6 +24,7 @@
 ### Docs
 
 - Dual-language README: [README.md](README.md) (EN) + [README_ZH-CN.md](README_ZH-CN.md) (ZH) — philosophy, usage, effects, control features, model-switch continuity
+- README pain-point opener (failure modes without project-local SOP) + living-boundary header GIF (`docs/assets/sopcontrol-living-boundary.gif`)
 
 ## 0.2.0 — 2026-09-02
 
