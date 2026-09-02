@@ -17,6 +17,10 @@
 - `sopctl doctor` defaults to **light** (space snapshot + next moves; no full-tree inventory/audit); use `--full` when needed
 - Projection section fitted to ≤~1500 tokens / 80 lines; pending candidates ranked delete/improve before `register_rule`; warn when observed candidates > 32
 
+### Verification
+
+- Product red-team checklist (claim/residual/energy/self-test/dogfood): `docs/verification/REDTEAM_CHECKLIST.md` + first report `REDTEAM_20260902.md`
+
 ## 0.2.0 — 2026-09-02
 
 First public-facing packaging of the living-project control plane.

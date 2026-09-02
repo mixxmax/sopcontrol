@@ -97,6 +97,8 @@ sopctl growth measure .            # 打一帧空间快照（旁路/平行状态
 sopctl growth diff .               # 对照最近两帧：指数下降=空间变窄
 # 本地机制验证（抛开真实多周 dogfood）：bash scripts/verify-product-sim.sh
 # → docs/verification/SIM_*.md（消歧前后 ambiguity_index + rebind/harness deny）
+# 发版/季对抗质检（非安全红队）：docs/verification/REDTEAM_CHECKLIST.md
+# → 报告模板 docs/verification/REDTEAM_YYYYMMDD.md
 # 中途接入 / 下一刀（最多 3 步：武装 → 真规则 → enact/吸收/退场）
 # 节能：doctor 默认轻量（用上一帧空间快照，不重跑全仓 audit）；全量加 --full
 sopctl doctor .                    # 末尾「下一刀」；含 ambiguity_index 一行
