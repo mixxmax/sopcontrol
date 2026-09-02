@@ -114,8 +114,18 @@ def infer_blocked_reason_code(reason: str) -> BlockedReasonCode:
     return "other"
 
 
+# 投影链头：可推进的活跃态（verified 折叠为计数，不占上下文）
+PROJECTION_ACTIVE = frozenset({
+    TaskStatus.contract_proposed,
+    TaskStatus.executing,
+    TaskStatus.verification_pending,
+    TaskStatus.repair_required,
+})
+DEFAULT_PROJECTION_MAX_HEADS = 5
+
+
 def tasks_for_projection(tasks: list[TaskRecord]) -> list[TaskRecord]:
-    """投影只保留当前可执行链头：活跃任务 + 尚未被接替的阻断终态。
+    """投影候选集：活跃任务 + 尚未被接替的阻断终态（含 verified，供后续折叠）。
 
     delivered 与已 superseded 的 blocked/failed 留在项目内（sopctl task list），
     不灌进模型上下文——权威在项目里，投影是有损切片。
@@ -131,6 +141,96 @@ def tasks_for_projection(tasks: list[TaskRecord]) -> list[TaskRecord]:
             continue
         out.append(task)
     return out
+
+
+class ProjectionTaskSlice(BaseModel):
+    """投影任务切片：链头明细 + 折叠计数 + 包含理由 + 摘要哈希。"""
+    heads: list[TaskRecord] = Field(default_factory=list)
+    folded_verified: int = 0
+    omitted_active: int = 0
+    inclusion_reasons: dict[str, str] = Field(default_factory=dict)
+    digest: str = ""
+    max_heads: int = DEFAULT_PROJECTION_MAX_HEADS
+
+
+def _inclusion_reason(task: TaskRecord) -> str:
+    if task.status in TERMINAL_FAILED:
+        code = task.blocked_reason_code or "other"
+        return f"未接替阻断（{code}）；需 --resolves 另开决议"
+    if task.status == TaskStatus.repair_required:
+        return "修复轮：按契约最小改动后重新 submit"
+    if task.status == TaskStatus.verification_pending:
+        return "待完成门：task verify"
+    if task.status == TaskStatus.executing:
+        return "执行中：改完后 task submit"
+    if task.status == TaskStatus.contract_proposed:
+        return "契约待接受：task accept"
+    if task.status == TaskStatus.verified:
+        return "已验证待交付：task deliver"
+    return f"状态 {task.status.value}"
+
+
+def select_projection_tasks(
+    tasks: list[TaskRecord],
+    *,
+    max_heads: int = DEFAULT_PROJECTION_MAX_HEADS,
+) -> ProjectionTaskSlice:
+    """从候选集选出投影链头：活跃优先，阻断次之；verified 只计折叠数。
+
+    超过 max_heads 的活跃/阻断不写明细（省略计数），避免长历史把上下文重新灌满。
+    """
+    from .model import content_hash
+
+    pool = tasks_for_projection(tasks)
+    verified = [t for t in pool if t.status == TaskStatus.verified]
+    blocked = [t for t in pool if t.status in TERMINAL_FAILED]
+    active = [t for t in pool if t.status in PROJECTION_ACTIVE]
+    active_sorted = sorted(
+        active,
+        key=lambda t: (t.updated_at, t.task_id),
+        reverse=True,
+    )
+    blocked_sorted = sorted(
+        blocked,
+        key=lambda t: (t.updated_at, t.task_id),
+        reverse=True,
+    )
+
+    heads: list[TaskRecord] = []
+    reasons: dict[str, str] = {}
+    limit = max(1, int(max_heads))
+
+    for task in active_sorted:
+        if len(heads) >= limit:
+            break
+        heads.append(task)
+        reasons[task.task_id] = _inclusion_reason(task)
+    for task in blocked_sorted:
+        if len(heads) >= limit:
+            break
+        if task.task_id in reasons:
+            continue
+        heads.append(task)
+        reasons[task.task_id] = _inclusion_reason(task)
+
+    omitted_active = sum(1 for t in active_sorted if t.task_id not in reasons) + sum(
+        1 for t in blocked_sorted if t.task_id not in reasons
+    )
+    digest = content_hash({
+        "heads": [(t.task_id, t.status.value, t.revision) for t in heads],
+        "folded_verified": len(verified),
+        "omitted_active": omitted_active,
+        "max_heads": limit,
+        "reasons": reasons,
+    })
+    return ProjectionTaskSlice(
+        heads=heads,
+        folded_verified=len(verified),
+        omitted_active=omitted_active,
+        inclusion_reasons=reasons,
+        digest=digest,
+        max_heads=limit,
+    )
 
 
 def normalize_resolves(resolves: list[str] | None) -> list[str]:
@@ -216,7 +316,11 @@ def takeover_pack(
         "rule_verdicts": {r: rule_verdicts.get(r) for r in required},
         "open_findings": open_findings,
         "next_legal_actions": LEGAL_ACTIONS[task.status],
-        "note": "接管者不得重新解释已接受的契约或扩大写入范围；只按 next_legal_actions 推进",
+        "note": (
+            "接管者不得重新解释已接受的契约或扩大写入范围；"
+            "只按 next_legal_actions 推进。"
+            "投影「当前链头」与本包同源：权威在项目内，上下文只是切片。"
+        ),
     }
 
 

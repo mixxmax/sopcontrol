@@ -1,7 +1,10 @@
-"""平台投影（B4 / Phase 6）：把权威规则投影到各 harness 的指导文件。
+"""平台投影（B4 / Phase 6 / LP3）：把权威规则投影到各 harness 的指导文件。
 
 投影不是权威（手册 8.2）：只替换带标记的自身小节，不碰文件其余内容。
 同一内容可同步到 AGENTS.md（Codex/OpenCode）与 CLAUDE.md（Claude Code）。
+
+LP3：常驻核（成熟度/硬规则/硬约束）与任务链头切片分离；verified 折叠；
+新会话恢复协议；切片摘要哈希。写入与 project check 走同一渲染函数。
 """
 from __future__ import annotations
 
@@ -9,7 +12,13 @@ from pathlib import Path
 
 from .model import Rule, effective_rules, utcnow
 from .registry import Registry
-from .task import LEGAL_ACTIONS, TERMINAL_FAILED, tasks_for_projection
+from .task import (
+    DEFAULT_PROJECTION_MAX_HEADS,
+    LEGAL_ACTIONS,
+    TERMINAL_FAILED,
+    ProjectionTaskSlice,
+    select_projection_tasks,
+)
 
 SECTION_START = "<!-- sopcontrol:v1 -->"
 SECTION_END = "<!-- /sopcontrol:v1 -->"
@@ -31,6 +40,7 @@ def render_projection(
     refresh_hint: str = "sopctl project codex",
     maturity=None,
     at=None,
+    max_heads: int = DEFAULT_PROJECTION_MAX_HEADS,
 ) -> str:
     """maturity 是 bootstrap.MaturityReport 或 None。
 
@@ -39,12 +49,20 @@ def render_projection(
     只写等级与下一级缺口两行；五项秩序明细留给 `sopctl bootstrap`，投影是
     上下文预算，不是报告。
     """
+    projection_at = at or utcnow()
+    slice_info = select_projection_tasks(list(tasks or []), max_heads=max_heads)
     lines = [
         SECTION_START,
         "# SOP Control 规则投影（自动生成，勿手改）",
         "",
         f"权威源: `.sopcontrol/rules/registry.yaml`；规则变更后运行 `{refresh_hint}` 刷新本节。",
-        "本节只是指导——真正的拦截在 git pre-push 钩子、CI gate、运行时 hook 与 `sopctl gate`。",
+        "本节只是有损切片——真正的拦截在 git pre-push 钩子、CI gate、运行时 hook 与 `sopctl gate`。",
+        "",
+        "## 新会话恢复（先读这里）",
+        "1. 权威在项目 `.sopcontrol/`；模型上下文不是记忆本体。",
+        "2. 只推进「当前链头」里的合法动作；不要重做已交付副作用。",
+        "3. 全量历史与接手包：`sopctl task list` / `task show <id>` / `task takeover <id>`。",
+        f"4. 本切片摘要: `{slice_info.digest}`（漂移时 `sopctl project check` 会报 stale）。",
         "",
     ]
     if maturity is not None:
@@ -57,7 +75,6 @@ def render_projection(
         lines.append("- 明细与依据: `sopctl bootstrap`。低于 L3 时门以建议为主，"
                      "沉默不等于许可。")
         lines.append("")
-    projection_at = at or utcnow()
     hard = [r for r in effective_rules(rules, at=projection_at) if r.modality.value in _HARD]
     if hard:
         lines.append("## 必须遵守的规则")
@@ -71,29 +88,7 @@ def render_projection(
                 bits.append(f"（旧入口不得存活: {', '.join(r.legacy_markers)}）")
             lines.append("- " + " ".join(bits))
         lines.append("")
-    slice_tasks = tasks_for_projection(list(tasks or []))
-    lines.append(
-        "## 任务状态（当前可执行切片；全量历史在项目内："
-        "`sopctl task list` / `task show` / `task takeover`）"
-    )
-    if not slice_tasks:
-        lines.append("- （当前无可执行任务；勿凭记忆重做已交付副作用）")
-    for t in slice_tasks:
-        action = LEGAL_ACTIONS[t.status][0]
-        lines.append(f"- {t.task_id} [{t.status.value}] {t.contract.objective[:60]}")
-        lines.append(
-            f"  完成定义: {', '.join(t.contract.required_rules) or '（无）'} 全部 pass；"
-            f"修复预算: {t.repair_count}/{t.contract.max_repairs}；合法动作: {action}"
-        )
-        if t.resolution_of:
-            lines.append(f"  接替: {', '.join(t.resolution_of)}")
-        if t.status in TERMINAL_FAILED:
-            reason = t.blocked_reason_code or "other"
-            lines.append(
-                f"  ⚠ 已阻断（{reason}）；另开决议任务："
-                f"`sopctl task open --resolves {t.task_id} ...`"
-            )
-    lines.append("")
+    lines.extend(_render_task_chain(slice_info))
     lines += [
         "## 硬约束",
         "- 不得直接读写或修改 `.sopcontrol/` 内任何文件；一切经 `sopctl` 子命令。",
@@ -102,13 +97,52 @@ def render_projection(
         "- 用户若说「只讨论不修改」，不得改任何文件（会话意图 discuss_only）。",
         "",
         "## 与控制器配合（SKILL 要点）",
-        "- 先读本投影；规则/账本/任务变更只经 `sopctl`，禁止手改 `.sopcontrol/`。",
+        "- 先读「新会话恢复」与「当前链头」；规则/账本/任务变更只经 `sopctl`。",
         "- `task submit` 若契约有 MUST 字段，必须带齐 `--field key=value`（漏字段会被拒）。",
         "- 不要用自报「已完成」代替 `task verify` / `gate`；已 `delivered` 的任务勿重做副作用。",
         "- 不要卸 hook/插件（提权，需人工）。日用全序见仓库 `PLAYBOOK.md` / `SKILL.md`。",
         SECTION_END,
     ]
     return "\n".join(lines) + "\n"
+
+
+def _render_task_chain(slice_info: ProjectionTaskSlice) -> list[str]:
+    lines = [
+        "## 当前链头（可执行切片）",
+        f"- 上限 {slice_info.max_heads} 条明细；verified 折叠；摘要 `{slice_info.digest}`",
+    ]
+    if not slice_info.heads and slice_info.folded_verified == 0:
+        lines.append("- （当前无可执行任务；勿凭记忆重做已交付副作用）")
+    for t in slice_info.heads:
+        action = LEGAL_ACTIONS[t.status][0]
+        reason = slice_info.inclusion_reasons.get(t.task_id, "")
+        lines.append(f"- {t.task_id} [{t.status.value}] {t.contract.objective[:60]}")
+        lines.append(
+            f"  完成定义: {', '.join(t.contract.required_rules) or '（无）'} 全部 pass；"
+            f"修复预算: {t.repair_count}/{t.contract.max_repairs}；合法动作: {action}"
+        )
+        if reason:
+            lines.append(f"  为何在切片: {reason}")
+        if t.resolution_of:
+            lines.append(f"  接替: {', '.join(t.resolution_of)}")
+        if t.status in TERMINAL_FAILED:
+            code = t.blocked_reason_code or "other"
+            lines.append(
+                f"  ⚠ 已阻断（{code}）；另开决议任务："
+                f"`sopctl task open --resolves {t.task_id} ...`"
+            )
+    if slice_info.folded_verified:
+        lines.append(
+            f"- （另有 {slice_info.folded_verified} 条 verified 待 deliver；"
+            "勿重复执行；`sopctl task list`）"
+        )
+    if slice_info.omitted_active:
+        lines.append(
+            f"- （另有 {slice_info.omitted_active} 条活跃/阻断未展开；"
+            f"超出链头上限 {slice_info.max_heads}；`sopctl task list`）"
+        )
+    lines.append("")
+    return lines
 
 
 def _load_maturity(root: Path):
@@ -151,8 +185,8 @@ def _projection_inputs(root: Path, *, at):
     from .task import TaskStore
 
     try:
-        # 写入与 check 必须同一过滤：全量任务留在仓库，投影只吃切片。
-        tasks = tasks_for_projection(TaskStore(root).list_all())
+        # 全量任务交给 select_projection_tasks；写入与 check 必须同一路径。
+        tasks = TaskStore(root).list_all()
     except Exception:
         tasks = []
     return rules, tasks, assess_maturity(root, rules, at=at)

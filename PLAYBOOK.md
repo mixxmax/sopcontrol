@@ -95,7 +95,8 @@ sopctl explain MY-001 .
 
 # 开任务（unknown/无画像、弱模型或行为安全上限都会收紧到文件级范围、1 轮预算和 MUST 字段）
 # 如需解释当前模型为何被收紧，先只读查看：sopctl capability-events . --model <CURRENT-MODEL>
-# 投影只含当前可执行切片；全量历史：sopctl task list / task show / task takeover
+# 投影含「新会话恢复」+ 当前链头（上限 5；verified 折叠）；全量：task list / show / takeover
+sopctl project all .                   # 刷新投影后 project check 应 OK
 sopctl task open . --objective "接线 MY-001" \
   --allow src/foo.py --require-rule MY-001 \
   --require-field digest --require-field status   # strict_schema 时需要

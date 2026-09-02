@@ -120,14 +120,12 @@
 ### LP2 余量（不阻塞 LP3）
 - 当结构保证足够时，批量建议移除冗余 guard / deprecate 禁止型重复规则（人工确认）
 
-### LP3 投影再削薄 + 恢复协议 —（手册阶段 D 余量）
-前置：LP2 至少完成项 1–2，避免在仍充满歧义入口时过度优化上下文。
-1. 投影拆「常驻核」（硬规则 + 成熟度 + 硬约束）与「当前链头任务」（至多 N 条活跃；verified 堆积可折叠）
-2. 新会话恢复协议：投影头部写清「先读切片 → 唯一合法 next_action → 全量用 sopctl」；与 `task takeover` 对齐
-3. 投影内容摘要哈希 / 包含理由（为何这条任务在切片里）；`project check` 消费同一函数
-4. 长历史夹具：≥20 delivered + 1 executing + 1 unresolved blocked，断言投影仍短且可决策
-
-出口判据：无历史记忆的模型只读投影能说出当前唯一该推进的任务；换平台投影同源。
+### LP3 投影再削薄 + 恢复协议 — 完成（2026-09-02，手册阶段 D 余量）
+- [x] 常驻核（成熟度/硬规则/硬约束）与「当前链头」分离；`select_projection_tasks` 上限 5；verified 折叠为计数
+- [x] 新会话恢复协议（投影头部 4 步）；`task takeover` note 与切片同源表述对齐
+- [x] 切片摘要哈希 + 「为何在切片」；写入与 `project check` 同一 `render_projection`
+- [x] 长历史测试：≥20 delivered + executing + blocked → 投影仍短且可决策
+- 验收：529+ 测试全绿；本仓 AGENTS 含恢复协议与链头上限，verified 折叠、超出上限有提示
 
 ### LP4 事件历史与可重建视图 —（手册阶段 F，后置）
 前置：LP2/LP3 稳定日用后再动存储，避免为修剪而大拆账本。
@@ -146,6 +144,9 @@
 
 ## 状态（每次运行后更新）
 
+- 2026-09-02（Living-Project Batch 3·投影削薄）：`select_projection_tasks` 链头上限 5、
+  verified 折叠、省略计数；投影头部「新会话恢复」四步 + 切片摘要哈希 + 为何在切片；
+  takeover note 对齐；长历史夹具测试。写入与 project check 同源。
 - 2026-09-02（Living-Project Batch 2·删除优先）：受控+旧入口并存时发 `redundant_entry_point`
   （CASE-009/010 双域）；候选/repair 统一导向 `delete_entry`；`sopctl inventory` 薄清单 +
   doctor/metrics 结构信号。MUT-005 负向对照误报形态改为 redundant。判定 next_action
