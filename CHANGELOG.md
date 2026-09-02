@@ -21,6 +21,10 @@
 
 - Product red-team checklist (claim/residual/energy/self-test/dogfood): `docs/verification/REDTEAM_CHECKLIST.md` + first report `REDTEAM_20260902.md`
 
+### Docs
+
+- Dual-language README: [README.md](README.md) (EN) + [README_ZH-CN.md](README_ZH-CN.md) (ZH) — philosophy, usage, effects, control features, model-switch continuity
+
 ## 0.2.0 — 2026-09-02
 
 First public-facing packaging of the living-project control plane.
