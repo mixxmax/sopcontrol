@@ -9,6 +9,10 @@
 2. 只推进「当前链头」里的合法动作；不要重做已交付副作用。
 3. 全量历史与接手包：`sopctl task list` / `task show <id>` / `task takeover <id>`。
 4. 本切片摘要: `72d693faffea62aa`（漂移时 `sopctl project check` 会报 stale）。
+5. 项目何以至此：见下节；全量编年 `sopctl chronicle`。
+
+## 何以至此（换模型/换会话）
+- 尚无项目编年事件；权威仍在 `.sopcontrol/`。之后的规则生命周期与任务迁移会写入 `project-events.jsonl`。
 
 ## 控制成熟度：L4 Govern：规则变更、发布和高影响操作需双阶段确认
 - 五项基本秩序全部有机制。
