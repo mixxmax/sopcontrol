@@ -2,6 +2,10 @@
 
 **[English](README.md)** · **[中文](README_ZH-CN.md)**
 
+<p align="center">
+  <img src="docs/assets/sopcontrol-living-boundary.gif" alt="Living project boundary — a finite ring whose edge keeps changing" width="960" />
+</p>
+
 **Experimental but real** — a **model-neutral control plane** that lives *in your project*, not in a chat transcript.
 
 > Make product intent **executable, verifiable, and recoverable across model switches** — by growing a **finite, editable space of determined facts**, not by stacking more “please don’t” prompts.
@@ -10,9 +14,21 @@
 
 ---
 
-## Design philosophy (why it exists)
+## The pain (why this philosophy exists)
 
-Most “AI coding control” fails in one of two ways:
+Without a project-local SOP / control plane, a capable model does not merely “make mistakes.” It executes inside an **unbounded ambiguity space**:
+
+| What happens | Consequence |
+|--------------|-------------|
+| Intent lives only in chat | New session / new model **forgets**; the same MUST is re-negotiated or dropped |
+| Many paths still “work” | Preview skipped, legacy writer, parallel state files — delivery **looks done** while product invariants rot |
+| You add more prompts & guards | Error surface shrinks on paper; **bypass surface stays open** — the model walks around the fence |
+| Mid-task model switch | Reachable actions often **widen**; prior tightenings do not travel with the new executor |
+| No absorption check | “We said preview-before-write” never becomes a **consumer in code** — docs and reality diverge |
+
+That failure mode is the starting point of the design: **not** “make the model obey harder,” but **make the wanderable space finite, visible, and editable in the repo** — so the next model inherits the same world.
+
+Most “AI coding control” then fails in one of two ways *after* noticing the pain:
 
 1. **Prompt theater** — longer system prompts and Skills that evaporate when you switch chat, model, or machine.
 2. **Guard inflation** — more MUST_NOT / blockers while **old entry points and parallel states stay alive**. The model still has somewhere else to go; you just taught it more sentences to ignore.
