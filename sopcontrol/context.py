@@ -27,6 +27,17 @@ _COLOCATED_TEST_SUFFIXES = (
 )
 
 
+class FileScanLimitExceeded(RuntimeError):
+    """扫描预算不足以覆盖项目时显式失败，禁止把部分结果冒充完整证据。"""
+
+    def __init__(self, *, limit: int, suffixes: set[str]) -> None:
+        rendered = ", ".join(sorted(suffixes)) or "（无后缀）"
+        super().__init__(
+            f"文件扫描超过上限 {limit}（后缀: {rendered}）；"
+            "证据覆盖不完整，不能继续判定"
+        )
+
+
 def is_test_path(relpath: str) -> bool:
     parts = PurePosixPath(relpath).parts
     if any(p.lower() in _TEST_DIR_HINTS for p in parts[:-1]):
@@ -60,7 +71,12 @@ def file_hash(path: Path) -> str:
 class ProjectContext:
     root: Path
 
-    def iter_files(self, suffixes: set[str], limit: int = 500):
+    def iter_files(self, suffixes: set[str], limit: int | None = None):
+        """按稳定顺序遍历匹配文件。
+
+        生产传感器默认完整扫描。调用方若为轻量路径显式设置预算，超限必须
+        抛错而不是静默截断；部分证据不能支撑 fail-closed 的门禁结论。
+        """
         root = str(self.root)
         count = 0
         for dirpath, dirnames, filenames in os.walk(root):
@@ -68,8 +84,8 @@ class ProjectContext:
             for name in sorted(filenames):
                 if Path(name).suffix in suffixes:
                     count += 1
-                    if count > limit:
-                        return
+                    if limit is not None and count > limit:
+                        raise FileScanLimitExceeded(limit=limit, suffixes=suffixes)
                     yield Path(dirpath) / name
 
     def rel(self, path: Path) -> str:

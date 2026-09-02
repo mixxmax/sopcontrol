@@ -8,7 +8,9 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
+import os
 from pathlib import Path, PurePosixPath
+import tempfile
 from typing import Literal, Optional
 
 import yaml
@@ -796,21 +798,43 @@ class TaskStore:
         return f"TASK-{(max(nums) + 1) if nums else 1:04d}"
 
     def save(self, task: TaskRecord, expected_revision: Optional[int] = None) -> None:
-        path = self._path(task.task_id)
-        if path.exists():
-            current = self.load(task.task_id)
-            base = expected_revision if expected_revision is not None else task.revision - 1
-            if current.revision != base:
-                raise RuntimeError(
-                    f"revision 冲突：磁盘上 {task.task_id} 已是 r{current.revision}，"
-                    f"本次写入基于 r{base}（旧上下文不得覆盖新状态，手册 5.5）"
-                )
-        self.dir.mkdir(parents=True, exist_ok=True)
-        task.updated_at = utcnow()
-        path.write_text(
-            yaml.safe_dump(task.model_dump(mode="json"), allow_unicode=True, sort_keys=False),
-            encoding="utf-8",
-        )
+        from .registry import Registry
+
+        # 与规则生命周期共用同一项目锁：TaskStore 的直接调用者、CLI 与 repair
+        # 都得到相同的 compare-and-save 原子性，不能依赖上层“碰巧已经加锁”。
+        registry = Registry(self.root / ".sopcontrol" / "rules" / "registry.yaml")
+        with registry.exclusive():
+            path = self._path(task.task_id)
+            if path.exists():
+                current = self.load(task.task_id)
+                base = expected_revision if expected_revision is not None else task.revision - 1
+                if current.revision != base:
+                    raise RuntimeError(
+                        f"revision 冲突：磁盘上 {task.task_id} 已是 r{current.revision}，"
+                        f"本次写入基于 r{base}（旧上下文不得覆盖新状态，手册 5.5）"
+                    )
+            self.dir.mkdir(parents=True, exist_ok=True)
+            task.updated_at = utcnow()
+            serialized = yaml.safe_dump(
+                task.model_dump(mode="json"), allow_unicode=True, sort_keys=False
+            )
+            descriptor, temporary = tempfile.mkstemp(
+                prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
+            )
+            try:
+                with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                    handle.write(serialized)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                os.replace(temporary, path)
+                directory = os.open(path.parent, os.O_RDONLY)
+                try:
+                    os.fsync(directory)
+                finally:
+                    os.close(directory)
+            finally:
+                if os.path.exists(temporary):
+                    os.unlink(temporary)
 
     def load(self, task_id: str) -> TaskRecord:
         path = self._path(task_id)

@@ -25,6 +25,50 @@ def test_gate_fail_closed_on_uninitialized_project(tmp_path, capsys):
     assert "fail-closed" in err and "sopctl init" in err
 
 
+def test_gate_does_not_miss_legacy_entry_after_500_code_files(tmp_path, capsys):
+    """大型仓库也必须扫描完整；旧入口不能因遍历上限而从门禁视野消失。"""
+    work = tmp_path / "large-project"
+    work.mkdir()
+    assert main(["init", str(work)]) == 0
+
+    docs = work / "docs"
+    docs.mkdir()
+    (docs / "sop.md").write_text("发货必须经过 safe_entry。\n", encoding="utf-8")
+
+    app = work / "app"
+    app.mkdir()
+    (app / "a000_consumer.py").write_text(
+        "def safe_entry(package):\n    return package\n",
+        encoding="utf-8",
+    )
+    (app / "a001_consumer_test.py").write_text(
+        "from a000_consumer import safe_entry\n",
+        encoding="utf-8",
+    )
+    for index in range(498):
+        (app / f"100_filler_{index:03d}.py").write_text(
+            f"VALUE_{index} = {index}\n",
+            encoding="utf-8",
+        )
+    (app / "zzz_legacy.py").write_text(
+        "def legacy_entry(package):\n    return package\n",
+        encoding="utf-8",
+    )
+
+    assert main([
+        "rule", "add", str(work),
+        "--id", "SCAN-001",
+        "--statement", "发货必须经过 safe_entry",
+        "--status", "accepted",
+        "--source-ref", "docs/sop.md",
+        "--consumer-marker", "safe_entry",
+        "--legacy-marker", "legacy_entry",
+    ]) == 0
+
+    assert main(["gate", str(work)]) == 1
+    assert "旧入口 [legacy_entry]" in capsys.readouterr().err
+
+
 def test_hook_install_idempotent_and_refuses_foreign_hooks(tmp_path):
     git_hooks = tmp_path / ".git" / "hooks"
     git_hooks.mkdir(parents=True)
