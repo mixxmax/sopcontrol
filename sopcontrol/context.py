@@ -9,6 +9,8 @@ from pathlib import Path, PurePosixPath
 EXCLUDED_DIRS = {
     ".git", ".sopcontrol", ".sopcontrol-local", "node_modules",
     "__pycache__", ".venv", ".pytest_cache", "dist", "build",
+    # 工作树/本地工具目录会先于主树占满 iter_files 上限，掩盖真生产消费者
+    ".worktrees", ".dsh", ".pnpm-store", ".planning",
 }
 
 _TEST_DIR_HINTS = {"tests", "test", "__tests__"}
