@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sopcontrol"
-version = "0.1.0"
-description = "SOP Control: intent-rule-delivery compiler and control plane for coding agents（垂直骨干役用可用）"
+version = "0.2.0"
+description = "SOP Control: model-neutral project control plane for coding agents (experimental but real)"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -19,7 +19,7 @@ keywords = [
     "verification",
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 3 - Alpha",
     "Environment :: Console",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
@@ -45,9 +45,10 @@ dependencies = [
 dev = ["pytest>=7"]
 
 [project.urls]
-Homepage = "https://github.com/example/sopcontrol"
-Documentation = "https://github.com/example/sopcontrol#readme"
-Issues = "https://github.com/example/sopcontrol/issues"
+# Replace GITHUB_REPO with your public clone URL before publishing.
+Homepage = "https://GITHUB_REPO"
+Documentation = "https://GITHUB_REPO#readme"
+Issues = "https://GITHUB_REPO/issues"
 
 [project.scripts]
 sopctl = "sopcontrol.cli:main"
