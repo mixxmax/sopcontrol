@@ -124,6 +124,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_doctor)
 
     p = sub.add_parser(
+        "inventory",
+        help="入口/状态源薄清单（受控入口、旧入口存活、平行状态源；只读，删旁路优先）",
+    )
+    p.add_argument("path", nargs="?", default=".")
+    p.set_defaults(func=cmd_inventory)
+
+    p = sub.add_parser(
         "vertical-check",
         help="垂直骨干役用闭环：武装身份/投影/钩子 → doctor --vertical → audit/gate/self-test",
     )

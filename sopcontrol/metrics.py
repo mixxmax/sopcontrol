@@ -140,6 +140,10 @@ def structure_signals(root: Path, sensors: list | None = None, detectors: list |
     try:
         report = run_audit(root, sensors, detectors, persist=False)
         legacy_alive = sum(1 for f in report.findings if f.pattern_id == "legacy_entry_alive")
+        redundant = sum(1 for f in report.findings if f.pattern_id == "redundant_entry_point")
+        parallel_state = sum(
+            1 for f in report.findings if f.pattern_id == "state_in_parallel_files"
+        )
     except Exception as exc:
         return {"root": str(root), "error": f"{type(exc).__name__}: {exc}"}
 
@@ -159,6 +163,9 @@ def structure_signals(root: Path, sensors: list | None = None, detectors: list |
     return {
         "root": str(root),
         "legacy_entry_alive_findings": legacy_alive,
+        "redundant_entry_point_findings": redundant,
+        "state_in_parallel_files_findings": parallel_state,
+        "bypass_findings": legacy_alive + redundant,
         "delete_entry_candidates_observed": delete_observed,
         "delete_entry_candidates_triaged": delete_triaged,
         "note": "计量入口残留与删除候选；不发明宇宙入口清单",

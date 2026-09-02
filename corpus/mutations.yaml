@@ -53,8 +53,9 @@ mutations:
   revert: 去掉生产路径过滤——任何文件提到旧标记都算旧链存活
   breaks: 「断言旧符号已不存在」的拆除测试被判成旧链存活，惩罚拆除者
   must_fire:
-  - {case_id: CASE-036, pattern_id: legacy_entry_alive}
-  - {case_id: CASE-038, pattern_id: legacy_entry_alive}
+  # 负向对照夹具有生产受控入口，故误报形态是 redundant_entry_point（非裸 legacy）
+  - {case_id: CASE-036, pattern_id: redundant_entry_point}
+  - {case_id: CASE-038, pattern_id: redundant_entry_point}
 
 - mutation_id: MUT-006
   fix: state_in_parallel_files 只认多处**写入**（_write_sites 读 name_flows）

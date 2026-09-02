@@ -152,17 +152,36 @@ class NoConsumerDetector:
                 legacy = legacy_evidence(rule, scoped_evidence)
                 if legacy:
                     legacy_names = ", ".join(rule.legacy_markers)
-                    findings.append(
-                        Finding(
-                            pattern_id="legacy_entry_alive",
-                            rule_id=rule.rule_id,
-                            summary=(
-                                f"旧入口 [{legacy_names}] 仍在生产路径存活，"
-                                f"可绕过受控入口 [{markers}]"
-                            ),
-                            severity="gap",
-                            detector=self.detector_id,
-                            evidence_ids=[e.evidence_id for e in legacy],
+                    # 受控入口已接线 + 旧入口仍存活 = 冗余入口（删旁路优先于再加守卫）
+                    # 仅有旧入口、尚无生产消费者时仍报 legacy_entry_alive。
+                    if prod:
+                        findings.append(
+                            Finding(
+                                pattern_id="redundant_entry_point",
+                                rule_id=rule.rule_id,
+                                summary=(
+                                    f"同一意图存在多个入口：受控 [{markers}] 已接线，"
+                                    f"旧入口 [{legacy_names}] 仍在生产路径可调用；"
+                                    f"应删除或合并旧入口，而不是再登记禁止规则"
+                                ),
+                                severity="gap",
+                                detector=self.detector_id,
+                                evidence_ids=[e.evidence_id for e in legacy]
+                                + [e.evidence_id for e in prod],
+                            )
                         )
-                    )
+                    else:
+                        findings.append(
+                            Finding(
+                                pattern_id="legacy_entry_alive",
+                                rule_id=rule.rule_id,
+                                summary=(
+                                    f"旧入口 [{legacy_names}] 仍在生产路径存活，"
+                                    f"可绕过受控入口 [{markers}]"
+                                ),
+                                severity="gap",
+                                detector=self.detector_id,
+                                evidence_ids=[e.evidence_id for e in legacy],
+                            )
+                        )
         return findings

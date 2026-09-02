@@ -90,6 +90,7 @@ sopctl rule attest MY-001 . --bypass-note "可绕过路径：直接调用底层 
 ```bash
 # 观察断口（--compact 用本轮证据替换账本，去掉 stale 噪音）
 sopctl audit . --compact
+sopctl inventory .                 # 受控/冗余入口/平行状态；应删旁路优先于再加守卫
 sopctl explain MY-001 .
 
 # 开任务（unknown/无画像、弱模型或行为安全上限都会收紧到文件级范围、1 轮预算和 MUST 字段）

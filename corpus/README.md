@@ -32,7 +32,7 @@ task_cases.yaml 任务机脚本化用例 → tests/corpus/test_task_cases.py
 | 2 只更新文档/README | 吸收语料 + 任务机 | CASE-001；TCASE-013 |
 | 3 schema/状态只写不读 | 标识符代理 + AST Store/Load | CASE-011/014；CASE-030/031（`schema_field_unread`） |
 | 4 测试 helper 假前置 | 语料 | CASE-008/020（`test_helper_only`） |
-| 5 绕过 gateway 旧入口 | 语料 | CASE-009/010（`legacy_entry_alive`） |
+| 5 绕过 gateway 旧入口 | 语料 | CASE-009/010（`redundant_entry_point`；负向对照仍用 `legacy_entry_alive` 路径过滤） |
 | 6 改 verifier 自证 | 行为（完成门） | TCASE-009/010；`test_task_gate` |
 | 7 换模型重蹈副作用 | 行为（live 演习） | `scenario7` / harness-eval |
 | 8 弱模型漏 MUST 字段 | 行为 | TCASE-011/012；`test_scenario8` |

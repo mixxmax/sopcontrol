@@ -17,16 +17,17 @@ from sopcontrol.repair import open_repair
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_legacy_findings_materialize_delete_entry_candidate(tmp_path):
+@pytest.mark.parametrize("pattern_id", ["legacy_entry_alive", "redundant_entry_point"])
+def test_bypass_findings_materialize_delete_entry_candidate(tmp_path, pattern_id):
     registry = tmp_path / ".sopcontrol" / "rules" / "registry.yaml"
     registry.parent.mkdir(parents=True)
     registry.write_text("rules: []\n", encoding="utf-8")
     ledger = Ledger(tmp_path / ".sopcontrol" / "evidence" / "ledger.jsonl")
     for index in range(3):
         ledger.append_finding(Finding(
-            pattern_id="legacy_entry_alive",
+            pattern_id=pattern_id,
             rule_id="GATE-1",
-            summary=f"旧入口 direct_x 仍存活 #{index}",
+            summary=f"旁路仍可达 #{index}",
             detector="test",
         ))
 
@@ -39,7 +40,6 @@ def test_legacy_findings_materialize_delete_entry_candidate(tmp_path):
     assert candidates[0].kind == "deprecation"
     assert "删除或合并" in candidates[0].statement
     assert "禁止规则" in candidates[0].statement or "登记禁止" in candidates[0].statement
-
 
 def test_non_legacy_findings_still_investigate(tmp_path):
     (tmp_path / ".sopcontrol" / "rules").mkdir(parents=True)
@@ -68,10 +68,11 @@ def ci_work(tmp_path):
     return w
 
 
-def test_repair_objective_for_legacy_prefers_delete(ci_work):
-    """注入 legacy finding 后，repair open 目标应偏向删入口。"""
+@pytest.mark.parametrize("pattern_id", ["legacy_entry_alive", "redundant_entry_point"])
+def test_repair_objective_for_bypass_prefers_delete(ci_work, pattern_id):
+    """注入旁路 finding 后，repair open 目标应偏向删入口。"""
     finding = Finding(
-        pattern_id="legacy_entry_alive",
+        pattern_id=pattern_id,
         rule_id="DEPLOY-001",
         summary="旧入口 deploy_direct 仍存活",
         detector="test",
@@ -82,7 +83,6 @@ def test_repair_objective_for_legacy_prefers_delete(ci_work):
     task = open_repair(ci_work, finding.finding_id, ["scripts"], SENSORS, DETECTORS)
     assert "删除或合并旧入口" in task.contract.objective
     assert "不要再接线守卫" in task.contract.objective
-
 
 def test_structure_signals_counts_delete_entry_candidates(tmp_path):
     (tmp_path / ".sopcontrol" / "rules").mkdir(parents=True)

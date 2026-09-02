@@ -52,6 +52,44 @@ def cmd_audit(args) -> int:
 
 
 
+def cmd_inventory(args) -> int:
+    """入口/状态源薄清单：受控入口、旧入口存活、平行状态源（只读）。"""
+    from .inventory import build_entry_inventory
+
+    root = _project(args.path)
+    inv = build_entry_inventory(root)
+    print(
+        f"入口清单 {inv['root']}：规则 {inv['rules']}；"
+        f"冗余入口 {inv['redundant_entry_points']}；"
+        f"裸 legacy {inv['legacy_alive']}；"
+        f"平行状态源 {inv['parallel_state_sources']}；"
+        f"应删旁路 {inv['delete_first_actions']}"
+    )
+    print(f"  （{inv['note']}）")
+    for row in inv["rows"]:
+        if not (
+            row["controlled_entries"]
+            or row["declared_legacy"]
+            or row["state_markers"]
+            or row["delete_first"]
+        ):
+            continue
+        flags = []
+        if row["redundant_entry"]:
+            flags.append("redundant→delete")
+        if row["legacy_alive"]:
+            flags.append("legacy_alive→delete")
+        if row["parallel_state"]:
+            flags.append("parallel_state")
+        flag_s = f" [{', '.join(flags)}]" if flags else ""
+        print(
+            f"  {row['rule_id']}: controlled={row['controlled_entries'] or '-'} "
+            f"legacy={row['declared_legacy'] or '-'} "
+            f"state={row['state_markers'] or '-'}{flag_s}"
+        )
+    return 0
+
+
 def cmd_doctor(args) -> int:
     """安装自诊（CC Safety Net doctor 同款）：注册表可载入、账本未被篡改、插件可用。"""
     root = _project(args.path)
@@ -108,6 +146,19 @@ def cmd_doctor(args) -> int:
         if getattr(args, "vertical", False):
             problems.append("垂直役用要求已安装 pre-push 终态门（sopctl hook install）")
     print(f"pre-push 终态门: {state}")
+
+    try:
+        from .inventory import build_entry_inventory
+
+        inv = build_entry_inventory(root)
+        print(
+            f"入口清单: 冗余 {inv['redundant_entry_points']} / "
+            f"裸legacy {inv['legacy_alive']} / "
+            f"平行状态 {inv['parallel_state_sources']} "
+            f"（应删旁路 {inv['delete_first_actions']}；明细 sopctl inventory）"
+        )
+    except Exception as exc:
+        print(f"入口清单: 跳过（{type(exc).__name__}: {exc}）")
 
     if problems:
         for p in problems:
@@ -184,7 +235,10 @@ def cmd_metrics(args) -> int:
             print(f"结构信号 {ss['root']}: 失败（{ss['error']}）")
         else:
             print(
-                f"结构信号 {ss['root']}: legacy存活 {ss['legacy_entry_alive_findings']}；"
+                f"结构信号 {ss['root']}: "
+                f"redundant={ss.get('redundant_entry_point_findings', 0)} "
+                f"legacy={ss['legacy_entry_alive_findings']} "
+                f"parallel_state={ss.get('state_in_parallel_files_findings', 0)}；"
                 f"delete_entry 候选 observed={ss['delete_entry_candidates_observed']} "
                 f"triaged={ss['delete_entry_candidates_triaged']}"
             )

@@ -74,8 +74,8 @@ cases:
   expected_verdict: {status: fail, absorption: wired_and_tested}
   expected_grounding: structural
   expected_findings:
-  - {pattern_id: legacy_entry_alive, severity: gap}
-  ground_truth: 手册 1.2 症状3 / 5.8——文档说 gateway 强制，但旧直写脚本仍可直接产生副作用；新链合格 + 旧链存活 = 判定 fail
+  - {pattern_id: redundant_entry_point, severity: gap}
+  ground_truth: 手册 1.2 症状3 / 6.5——gateway 已接线但旧直写仍存活；同一意图多入口 = redundant_entry_point，应删旁路而非再加禁止
 
 - case_id: CASE-010
   fixture: ci-deploy
@@ -83,8 +83,8 @@ cases:
   expected_verdict: {status: fail, absorption: wired_and_tested}
   expected_grounding: structural
   expected_findings:
-  - {pattern_id: legacy_entry_alive, severity: gap}
-  ground_truth: legacy_entry_alive 的第二领域验证（CI 域）
+  - {pattern_id: redundant_entry_point, severity: gap}
+  ground_truth: redundant_entry_point 的第二领域验证（CI 域：publish_pipeline + legacy_publish）
 
 - case_id: CASE-011
   fixture: shop-checkout

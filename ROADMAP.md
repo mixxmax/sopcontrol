@@ -10,9 +10,11 @@
 3. 脊柱（`sopcontrol/`）零 LLM；判定器（`verdict.py`）零 I/O（宪法测试守卫）。
 4. 每个新检测模式必须同步新增语料用例（优先跨领域夹具）；无语料的模式不算完成。
 5. 同一问题连续两次修复失败 → 在「Blockers」登记并跳过，不得无限返工。
-6. 测试不全绿不得提交；提交信息用 `[B阶段]` 前缀。
+6. 测试不全绿不得提交；提交信息用 `[B阶段]` / `[LP阶段]` 前缀。
 7. 保持克制：先闭环后带宽；拒绝防御性脚手架、feature flag 与面面俱到。
 8. 对既有判决不重新诉讼：DESIGN.md 已定的决策直接执行，除非实践证明其错误。
+9. Living-Project 取向（手册 2026-08-31）：消歧优先于加守卫；确定事实活在项目里；
+   空间双向可变。判据：这条改动是在告诉模型别做什么，还是让那件事不再需要被决定？
 
 ## 阶段
 
@@ -97,8 +99,57 @@
 - [x] Rule.state_markers 字段；verdict 对状态类规则显式"不适用吸收等级"（不猜）
 - [x] TASK-0001 全流程：契约→范围检查→完成门独立审计 SELF-001/002→delivered（自应用首次真实闭环）
 
+### LP1 消歧批 — 完成（2026-09-02）
+对应手册阶段 D 切片起步 + E 取向纠偏起步。哲学：少让模型猜；权威留在项目。
+- [x] 最小任务投影：`tasks_for_projection`（活跃 + 未接替 blocked/failed；delivered 不进投影）
+- [x] blocked 裁决链：`resolution_of` / `superseded_by_task` / `blocked_reason_code`；`task open --resolves`
+- [x] `delete_entry` 一等候选（legacy 达阈值）；repair 目标偏删入口；`metrics.structure_signals`
+- 验收：521 测试全绿；本仓投影约 178→53 行；`project check` 通过
+
+### LP2 删除优先做实 — 完成（2026-09-02，手册阶段 E 主切片）
+目标：控制成熟度上升伴随**入口减少**，而不是规则/守卫变多。
+非目标：全宇宙入口图谱；自动删代码（仍须任务契约 + 人确认）；自动 deprecate。
+
+- [x] **`redundant_entry_point`**：受控入口已接线 + 声明旧入口仍在生产路径 → 发此 Finding（不再用笼统 legacy）；jobflow + ci-deploy 双域；CASE-009/010；MUT-005 证伪靶改为 redundant
+- [x] **候选/修复导向删除**：`redundant_entry_point` 与 `legacy_entry_alive` → `delete_entry`；repair 目标偏删旁路
+- [x] **薄清单**：`sopctl inventory` + doctor 一行摘要（受控 / 冗余 / 平行状态 / 应删旁路）
+- [x] **结构信号**：`metrics.structure_signals` 计入 redundant / parallel_state / bypass
+- [ ] 后置：legacy 清零后**建议** deprecate 纯禁止型重复规则（仍两阶段人工；不自动）
+- 验收：相关语料+变异+inventory 测试绿；出口「入口是否变少」可被 inventory/metrics 回答
+
+### LP2 余量（不阻塞 LP3）
+- 当结构保证足够时，批量建议移除冗余 guard / deprecate 禁止型重复规则（人工确认）
+
+### LP3 投影再削薄 + 恢复协议 —（手册阶段 D 余量）
+前置：LP2 至少完成项 1–2，避免在仍充满歧义入口时过度优化上下文。
+1. 投影拆「常驻核」（硬规则 + 成熟度 + 硬约束）与「当前链头任务」（至多 N 条活跃；verified 堆积可折叠）
+2. 新会话恢复协议：投影头部写清「先读切片 → 唯一合法 next_action → 全量用 sopctl」；与 `task takeover` 对齐
+3. 投影内容摘要哈希 / 包含理由（为何这条任务在切片里）；`project check` 消费同一函数
+4. 长历史夹具：≥20 delivered + 1 executing + 1 unresolved blocked，断言投影仍短且可决策
+
+出口判据：无历史记忆的模型只读投影能说出当前唯一该推进的任务；换平台投影同源。
+
+### LP4 事件历史与可重建视图 —（手册阶段 F，后置）
+前置：LP2/LP3 稳定日用后再动存储，避免为修剪而大拆账本。
+1. 明确：事件日志只追加；registry/tasks/画像为可重建物化视图
+2. `replace_snapshot` 不得抹掉学习/撤销所需历史；压缩必须带区间与哈希
+3. 撤销/supersede 的 dry-run 影响分析（已有 preview 可扩展）
+4. 从事件重建当前 effective 集合的一致性测试
+
+出口判据：能回答「为何变成现在这样」；撤销影响可在执行前计算。
+
+### Living-Project 明确不做（直到上述出口碰壁）
+- 用更多 MUST_NOT / 提示词填充歧义
+- LLM 自动晋升规则或自动扩大权限
+- 阶段 F 未到就引入全局 daemon / 跨机器身份
+- 把 `deprecate` 降到与 `add` 同成本（永久退出保持两阶段；对称性靠 suspend↔reinstate 与删除入口）
+
 ## 状态（每次运行后更新）
 
+- 2026-09-02（Living-Project Batch 2·删除优先）：受控+旧入口并存时发 `redundant_entry_point`
+  （CASE-009/010 双域）；候选/repair 统一导向 `delete_entry`；`sopctl inventory` 薄清单 +
+  doctor/metrics 结构信号。MUT-005 负向对照误报形态改为 redundant。判定 next_action
+  改为「删旁路，不要再加禁止」。未做：自动建议 deprecate（余量）。
 - 2026-09-02（Living-Project Batch 1·消歧批）：按「消除歧义空间 / 双向修剪 / 活在项目里」落地三刀。
   ① 最小任务投影：`tasks_for_projection` 只保留活跃任务与未被接替的 blocked/failed；
   delivered 与已 superseded 终态留在项目内（`sopctl task list`）。本仓 AGENTS 任务节

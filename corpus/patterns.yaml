@@ -30,13 +30,29 @@ patterns:
   status: proven-on-2-domains
 
 - pattern_id: legacy_entry_alive
-  statement: 受控入口已接线，但声明为 legacy 的旧入口符号仍在生产路径存活（可绕过）
-  detection: rule.legacy_markers × code_scan.identifiers（非测试路径命中）
+  statement: 声明为 legacy 的旧入口符号仍在生产路径存活（尚无/不依赖生产受控消费者并存判定）
+  detection: rule.legacy_markers × code_scan.identifiers（非测试路径命中）；无生产 consumer 时使用
+  fixtures:
+  - healthy-billing/BILL-005
+  - shop-checkout/REFUND-010
+  domains: [billing, e-commerce]
+  status: proven-on-2-domains
+  note: |
+    负向对照主战场——旧符号仅被测试引用时必须沉默。
+    受控入口已接线且旧入口并存时改报 redundant_entry_point（删除优先）。
+
+- pattern_id: redundant_entry_point
+  statement: 同一意图存在多个入口——受控入口已接线，声明的旧入口仍在生产路径可调用
+  detection: rule.consumer_markers 生产命中 × rule.legacy_markers 生产命中
   fixtures:
   - jobflow-preview/PUSH-002
   - ci-deploy/RELEASE-001
   domains: [job-search, ci-deploy]
   status: proven-on-2-domains
+  severity: gap
+  note: |
+    手册 6.5 / LP2——消歧优先于加守卫：下一步是删除或合并旧入口，
+    不是再登记一条 MUST_NOT。候选 refresh 映射为 delete_entry。
 
 - pattern_id: write_only_state
   statement: 状态标记仅出现在单一生产文件，无其他消费者读取迹象（只写不读的代理）

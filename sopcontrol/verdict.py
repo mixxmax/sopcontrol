@@ -376,11 +376,15 @@ def evaluate_rule(
     legacy = legacy_evidence(rule, evidence)
     if legacy:
         legacy_names = ", ".join(rule.legacy_markers)
+        delete_first = (
+            "删除或合并旧入口，使仅受控入口可达；"
+            "不要再加一条禁止规则或守卫"
+        )
         return base.model_copy(
             update={
                 "status": "fail",
                 "reason": f"生产路径仍存在旧入口 [{legacy_names}]，受控入口可被绕过（{base.reason}）",
-                "next_action": "关闭旧入口，或将其改为委托受控入口后移出 legacy_markers",
+                "next_action": delete_first,
                 "evidence_ids": base.evidence_ids + [e.evidence_id for e in legacy],
             }
         )

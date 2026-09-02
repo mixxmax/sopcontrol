@@ -298,11 +298,11 @@ def refresh_candidates(root: Path) -> dict[str, int]:
         findings = []
     for finding in findings:
         key = "finding:" + finding.fingerprint
-        if finding.pattern_id == "legacy_entry_alive":
+        if finding.pattern_id in {"legacy_entry_alive", "redundant_entry_point"}:
             spec = {
                 "kind": "deprecation",
                 "statement": (
-                    f"旧入口仍存活（规则 {finding.rule_id or '未关联'}）："
+                    f"冗余/旧入口仍可达（规则 {finding.rule_id or '未关联'}）："
                     f"{finding.summary}；应删除或合并至唯一受控入口，而不是再登记禁止规则"
                 ),
                 "scope_guess": finding.rule_id or "project",
