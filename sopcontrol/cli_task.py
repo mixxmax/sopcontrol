@@ -261,6 +261,18 @@ def cmd_task(args) -> int:
             store.save(task)
             if old_tasks:
                 attach_resolution_links(store, task, old_tasks)
+            from .chronicle import append_project_event
+
+            append_project_event(
+                root,
+                kind="task.open",
+                subject=task_id,
+                detail={
+                    "objective": args.objective[:120],
+                    "resolves": list(resolves),
+                    "required_rules": list(args.require_rule or []),
+                },
+            )
         from .capability_events import CapabilityEvent, append_capability_event
 
         append_capability_event(

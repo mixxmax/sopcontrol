@@ -97,6 +97,8 @@ sopctl explain MY-001 .
 # 如需解释当前模型为何被收紧，先只读查看：sopctl capability-events . --model <CURRENT-MODEL>
 # 投影含「新会话恢复」+ 当前链头（上限 5；verified 折叠）；全量：task list / show / takeover
 sopctl project all .                   # 刷新投影后 project check 应 OK
+sopctl chronicle show .                # 换会话：项目何以至此（给模型看的编年）
+sopctl chronicle check .               # 编年重放 vs registry 核对
 sopctl task open . --objective "接线 MY-001" \
   --allow src/foo.py --require-rule MY-001 \
   --require-field digest --require-field status   # strict_schema 时需要

@@ -67,8 +67,12 @@ def test_deprecate_requires_matching_preview_and_updates_projection(tmp_path, ca
     assert retired.retirement_reason == "部署入口已由平台结构保证替代"
     assert retired.retired_by == "human-reviewer"
     assert retired.retirement_id == preview_id
-    assert "DEPLOY-001" not in (work / "AGENTS.md").read_text(encoding="utf-8")
-    assert "DEPLOY-001" not in (work / "CLAUDE.md").read_text(encoding="utf-8")
+    agents = (work / "AGENTS.md").read_text(encoding="utf-8")
+    claude = (work / "CLAUDE.md").read_text(encoding="utf-8")
+    # 退休规则不得再进硬规则核；编年旅程仍可出现该 id
+    for text in (agents, claude):
+        hard = text.split("## 必须遵守的规则")[1].split("## ")[0] if "## 必须遵守的规则" in text else text
+        assert "DEPLOY-001" not in hard
 
     after = registry.path.read_bytes()
     assert main(command + ["--confirm-preview", preview_id]) == 0

@@ -938,7 +938,10 @@ def test_cli_lifecycle_confirmation_and_stale_preview(tmp_path, capsys):
     assert registry.get("DEPLOY-001").suspended_until == datetime(
         2099, 9, 1, 12, 0, tzinfo=timezone.utc
     )
-    assert "DEPLOY-001" not in (work / "AGENTS.md").read_text(encoding="utf-8")
+    agents = (work / "AGENTS.md").read_text(encoding="utf-8")
+    # 暂停规则不得再进「必须遵守」硬规则核；编年「何以至此」仍可提及
+    hard = agents.split("## 必须遵守的规则")[1].split("## ")[0] if "## 必须遵守的规则" in agents else agents
+    assert "DEPLOY-001" not in hard
 
     work = _cli_work(tmp_path / "stale")
     registry = Registry(work / ".sopcontrol/rules/registry.yaml")

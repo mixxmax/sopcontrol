@@ -41,6 +41,7 @@ def render_projection(
     maturity=None,
     at=None,
     max_heads: int = DEFAULT_PROJECTION_MAX_HEADS,
+    project_root: Path | None = None,
 ) -> str:
     """maturity 是 bootstrap.MaturityReport 或 None。
 
@@ -63,8 +64,24 @@ def render_projection(
         "2. 只推进「当前链头」里的合法动作；不要重做已交付副作用。",
         "3. 全量历史与接手包：`sopctl task list` / `task show <id>` / `task takeover <id>`。",
         f"4. 本切片摘要: `{slice_info.digest}`（漂移时 `sopctl project check` 会报 stale）。",
+        "5. 项目何以至此：见下节；全量编年 `sopctl chronicle`。",
         "",
     ]
+    if project_root is not None:
+        try:
+            from .chronicle import journey_lines
+
+            lines.append("## 何以至此（换模型/换会话）")
+            for item in journey_lines(Path(project_root), limit=5):
+                if item.startswith("- ") or item.startswith("编年") or item.startswith("全量") or item.startswith("尚无"):
+                    lines.append(item if item.startswith("- ") else f"- {item}")
+                else:
+                    lines.append(f"- {item}")
+            lines.append("")
+        except Exception:
+            lines.append("## 何以至此（换模型/换会话）")
+            lines.append("- （编年暂不可用；权威仍在 `.sopcontrol/`）")
+            lines.append("")
     if maturity is not None:
         lines.append(f"## 控制成熟度：{maturity.level} {maturity.level_desc}")
         lines.append(
@@ -198,11 +215,17 @@ def write_projection(root: Path, target: str = "codex") -> Path:
         raise ValueError(f"未知投影目标 {target!r}；可选: {', '.join(PROJECTION_TARGETS)}")
     filename, hint = PROJECTION_TARGETS[target]
     projection_at = utcnow()
+    root = Path(root)
     rules, tasks, maturity = _projection_inputs(root, at=projection_at)
     section = render_projection(
-        rules, tasks, refresh_hint=hint, maturity=maturity, at=projection_at
+        rules,
+        tasks,
+        refresh_hint=hint,
+        maturity=maturity,
+        at=projection_at,
+        project_root=root,
     )
-    return merge_section(Path(root) / filename, section)
+    return merge_section(root / filename, section)
 
 
 def write_all_projections(root: Path) -> list[Path]:
@@ -210,6 +233,7 @@ def write_all_projections(root: Path) -> list[Path]:
     written: list[Path] = []
     seen: set[str] = set()
     projection_at = utcnow()
+    root = Path(root)
     rules, tasks, maturity = _projection_inputs(root, at=projection_at)
     section = render_projection(
         rules,
@@ -217,6 +241,7 @@ def write_all_projections(root: Path) -> list[Path]:
         refresh_hint="sopctl project all",
         maturity=maturity,
         at=projection_at,
+        project_root=root,
     )
     for _name, (filename, _hint) in PROJECTION_TARGETS.items():
         if filename in seen:
@@ -227,9 +252,15 @@ def write_all_projections(root: Path) -> list[Path]:
 
 
 def _expected_section(root: Path, refresh_hint: str, *, at) -> str:
+    root = Path(root)
     rules, tasks, maturity = _projection_inputs(root, at=at)
     return render_projection(
-        rules, tasks, refresh_hint=refresh_hint, maturity=maturity, at=at
+        rules,
+        tasks,
+        refresh_hint=refresh_hint,
+        maturity=maturity,
+        at=at,
+        project_root=root,
     )
 
 

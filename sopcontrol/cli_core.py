@@ -52,6 +52,45 @@ def cmd_audit(args) -> int:
 
 
 
+def cmd_chronicle(args) -> int:
+    """项目编年：换会话可知何以至此；check 核对事件重放 vs registry。"""
+    from .chronicle import (
+        check_reconstruction,
+        journey_lines,
+        load_project_events,
+        write_view_snapshot,
+    )
+
+    root = _project(args.path)
+    sub = getattr(args, "sub", None) or "show"
+    if sub == "check":
+        report = check_reconstruction(root)
+        print(
+            f"编年核对: {'OK' if report.ok else '漂移'}；"
+            f"事件 {report.event_count}；完整性 {'OK' if report.integrity_ok else '损坏'}"
+        )
+        print(f"  registry effective digest: {report.effective_digest_registry}")
+        print(f"  {report.note}")
+        for item in report.rule_mismatches:
+            print(f"  不一致: {item}", file=sys.stderr)
+        return 0 if report.ok else 1
+    if sub == "snapshot":
+        snap = write_view_snapshot(root)
+        print(
+            f"已写视图摘要：events={snap['event_count']}；"
+            f"effective={snap['effective_digest_registry']}；"
+            f"tasks={snap['task_chain_digest']}"
+        )
+        return 0
+    # show
+    loaded = load_project_events(root)
+    print(f"项目编年 {root}：{len(loaded.events)} 条"
+          f"（完整性 {'OK' if loaded.integrity_ok else '有损坏行'}）")
+    for line in journey_lines(root, limit=int(getattr(args, "limit", 12) or 12)):
+        print(line)
+    return 0 if loaded.integrity_ok else 1
+
+
 def cmd_inventory(args) -> int:
     """入口/状态源薄清单：受控入口、旧入口存活、平行状态源（只读）。"""
     from .inventory import build_entry_inventory
@@ -159,6 +198,19 @@ def cmd_doctor(args) -> int:
         )
     except Exception as exc:
         print(f"入口清单: 跳过（{type(exc).__name__}: {exc}）")
+
+    try:
+        from .chronicle import check_reconstruction, load_project_events
+
+        loaded = load_project_events(root)
+        report = check_reconstruction(root)
+        print(
+            f"项目编年: {len(loaded.events)} 条；"
+            f"核对 {'OK' if report.ok else '漂移'}；"
+            f"明细 sopctl chronicle / chronicle check"
+        )
+    except Exception as exc:
+        print(f"项目编年: 跳过（{type(exc).__name__}: {exc}）")
 
     if problems:
         for p in problems:

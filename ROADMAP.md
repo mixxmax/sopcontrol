@@ -127,14 +127,16 @@
 - [x] 长历史测试：≥20 delivered + executing + blocked → 投影仍短且可决策
 - 验收：529+ 测试全绿；本仓 AGENTS 含恢复协议与链头上限，verified 折叠、超出上限有提示
 
-### LP4 事件历史与可重建视图 —（手册阶段 F，后置）
-前置：LP2/LP3 稳定日用后再动存储，避免为修剪而大拆账本。
-1. 明确：事件日志只追加；registry/tasks/画像为可重建物化视图
-2. `replace_snapshot` 不得抹掉学习/撤销所需历史；压缩必须带区间与哈希
-3. 撤销/supersede 的 dry-run 影响分析（已有 preview 可扩展）
-4. 从事件重建当前 effective 集合的一致性测试
+### LP4 事件历史与可重建视图 — 完成（2026-09-02，手册阶段 F 主切片）
+面向换会话/换模型的「何以至此」，不是终端用户操作台。
+- [x] `project-events.jsonl` 只追加：rule.add/transition/lifecycle/retire、task.open/transition
+- [x] 与 ledger.`replace_snapshot` 分离；压缩保留区间哈希（view.snapshot）
+- [x] `sopctl chronicle show|check|snapshot`；check 重放规则状态 vs registry
+- [x] 投影「何以至此」小节 + doctor 一行；`view-snapshot.yaml` 物化摘要
+- [ ] 后置：撤销 dry-run 影响分析扩展（lifecycle preview 已有基础，不阻塞本批）
+- 验收：编年往返完整；ledger compact 不抹编年；投影含旅程切片
 
-出口判据：能回答「为何变成现在这样」；撤销影响可在执行前计算。
+出口判据：换模型只读投影/chronicle 能说出项目怎么走到现在；核对可发现 registry 与编年漂移。
 
 ### Living-Project 明确不做（直到上述出口碰壁）
 - 用更多 MUST_NOT / 提示词填充歧义
@@ -144,6 +146,9 @@
 
 ## 状态（每次运行后更新）
 
+- 2026-09-02（Living-Project Batch 4·编年）：`project-events.jsonl` 记录规则/任务治理；
+  `sopctl chronicle` 展示何以至此、check 核对重放、snapshot 写视图摘要；投影与 doctor
+  暴露最小旅程。ledger compact 不触及编年。撤销 dry-run 扩展留余量。
 - 2026-09-02（Living-Project Batch 3·投影削薄）：`select_projection_tasks` 链头上限 5、
   verified 折叠、省略计数；投影头部「新会话恢复」四步 + 切片摘要哈希 + 为何在切片；
   takeover note 对齐；长历史夹具测试。写入与 project check 同源。

@@ -43,6 +43,25 @@ class Registry:
     def __init__(self, path: Path):
         self.path = Path(path)
 
+    def _project_root(self) -> Path:
+        resolved = self.path.resolve()
+        if resolved.parent.name == "rules" and resolved.parent.parent.name == ".sopcontrol":
+            return resolved.parent.parent.parent
+        return resolved.parent
+
+    def _chronicle(self, *, kind: str, subject: str, detail: dict | None = None) -> None:
+        try:
+            from .chronicle import append_project_event
+
+            append_project_event(
+                self._project_root(),
+                kind=kind,
+                subject=subject,
+                detail=detail or {},
+            )
+        except Exception:
+            return
+
     def _lock_path(self) -> Path:
         resolved = self.path.resolve()
         if resolved.parent.name == "rules" and resolved.parent.parent.name == ".sopcontrol":
@@ -282,6 +301,11 @@ class Registry:
                 )
             rules.append(rule)
             self._save_locked(rules)
+        self._chronicle(
+            kind="rule.add",
+            subject=rule.rule_id,
+            detail={"status": rule.status.value, "modality": rule.modality.value},
+        )
 
     def record_attestation(
         self,
@@ -560,6 +584,18 @@ class Registry:
                 after_scope=list(rule.scope_paths) if action == "narrow" else [],
             ))
             self._write(rules)
+            self._chronicle(
+                kind="rule.lifecycle",
+                subject=rule_id,
+                detail={
+                    "action": action,
+                    "reason": preview["reason"],
+                    "actor": preview["actor"],
+                    "revision": rule.lifecycle_revision,
+                    "until": preview["until"].isoformat() if action == "suspend" else None,
+                    "scope_paths": list(rule.scope_paths) if action == "narrow" else None,
+                },
+            )
             return rule
 
     def _retirement_preview(
@@ -738,6 +774,17 @@ class Registry:
                 if rule_id not in successor.supersedes:
                     successor.supersedes.append(rule_id)
             self._write(rules)
+            self._chronicle(
+                kind="rule.retire",
+                subject=rule_id,
+                detail={
+                    "action": action,
+                    "to_status": expected_status.value,
+                    "reason": preview["reason"],
+                    "actor": preview["actor"],
+                    "replacement": replacement or "",
+                },
+            )
             return rule
 
     def transition(self, rule_id: str, new_status: RuleStatus) -> Rule:
@@ -772,9 +819,18 @@ class Registry:
                                 f"规则冲突（14.1 场景10）：{detail}。"
                                 f"请先 supersede/废弃旧规则，或调整 consumer_markers，不得让相反模态并存"
                             )
+                    previous = rule.status.value
                     rule.status = new_status
                     if new_status == RuleStatus.accepted and rule.accepted_at is None:
                         rule.accepted_at = utcnow()
                     self._save_locked(rules, allow_status_transition=True)
+                    self._chronicle(
+                        kind="rule.transition",
+                        subject=rule_id,
+                        detail={
+                            "from_status": previous,
+                            "to_status": new_status.value,
+                        },
+                    )
                     return rule
             raise RegistryError(f"未找到规则 {rule_id}")

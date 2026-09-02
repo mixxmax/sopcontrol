@@ -623,7 +623,21 @@ class TaskStore:
     """任务文件存储：.sopcontrol/tasks/TASK-xxxx.yaml；revision 冲突即拒绝写。"""
 
     def __init__(self, root: Path):
-        self.dir = Path(root) / ".sopcontrol" / "tasks"
+        self.root = Path(root)
+        self.dir = self.root / ".sopcontrol" / "tasks"
+
+    def _chronicle(self, *, kind: str, subject: str, detail: dict | None = None) -> None:
+        try:
+            from .chronicle import append_project_event
+
+            append_project_event(
+                self.root,
+                kind=kind,
+                subject=subject,
+                detail=detail or {},
+            )
+        except Exception:
+            return
 
     def _path(self, task_id: str) -> Path:
         return self.dir / f"{task_id}.yaml"
@@ -677,6 +691,7 @@ class TaskStore:
             reason=decision.reason,
             detail={"next_action": decision.next_action},
         )
+        previous = task.status
         task.history.append(envelope)
         if decision.allowed and decision.to_status is not None:
             if decision.to_status not in TASK_TRANSITIONS[task.status]:
@@ -694,4 +709,15 @@ class TaskStore:
                 task.blocked_reason_code = infer_blocked_reason_code(decision.reason)
         task.revision += 1
         self.save(task)
+        if decision.allowed and decision.to_status is not None:
+            self._chronicle(
+                kind="task.transition",
+                subject=task.task_id,
+                detail={
+                    "action": action,
+                    "from_status": previous.value,
+                    "to_status": decision.to_status.value,
+                    "reason": decision.reason[:200],
+                },
+            )
         return task

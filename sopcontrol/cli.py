@@ -130,6 +130,24 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("path", nargs="?", default=".")
     p.set_defaults(func=cmd_inventory)
 
+    chronicle = sub.add_parser(
+        "chronicle",
+        help="项目编年（换会话/换模型：何以至此；事件只追加，可核对重建）",
+    )
+    chronicle_sub = chronicle.add_subparsers(dest="sub")
+    p = chronicle_sub.add_parser("show", help="显示最近治理旅程")
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--limit", type=int, default=12)
+    p.set_defaults(func=cmd_chronicle, sub="show")
+    p = chronicle_sub.add_parser("check", help="核对编年重放 vs 当前 registry")
+    p.add_argument("path", nargs="?", default=".")
+    p.set_defaults(func=cmd_chronicle, sub="check")
+    p = chronicle_sub.add_parser("snapshot", help="写入当前视图摘要（不抹事件史）")
+    p.add_argument("path", nargs="?", default=".")
+    p.set_defaults(func=cmd_chronicle, sub="snapshot")
+    # 无子命令时等同 show .
+    chronicle.set_defaults(func=cmd_chronicle, sub="show", path=".", limit=12)
+
     p = sub.add_parser(
         "vertical-check",
         help="垂直骨干役用闭环：武装身份/投影/钩子 → doctor --vertical → audit/gate/self-test",
