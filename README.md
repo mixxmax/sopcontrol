@@ -6,216 +6,190 @@
   <img src="docs/assets/sopcontrol-living-boundary.gif" alt="Living project boundary — a finite ring whose edge keeps changing" width="960" />
 </p>
 
-**Experimental but real** — a **model-neutral control plane** that lives *in your project*, not in a chat transcript.
+<p align="center">
+  <a href="https://github.com/mixxmax/sopcontrol"><img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=flat&logo=python&logoColor=white" alt="Python 3.10+"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Version-v0.2.0-blue.svg" alt="Version"></a>
+</p>
 
-> Make product intent **executable, verifiable, and recoverable across model switches** — by growing a **finite, editable space of determined facts**, not by stacking more “please don’t” prompts.
+**Stop constraining coding agents with ever-longer prompts. Put architectural discipline into your Git repository.**
 
-**Status:** v0.2.0 · living-project loop · [LIMITATIONS](LIMITATIONS.md) · [CHANGELOG](CHANGELOG.md) · [PLAYBOOK](PLAYBOOK.md)
+> **SOP Control** is a **model-neutral local control plane** for coding agents (Claude Code, OpenCode, Codex, Cursor). It does not burn your tokens acting as a middleman. Instead, it uses deterministic local gates (Git Hooks / Tool interception) and objective code evidence to prevent models from bypassing architectural invariants across chat sessions, model switches, and legacy code traps.
 
----
-
-## The pain (why this philosophy exists)
-
-Without a project-local SOP / control plane, a capable model does not merely “make mistakes.” It executes inside an **unbounded ambiguity space**:
-
-| What happens | Consequence |
-|--------------|-------------|
-| Intent lives only in chat | New session / new model **forgets**; the same MUST is re-negotiated or dropped |
-| Many paths still “work” | Preview skipped, legacy writer, parallel state files — delivery **looks done** while product invariants rot |
-| You add more prompts & guards | Error surface shrinks on paper; **bypass surface stays open** — the model walks around the fence |
-| Mid-task model switch | Reachable actions often **widen**; prior tightenings do not travel with the new executor |
-| No absorption check | “We said preview-before-write” never becomes a **consumer in code** — docs and reality diverge |
-
-That failure mode is the starting point of the design: **not** “make the model obey harder,” but **make the wanderable space finite, visible, and editable in the repo** — so the next model inherits the same world.
-
-Most “AI coding control” then fails in one of two ways *after* noticing the pain:
-
-1. **Prompt theater** — longer system prompts and Skills that evaporate when you switch chat, model, or machine.
-2. **Guard inflation** — more MUST_NOT / blockers while **old entry points and parallel states stay alive**. The model still has somewhere else to go; you just taught it more sentences to ignore.
-
-SOP Control takes a different bet:
-
-| Principle | Meaning in practice |
-|-----------|---------------------|
-| **Eliminate ambiguity first** | Prefer **deleting** redundant paths over adding another forbid-rule. Maturity = fewer open bypasses, not more rules. |
-| **Authority lives in the project** | Truth is `.sopcontrol/` (rules, tasks, evidence, chronicle) — not the model’s memory. |
-| **Ambient discovery, human authorization** | Audits/denials can *observe* and propose Candidates; **only you** accept rules, enact deletes, or deprecate. |
-| **Space is measurable and two-way** | `ambiguity_index` (open bypasses + parallel state) can **narrow** after disambiguation or **widen** if mess accumulates. |
-| **Spine uses zero LLM** | Verdict / harness decisions are deterministic. The control plane must not burn your tokens to “manage” itself. |
-| **Cooperating operator** | Default trust: you on your machine. Known bypasses are listed honestly in [RESIDUAL_RISKS](RESIDUAL_RISKS.md), not papered over. |
-
-**Thinking logic in one line:** shrink the *decision space* the model can wander in — so the next session, and the next model, inherit the same world.
+**Status:** v0.2.0 · Living-project loop · [LIMITATIONS](LIMITATIONS.md) · [CHANGELOG](CHANGELOG.md) · [PLAYBOOK](PLAYBOOK.md)
 
 ---
 
-## What it is / isn’t
+## ⚡ The Pain: Drift vs Control (Before / After)
 
-| Is | Isn’t |
-|----|--------|
-| Project-local Rule / Evidence / Verdict bus | A guarantee that models never err |
-| Ambient discovery of gaps & bypasses | Auto-writing permanent rules without you |
-| Cross-session / cross-model recovery | Cloud policy SaaS / SSO admin console |
-| Human-gated authorize & prune | Another prompt Skill that “remembers” for you |
-| Mid-adoption friendly (`doctor` next moves) | Greenfield-only scaffolding |
+When capable models operate without physical repo constraints, the biggest risk isn't merely "syntax errors"—it is **freely wandering inside an unconstrained ambiguity space**:
 
----
+### Real Scenario: All data mutations MUST go through `AuditLog`
 
-## Distinctive control features
+* ❌ **Traditional Approach (Prompt-Only Constraints)**:
+  * **Practice**: You fill the System Prompt with *"Must call safe_update(), never write directly to DB"*.
+  * **The Drift**: When the agent encounters a complex bugfix or discovers an obsolete `raw_update()` function, it bypasses the safety wrapper or deletes assertions just to make tests green.
+  * **Consequence**: Delivery *looks* successful on paper, but core product invariants quietly rot. Start a new session or switch models, and previous prompt agreements evaporate.
 
-| Capability | What you get |
-|------------|----------------|
-| **Rule lifecycle** | add → accept → suspend / narrow / deprecate (two-phase for permanent exit) |
-| **Absorption audit** | Did the MUST actually get a **production consumer** (and tests)? gap vs pass is visible |
-| **Gate + pre-push** | Fail blocks; gap warns — same door for local hook and CI |
-| **Task contracts** | Bounded writes, required fields/rules, verify/deliver; repair budget from capability tier |
-| **Ambient growth** | Findings & harness denials accumulate Candidates without you “pushing discovery” |
-| **Disambiguation enact** | `candidate enact … --allow …` → bounded **delete-bypass** task (not another guard) |
-| **Space measure** | `growth measure` / `diff` — did the space *narrow*? |
-| **Chronicle** | “How we got here” for the next model/session |
-| **Thin projection** | AGENTS.md / CLAUDE.md slices with token/line budgets (energy) |
-| **Light doctor** | Default next-3-steps **without** re-scanning the whole tree; `--full` when needed |
-| **Executor identity** | Mid-task model mismatch on Write/Edit/Bash → deny + `task rebind` |
+* ✅ **SOP Control Approach (Local Control Plane Takeover)**:
+  1. **Rules live in Git**: Rule `RULE-001` is committed in `.sopcontrol/`, declaring required consumer markers;
+  2. **Static absorption audit**: `sopctl audit` scans the AST (TS / Go / Rust / Python), flags unconstrained `raw_update()`, and raises a gap warning;
+  3. **Deterministic physical gate**: `sopctl gate` blocks unauthorized changes in Pre-push / CI and Harness runtimes (zero token cost);
+  4. **Disambiguation (Enact)**: Guides the model to run `sopctl candidate enact` to generate a bounded task that **physically deletes `raw_update()`**, permanently shrinking the model's error space.
 
 ---
 
-## Model switches stay effective
+## 🛠️ Architecture & Engineering Loop
 
-Switching models mid-work usually **widens** reachable actions (new model, old loose context). SOP Control counters that:
+```text
+[ Developer / CI ]        [ Production & Legacy Code ]
+       │                                │
+       ▼                                ▼
+.sopcontrol/ (Local Truth) ◄───  sopctl audit (Detect parallel states & bypasses)
+       │                                │
+       ├─► Compile Projections ──► Injected into AGENTS.md / CLAUDE.md (<1500 Tokens)
+       │
+       └─► Deterministic Gates ──► Git Hooks / Harness Interception (Zero Tokens)
+                                        │
+                                        ▼
+                           Block unauthorized writes / Force deleting legacy paths
+```
 
-1. **Project state does not move** — rules/tasks/chronicle stay on disk.
-2. **`task rebind --model <NEW>`** — knobs only **tighten** (intersection with the more conservative profile); never inherit the previous executor’s looseness.
-3. **Harness check** — if the tool payload declares `model` and it ≠ the bound executor, write/bash is **denied** until rebind.
-4. **Projection + chronicle** — the new model reads the same recovery protocol and “why we’re here,” not a stale chat.
+### 1. Task Contracts & Anti-Smuggling (Task Contract)
+Agents must operate within bounded task contracts specifying `allowed_writes` (file write whitelist) and `require_rules`. Unauthorized file touches or missing verifications are rejected immediately.
 
-Harness depth differs (honestly):
+### 2. Real Absorption Auditing (Absorption Audit)
+Rules never stay merely on paper. The system uses AST parsers (TS / Go / Rust / Python) to independently verify whether a rule has real production callers (`consumer_markers`) and test coverage (`documented` → `wired` → `wired_and_tested`).
 
-| Harness | Interception | Live status |
-|---------|--------------|-------------|
-| **OpenCode** | Runtime plugin | Live-verified |
-| **Codex** | Projection + `sopctl wrap` post-gate | Live-verified |
-| **Claude Code** | PreToolUse protocol | Adapted; live depends on API key |
+### 3. Model Switch Safety (`task rebind`)
+Switching models mid-task often accidentally broadens permissions. SOP Control enforces `task rebind`: permissions for new models **only tighten, never loosen** (taking the most conservative intersection).
 
-Same **world**; not always the same **hook depth**.
-
----
-
-## What “working” looks like (effects)
-
-These are **mechanism + dogfood** results, not marketing SLAs:
-
-| Evidence | Outcome |
-|----------|---------|
-| Product sim (`scripts/verify-product-sim.sh`) | After removing a legacy bypass: `ambiguity_index` **1→0**; enact + rebind + harness mismatch deny all hold |
-| JobsFlow mid-adoption | Rule `JF-PREVIEW-001` moved from **gap/documented** → **pass / wired_and_tested** by wiring real `require_preview` on the push write boundary |
-| Energy | `doctor` light ≪ `--full` (often ~4–10× on large trees); projection section budgeted ~≤1500 tokens |
-| Regression | `self-test` penetration + corpus mutations + full pytest suite |
-
-Reports: [`docs/verification/`](docs/verification/) (SIM_*, REDTEAM_*).
-
-**Still human:** multi-week “does my team feel less chaos?” — use the plane on a real repo; weekly `growth measure` / `diff`.
+### 4. Ambiguity Space Measurement (Ambiguity Index)
+Track repository ambiguity via `sopctl growth measure` (active bypasses + parallel states). Verify that refactoring truly **narrowed** the model's wanderable decision space using `sopctl growth diff`.
 
 ---
 
-## Quickstart
+## 📖 Terminology Mapping
+
+To make adoption seamless, here is how SOP Control concepts map to standard engineering terms:
+
+| Project Term | Common Engineering Concept | What Problem It Solves |
+| :--- | :--- | :--- |
+| **Eliminate Ambiguity** | Physically deleting legacy dead code & bypasses | Leaves no physical loopholes for models to bypass rules |
+| **Absorption Audit** | Static checks ensuring rules have real code callers | Prevents architectural guidelines from rotting into empty docs |
+| **Task Rebind** | Re-aligning permissions to minimum intersection upon model switch | Prevents security degradation when switching models mid-task |
+| **Task Contract** | Sandboxed ticket with strict file write whitelists & rules | Prevents agents from altering unrelated infrastructure files |
+| **Chronicle** | Git-persisted decision log of rules and invariant changes | Explains "how we got here" to the next developer / model session |
+
+---
+
+## 🚀 Quickstart
+
+### Option A: 2-Minute Minimal Demo
+
+Experience a physical gate blocking an agent violation without setting up a full project:
 
 ```bash
-# Python >= 3.10
 git clone https://github.com/mixxmax/sopcontrol.git && cd sopcontrol
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-sopctl --help
-
-# Self-check on this repo
-sopctl vertical-check .
-./scripts/vertical-check.sh          # stricter (includes pytest)
-bash scripts/verify-product-sim.sh   # throwaway narrow-space sim
+sopctl gate examples/minimal
 ```
 
-**On any other project (including mature ones):**
+---
+
+### Option B: Progressive Adoption in Your Project (3 Steps)
+
+#### Step 1. Zero-Intrusion Healthcheck (Diagnostic Tool Only)
 
 ```bash
-pip install -e /path/to/sopcontrol
-# or: pip install "git+https://github.com/mixxmax/sopcontrol.git"
+pip install sopcontrol   # or: pip install "git+https://github.com/mixxmax/sopcontrol.git"
 cd /path/to/your-app
+
 sopctl init .
-sopctl identity init .
-sopctl hook install .
-sopctl project all .
-sopctl doctor .                      # light: next 3 moves, no full-tree audit
+sopctl doctor .          # Diagnoses parallel states & open bypasses; outputs next moves
+```
 
-sopctl rule add --id DEMO-001 \
-  --statement "Changes must go through the unified entry" \
+#### Step 2. Lock Down Your First Core Rule
+
+```bash
+sopctl rule add --id RULE-001 \
+  --statement "Data mutations must go through unified preview_gate" \
   --modality MUST --status proposed \
-  --source-ref README.md --source-type document \
-  --consumer-marker demo_gate
-sopctl rule accept DEMO-001 .
+  --source-ref README.md --consumer-marker preview_gate
 
-sopctl audit . --compact             # observe; ambient growth on persist
-sopctl growth measure .              # ambiguity_index snapshot
-sopctl growth diff .
-sopctl candidate enact CAND-… . --allow path/to/bypass.py   # when delete_entry appears
+sopctl rule accept RULE-001 .
+```
+
+#### Step 3. Mount Git Gate & Start Bounded Tasks
+
+```bash
+# 1. Install pre-push gate hook
+sopctl hook install .
+
+# 2. Open a bounded task for your agent (restricted to service.py)
+sopctl task open . --model claude-3-7-sonnet --objective "Refactor billing logic" \
+  --allow src/service.py --require-rule RULE-001
+
+# 3. Agent submits changes upon completion
+sopctl task submit <TASK-ID> . --changed src/service.py --model claude-3-7-sonnet
+sopctl task verify <TASK-ID> .
+sopctl task deliver <TASK-ID> .
+
+# 4. Final verification gate (unified local hook and CI check)
 sopctl gate .
 ```
 
-Day-to-day order: [`PLAYBOOK.md`](PLAYBOOK.md). Minimal fixture walkthrough: [`examples/minimal`](examples/minimal).
+---
 
-```text
-docs / conversation / runtime denials
-        ↓  observe (ambient)
-   Candidates (no authority)
-        ↓  human authorize / enact / prune
-   Rules + tasks in .sopcontrol/
-        ↓  compile
-   projection · harness check · gate · chronicle
-        ↓
-   new session / new model restores the same world
-```
+## 🔌 Supported Agent Harnesses
+
+| Harness | Interception Mechanism | Status |
+| :--- | :--- | :--- |
+| **OpenCode** | Runtime Plugin Interception | ✅ Live-verified |
+| **Codex / Cursor** | Thin Projection + `sopctl wrap` Gate | ✅ Live-verified |
+| **Claude Code** | PreToolUse Protocol Adapter | ✅ Adapted (Tool-level interception) |
 
 ---
 
-## Core commands
+## 📌 Core Command Cheat Sheet
 
-| Command | Role |
-|---------|------|
-| `sopctl doctor` / `--full` | Health + **next moves** (light by default) |
-| `sopctl audit` / `gate` / `self-test` | Observe · end gate · penetration drill |
-| `sopctl rule …` | Lifecycle: add/accept/suspend/narrow/deprecate |
-| `sopctl task …` | Contract → submit → verify → deliver · **`rebind`** |
-| `sopctl growth status\|measure\|diff` | Ambient growth + whether space *narrowed* |
-| `sopctl candidate enact … --allow …` | Bounded delete-bypass task |
-| `sopctl chronicle` | How we got here |
-| `sopctl inventory` | Controlled vs legacy vs parallel state |
-
-Product adversarial checklist (not external attacker red-team): [`docs/verification/REDTEAM_CHECKLIST.md`](docs/verification/REDTEAM_CHECKLIST.md).
+| Command | Role & Description |
+| :--- | :--- |
+| `sopctl doctor .` | **Health check & next moves** (lightweight recommendations) |
+| `sopctl audit .` | **Absorption audit** (checks if MUST rules are wired and tested) |
+| `sopctl gate .` | **Final gate** (unified blocker for local pre-push and CI) |
+| `sopctl rule ...` | Rule lifecycle (`add` / `accept` / `suspend` / `narrow` / `deprecate`) |
+| `sopctl task ...` | Task contracts (`open` / `submit` / `verify` / `deliver` / `rebind`) |
+| `sopctl growth measure / diff` | Space snapshot & ambiguity reduction diffs |
+| `sopctl candidate enact ...` | One-command task creation to physically delete legacy bypasses |
+| `sopctl chronicle` | Inspect architectural decision history & evolution |
 
 ---
 
-## Design docs (deep)
+## 📖 Deep-Dive Documentation
 
-| Doc | Content |
-|-----|---------|
-| [`DESIGN.md`](DESIGN.md) | Why the code is shaped this way |
-| [`docs/SOP_Control_活在项目里的可进化规则空间技术手册_2026-08-31.md`](docs/SOP_Control_活在项目里的可进化规则空间技术手册_2026-08-31.md) | Living-space philosophy (ZH) |
-| [`docs/SOP_Control_产品与技术架构手册_2026-08-23.md`](docs/SOP_Control_产品与技术架构手册_2026-08-23.md) | Product architecture (ZH) |
-| [`RESIDUAL_RISKS.md`](RESIDUAL_RISKS.md) | Known bypass families |
-| [`ROADMAP.md`](ROADMAP.md) | Authoritative progress log |
+* 🏛️ [Design Decisions (DESIGN.md)](DESIGN.md) — Architectural rationale: three primitives and deterministic constitution
+* 📘 [Playbook (PLAYBOOK.md)](PLAYBOOK.md) — Daily end-to-end operation SOP & advanced flows
+* ⚠️ [Residual Risks (RESIDUAL_RISKS.md)](RESIDUAL_RISKS.md) — Honest disclosure of known bypass families & defense boundaries
+* 🗺️ [Roadmap (ROADMAP.md)](ROADMAP.md) — Authoritative progress log & future milestones
+* 🤖 [Agent Skill (SKILL.md)](SKILL.md) — Context card injected into coding agents
+* 🚫 [Limitations (LIMITATIONS.md)](LIMITATIONS.md) — Explicitly states out-of-scope boundaries
 
 ---
 
-## Develop
+## 💻 Development & Testing
 
 ```bash
+git clone https://github.com/mixxmax/sopcontrol.git && cd sopcontrol
+python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
+
+# Run full test suite & self-checks
 pytest -q
 ./scripts/vertical-check.sh
 ```
 
-CI: [`.github/workflows/ci.yml`](.github/workflows/ci.yml) · [`.github/workflows/gate.yml`](.github/workflows/gate.yml)
+## 📄 License
 
-**Dogfood note:** this repo’s `.sopcontrol/tasks/` may contain local self-application noise. Prefer `corpus/fixtures/` and `examples/minimal` for clean demos.
-
----
-
-## License
-
-MIT — see [`LICENSE`](LICENSE).
+Distributed under the [MIT License](LICENSE).
