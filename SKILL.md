@@ -24,6 +24,7 @@ sopctl task open . --model <CURRENT-MODEL> --objective "..." \
   --allow <exact-file> --require-rule <ID> --require-field <name>
 sopctl task accept|submit|verify|deliver <TASK-ID> .
 sopctl task rebind <TASK-ID> . --model <NEW-MODEL>   # 对话中途换模型：只收紧旋钮
+# harness 载荷若带 model 且≠任务执行者，Edit/Write/Bash 会被拒并提示 rebind
 sopctl task submit <TASK-ID> . --changed <path> --model <CURRENT-MODEL>  # 须与执行者一致
 sopctl task takeover <TASK-ID> .          # 换会话最小接手包
 sopctl intake . --conversation chat.txt  # 讨论/政策句 → Candidate 或 discuss_only

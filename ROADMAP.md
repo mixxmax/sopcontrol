@@ -146,6 +146,8 @@
 
 ## 状态（每次运行后更新）
 
+- 2026-09-02（harness 执行者校验）：`GUARD-EXECUTOR-IDENTITY`——进行中任务已绑定 model_identity
+  且载荷声明当前模型时，写/bash 不一致即 deny 并提示 `task rebind`；无 model 字段保持兼容。
 - 2026-09-02（生长可度量）：`SpaceSnapshot` + `sopctl growth measure|diff`；ambiguity_index=
   旁路开+平行状态，下降=空间变窄；audit ambient 轻量入帧，enact 打全量帧；投影展示最近对照。
 - 2026-09-02（消歧 enact）：`sopctl candidate enact` 将 delete_entry 候选收成有界删旁路任务

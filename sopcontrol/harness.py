@@ -75,6 +75,7 @@ GUARD_NO_VERIFY = "GUARD-NO-VERIFY"
 GUARD_CONTROLLER_BASH = "GUARD-CONTROLLER-BASH"
 GUARD_PUSH_GATE = "GUARD-PUSH-GATE"
 GUARD_CAPABILITY_APPROVAL = "GUARD-CAPABILITY-APPROVAL"
+GUARD_EXECUTOR_IDENTITY = "GUARD-EXECUTOR-IDENTITY"
 
 GUARD_IDS = frozenset({
     GUARD_INTENT,
@@ -84,6 +85,7 @@ GUARD_IDS = frozenset({
     GUARD_CONTROLLER_BASH,
     GUARD_PUSH_GATE,
     GUARD_CAPABILITY_APPROVAL,
+    GUARD_EXECUTOR_IDENTITY,
 })
 
 # 能力画像（手册 5.9）：不同 harness 得到不同控制强度，如实记录，不假装一致
@@ -137,19 +139,57 @@ def _allow(reason: str, *rule_ids: str) -> HookDecision:
     return HookDecision(permissionDecision="allow", reason=reason, rule_ids=list(rule_ids))
 
 
+def extract_claimed_model(payload: dict) -> str:
+    """从 harness 载荷提取「当前执行模型」声明（各平台字段名不统一）。"""
+    for key in ("model", "model_id", "model_name", "current_model"):
+        value = payload.get(key)
+        if value:
+            return str(value).strip()
+    session = payload.get("session") or {}
+    if isinstance(session, dict):
+        for key in ("model", "model_id", "model_name"):
+            value = session.get(key)
+            if value:
+                return str(value).strip()
+    tool_input = payload.get("tool_input") or {}
+    if isinstance(tool_input, dict):
+        for key in ("model", "model_id"):
+            value = tool_input.get(key)
+            if value:
+                return str(value).strip()
+    return ""
+
+
 def check_tool_call(
     payload: dict,
     gate_status: Optional[str] = None,
     session_intent: Optional[str] = None,
+    *,
+    bound_executor: Optional[str] = None,
+    claimed_model: Optional[str] = None,
 ) -> HookDecision:
     """gate_status: None=与终点门无关 / "block" / "warn" / "clean"。纯函数。
 
     session_intent: 由调用方注入（CLI 读 session-intent.yaml）；discuss_only 时拒绝写工具。
+    bound_executor / claimed_model: 由调用方注入；任务已绑定执行者且载荷声明了当前模型时，
+    不一致则拒绝写/bash（中途换模型须先 task rebind）。
     工具名大小写归一（Claude 用 Bash/Write，OpenCode 用 bash/edit/write）。
     """
     tool = str(payload.get("tool_name") or "").lower()
     tool_input = payload.get("tool_input") or {}
     intent = session_intent or str(payload.get("session_intent") or "")
+    claimed = (claimed_model if claimed_model is not None else extract_claimed_model(payload)).strip()
+    bound = (bound_executor or "").strip()
+
+    # 写工具与 bash：有绑定执行者且载荷声明了模型时，强制身份一致
+    if bound and claimed and tool in {"write", "edit", "multiedit", "bash"}:
+        if claimed != bound:
+            return _deny(
+                f"当前模型 {claimed} 与进行中任务的执行者 {bound} 不一致："
+                f"对话中途换模型不得继承旧放宽；请先 "
+                f"sopctl task rebind <TASK-ID> --model {claimed}",
+                GUARD_EXECUTOR_IDENTITY,
+            )
 
     if tool in {"write", "edit", "multiedit"}:
         if intent == "discuss_only":
@@ -175,11 +215,11 @@ def check_tool_call(
                 f"需要人工执行（手册 12.2）",
                 GUARD_SELF_UNINSTALL,
             )
-        # 放行也带 guard：这三条 guard 每次写入都真的过了一遍，trace 记的是「被咨询」
-        return _allow(
-            "普通文件写入，不在受控清单",
-            GUARD_INTENT, GUARD_CONTROLLER_WRITE, GUARD_SELF_UNINSTALL,
-        )
+        # 放行也带 guard：这几条 guard 每次写入都真的过了一遍，trace 记的是「被咨询」
+        consulted = [GUARD_INTENT, GUARD_CONTROLLER_WRITE, GUARD_SELF_UNINSTALL]
+        if bound and claimed:
+            consulted.append(GUARD_EXECUTOR_IDENTITY)
+        return _allow("普通文件写入，不在受控清单", *consulted)
 
     if tool == "bash":
         command = str(tool_input.get("command") or "")

@@ -226,7 +226,22 @@ def cmd_harness_check(args) -> int:
         if PUSH_RE.search(command):
             gate_status = gate_status_for_push(root)
         session = load_session_intent(root)
-        decision = check_tool_call(payload, gate_status, session_intent=session.intent)
+        bound_executor = ""
+        try:
+            from .task import TaskStore, active_bound_executor
+
+            bound_executor = active_bound_executor(TaskStore(root).list_all())
+        except Exception:
+            bound_executor = ""
+        from .harness import extract_claimed_model
+
+        decision = check_tool_call(
+            payload,
+            gate_status,
+            session_intent=session.intent,
+            bound_executor=bound_executor or None,
+            claimed_model=extract_claimed_model(payload) or None,
+        )
 
     append_event(
         root,

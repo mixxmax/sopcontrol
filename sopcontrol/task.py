@@ -124,6 +124,18 @@ PROJECTION_ACTIVE = frozenset({
 DEFAULT_PROJECTION_MAX_HEADS = 5
 
 
+def active_bound_executor(tasks: list[TaskRecord]) -> str:
+    """进行中任务里最近更新的已绑定执行者；无则空串。"""
+    bound = [
+        t for t in tasks
+        if t.status in PROJECTION_ACTIVE and (t.contract.model_identity or "").strip()
+    ]
+    if not bound:
+        return ""
+    latest = max(bound, key=lambda t: (t.updated_at, t.task_id))
+    return latest.contract.model_identity.strip()
+
+
 def tasks_for_projection(tasks: list[TaskRecord]) -> list[TaskRecord]:
     """投影候选集：活跃任务 + 尚未被接替的阻断终态（含 verified，供后续折叠）。
 
