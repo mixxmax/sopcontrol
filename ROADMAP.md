@@ -146,6 +146,8 @@
 
 ## 状态（每次运行后更新）
 
+- 2026-09-02（无感生长·拒绝即记账）：harness `deny` 与 gate 阻断调用 `ambient_grow_on_control_deny`，
+  不跑全仓 audit；三次拦即可推进 improve_entry/调查类候选。与 audit 生长并列。
 - 2026-09-02（无感生长回路）：persist audit 自动 `ambient_grow`——每轮 finding 记独立观察
   （打破 ledger 去重）、聚合 Candidate、写 growth-state；投影「空间生长」节；`sopctl growth status|refresh`。
   发现无感；`rule add`/删代码仍人控。三轮 audit 即可物化 delete_entry，无需手工 candidate refresh。

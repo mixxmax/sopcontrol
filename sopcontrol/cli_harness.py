@@ -246,6 +246,20 @@ def cmd_harness_check(args) -> int:
             detail={"rule_ids": decision.rule_ids},
         ),
     )
+    # 无感生长：拒绝即记账，不跑全仓 audit
+    if decision.permissionDecision == "deny":
+        try:
+            from .growth import ambient_grow_on_control_deny
+
+            ambient_grow_on_control_deny(
+                root,
+                source="harness",
+                subject=tool,
+                rule_ids=list(decision.rule_ids or []),
+                reason=decision.reason or "",
+            )
+        except Exception:
+            pass
     print(json.dumps(decision.claude_payload(), ensure_ascii=False))
     return 0
 

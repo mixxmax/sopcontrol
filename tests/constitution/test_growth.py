@@ -49,3 +49,39 @@ def test_ambient_does_not_write_registry(tmp_path):
         run_audit(work, SENSORS, DETECTORS, persist=True)
     after = (work / ".sopcontrol" / "rules" / "registry.yaml").read_bytes()
     assert before == after
+
+
+def test_harness_deny_grows_without_full_audit(tmp_path):
+    """三次 harness 拒绝即可生长，不必跑 audit。"""
+    import json
+    import time
+
+    work = tmp_path / "work"
+    (work / ".sopcontrol" / "rules").mkdir(parents=True)
+    (work / ".sopcontrol" / "rules" / "registry.yaml").write_text(
+        "rules: []\n", encoding="utf-8",
+    )
+    payload = json.dumps({
+        "tool_name": "Edit",
+        "tool_input": {"file_path": str(work / ".sopcontrol" / "rules" / "registry.yaml")},
+    })
+    for _ in range(3):
+        assert main([
+            "harness-check", str(work), "--payload", payload,
+        ]) == 0
+        time.sleep(0.01)  # 保证 occurrence 时间戳不同
+    state = load_growth_state(work)
+    assert state.observation_count >= 3
+    records = CandidateStore(work).load()
+    improve = [r for r in records if r.suggested_action == "improve_entry"]
+    assert improve or state.candidates_observed >= 1
+
+
+def test_gate_block_records_control_observation(tmp_path):
+    work = tmp_path / "work"
+    shutil.copytree(ROOT / "corpus" / "fixtures" / "jobflow-preview", work)
+    # jobflow 含 fail 规则 → gate 阻断
+    rc = main(["gate", str(work)])
+    assert rc == 1
+    state = load_growth_state(work)
+    assert state.observation_count >= 1

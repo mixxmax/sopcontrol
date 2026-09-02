@@ -308,6 +308,28 @@ def refresh_candidates(root: Path) -> dict[str, int]:
                 "suggested_action": "delete_entry",
                 "suggested_modality": "MUST",
             }
+        if pattern_id == "control_harness_deny":
+            return {
+                "kind": "guard_pattern",
+                "statement": (
+                    f"运行时反复拒绝 {summary or rule_id or '工具调用'}；"
+                    "应改善合法入口可发现性，而不是再加禁止句"
+                ),
+                "scope_guess": rule_id or "project",
+                "suggested_action": "improve_entry",
+                "suggested_modality": "MUST",
+            }
+        if pattern_id == "control_gate_block":
+            return {
+                "kind": "finding_pattern",
+                "statement": (
+                    f"终点门反复阻断（{rule_id or 'project'}）：{summary}；"
+                    "应消歧或删旁路，经人确认后定型"
+                ),
+                "scope_guess": rule_id or "project",
+                "suggested_action": "investigate_finding",
+                "suggested_modality": "MUST",
+            }
         return {
             "kind": "finding_pattern",
             "statement": (

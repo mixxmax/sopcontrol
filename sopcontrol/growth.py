@@ -146,6 +146,70 @@ def load_growth_state(root: Path) -> GrowthState:
         return GrowthState()
 
 
+def record_control_observation(
+    root: Path,
+    *,
+    source: str,
+    subject: str,
+    rule_ids: list[str] | None = None,
+    reason: str = "",
+    at: Optional[datetime] = None,
+) -> GrowthObservation:
+    """轻量控制事件观察（harness/gate 拒绝），不跑全仓 audit。"""
+    when = at or utcnow()
+    rules = tuple(sorted(str(r) for r in (rule_ids or []) if r))
+    pattern = (
+        "control_harness_deny" if source == "harness" else "control_gate_block"
+    )
+    fingerprint = content_hash({
+        "source": source,
+        "subject": subject,
+        "rule_ids": rules,
+        "pattern": pattern,
+    })
+    obs = GrowthObservation(
+        fingerprint=fingerprint,
+        pattern_id=pattern,
+        rule_id=",".join(rules) if rules else "",
+        summary=(reason or f"{source} 拒绝 {subject}")[:160],
+        round_id=content_hash({"at": when.isoformat(), "subject": subject}),
+        observed_at=when,
+    )
+    # 每次拒绝独立 occurrence（用时间戳进 id）
+    obs.occurrence_id = "go-" + content_hash({
+        "fingerprint": fingerprint,
+        "at": when.isoformat(),
+        "subject": subject,
+        "reason": (reason or "")[:80],
+    })
+    path = _obs_path(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(obs.model_dump_json() + "\n")
+    _maybe_compact_obs(path)
+    return obs
+
+
+def ambient_grow_on_control_deny(
+    root: Path,
+    *,
+    source: str,
+    subject: str,
+    rule_ids: list[str] | None = None,
+    reason: str = "",
+) -> dict[str, Any]:
+    """harness/gate 拒绝后的无感生长：记账 + 聚合，不跑传感器。"""
+    root = Path(root)
+    obs = record_control_observation(
+        root,
+        source=source,
+        subject=subject,
+        rule_ids=rule_ids,
+        reason=reason,
+    )
+    return ambient_grow(root, findings=None, round_id=obs.round_id)
+
+
 def ambient_grow(
     root: Path,
     *,

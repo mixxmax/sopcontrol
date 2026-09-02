@@ -108,6 +108,18 @@ def run_gate(root: Path) -> int:
                 },
             ),
         )
+        try:
+            from .growth import ambient_grow_on_control_deny
+
+            ambient_grow_on_control_deny(
+                root,
+                source="gate",
+                subject="audit",
+                rule_ids=["GATE-AUDIT"],
+                reason=f"审计失败 fail-closed: {type(exc).__name__}",
+            )
+        except Exception:
+            pass
         print(f"gate: 审计失败，fail-closed 阻断（{exc}）", file=sys.stderr)
         return 1
 
@@ -140,7 +152,29 @@ def run_gate(root: Path) -> int:
             },
         ),
     )
+    # 无感生长：阻断本身再记轻量观察（audit 已生长；此处覆盖篡改等无 finding 的阻断）
     if blocked:
+        try:
+            from .growth import ambient_grow_on_control_deny
+
+            if tampered:
+                ambient_grow_on_control_deny(
+                    root,
+                    source="gate",
+                    subject="ledger",
+                    rule_ids=["TRUST-LEDGER"],
+                    reason="证据账本被篡改或损坏",
+                )
+            for v in fails:
+                ambient_grow_on_control_deny(
+                    root,
+                    source="gate",
+                    subject=v.rule_id,
+                    rule_ids=[v.rule_id],
+                    reason=v.reason or "gate fail",
+                )
+        except Exception:
+            pass
         print(f"gate: 已阻断——fail {len(fails)} 项，账本{'损坏' if tampered else '完整'}", file=sys.stderr)
         return 1
     print(f"gate: 通过（gap 警告 {len(gaps)} 项未阻断，治理阶梯见 DESIGN.md §8）")
