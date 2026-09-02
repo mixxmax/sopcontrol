@@ -27,3 +27,10 @@
 - 顺手修 sopcontrol：`iter_files` 排除 `.worktrees` 等，否则 500 上限被工作树占满、主树消费者不可见
 - 复验：`sopctl audit` → **JF-PREVIEW-001 pass / wired_and_tested**；`ambiguity_index=0`
 - JobsFlow 提交：`b01b522`（Wire require_preview…）
+
+## 续：候选噪音清理（2026-09-02）
+
+- 旧版 doc_scan/intake 留下 **1288** 条无 kind/fingerprint 的文档碎片候选（全为 observed `register_rule`）
+- 备份：`.sopcontrol/archive/candidates-before-reject-*.yaml`
+- 全部 `rejected`（未写 registry）；`ambient_grow` 后待人定型 **0**，doctor 节能告警消失
+- 真规则仍仅 `JF-PREVIEW-001`；勿再对全仓 docs 盲目 `intake` 灌候选
