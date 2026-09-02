@@ -16,10 +16,20 @@ from .model import content_hash, utcnow
 CandidateKind = Literal["policy", "guard_pattern", "finding_pattern", "correction", "deprecation"]
 CandidateStatus = Literal["observed", "triaged", "rejected", "expired"]
 CandidateAction = Literal[
-    "register_rule", "improve_entry", "investigate_finding", "delete_entry"
+    "register_rule",
+    "improve_entry",
+    "investigate_finding",
+    "delete_entry",
+    "retire_rule",
 ]
 
 CANDIDATE_THRESHOLD = 3
+# 久悬 gap：约两倍物化频率后，额外建议人确认 suspend/deprecate（不自动退场）
+RETIRE_GAP_THRESHOLD = 6
+GAP_ABSORB_PATTERNS = frozenset({
+    "documented_rule_no_consumer",
+    "consumer_markers_undefined",
+})
 CORRECTION_REL = ".sopcontrol/evidence/corrections.jsonl"
 
 
@@ -308,6 +318,17 @@ def refresh_candidates(root: Path) -> dict[str, int]:
                 "suggested_action": "delete_entry",
                 "suggested_modality": "MUST",
             }
+        if pattern_id in GAP_ABSORB_PATTERNS:
+            return {
+                "kind": "finding_pattern",
+                "statement": (
+                    f"规则 {rule_id or '未关联'} 仍缺消费者/吸收断口："
+                    f"{summary}；应接线改善入口（improve_entry），不要只加禁止"
+                ),
+                "scope_guess": rule_id or "project",
+                "suggested_action": "improve_entry",
+                "suggested_modality": "MUST",
+            }
         if pattern_id == "control_harness_deny":
             return {
                 "kind": "guard_pattern",
@@ -358,6 +379,7 @@ def refresh_candidates(root: Path) -> dict[str, int]:
         ))
 
     # 无感生长：每轮 audit 的 finding 观察（打破 ledger 内容寻址去重）
+    gap_round_meta: dict[str, dict] = {}
     try:
         from .growth import load_growth_observations
 
@@ -374,8 +396,50 @@ def refresh_candidates(root: Path) -> dict[str, int]:
                 ),
                 spec,
             ))
+            if gob.pattern_id in GAP_ABSORB_PATTERNS:
+                meta = gap_round_meta.setdefault(
+                    gob.fingerprint,
+                    {
+                        "rounds": set(),
+                        "rule_id": gob.rule_id,
+                        "summary": gob.summary,
+                        "sources": [],
+                    },
+                )
+                meta["rounds"].add(gob.round_id or gob.occurrence_id)
+                meta["sources"].append(gob)
     except Exception:
         pass
+
+    # 久悬 gap：多轮仍无消费者 → 额外 retire_rule 候选（人确认 suspend/deprecate）
+    for fingerprint, meta in gap_round_meta.items():
+        if len(meta["rounds"]) < RETIRE_GAP_THRESHOLD:
+            continue
+        rule_id = meta["rule_id"] or "未关联"
+        summary = meta["summary"] or ""
+        retire_spec = {
+            "kind": "deprecation",
+            "statement": (
+                f"规则 {rule_id} 久悬 gap（{len(meta['rounds'])} 轮仍缺消费者）："
+                f"{summary}；应接线吸收，或人确认后 "
+                f"`sopctl rule suspend` / `rule deprecate` 退出硬门——"
+                f"本候选不自动退场"
+            ),
+            "scope_guess": meta["rule_id"] or "project",
+            "suggested_action": "retire_rule",
+            "suggested_modality": "MUST",
+        }
+        for gob in meta["sources"]:
+            observations.append((
+                "retire:" + fingerprint,
+                CandidateSource(
+                    source_type="growth_observation",
+                    ref=fingerprint,
+                    occurrence_id="retire-" + gob.occurrence_id,
+                    observed_at=gob.observed_at,
+                ),
+                retire_spec,
+            ))
 
     for correction in _load_corrections(root):
         key = "correction:" + content_hash({

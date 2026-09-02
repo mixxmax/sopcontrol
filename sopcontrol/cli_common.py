@@ -283,6 +283,35 @@ def _task_decide(
     print(f"{mark}: {task_id} {task.status.value} (r{task.revision})")
     print(f"  理由: {decision.reason}")
     print(f"  下一步: {decision.next_action}")
+    if (
+        decision.allowed
+        and action == "deliver"
+        and decision.to_status is not None
+        and decision.to_status.value == "delivered"
+    ):
+        try:
+            from .growth import on_task_delivered
+
+            measured = on_task_delivered(
+                root,
+                task_id,
+                objective=task.contract.objective or "",
+            )
+            if measured.get("ok"):
+                snap = measured["snapshot"]
+                diff = measured.get("diff")
+                print(
+                    f"  空间帧(deliver): ambiguity_index={snap.ambiguity_index} "
+                    f"（旁路开 {snap.bypass_open} / 平行状态 {snap.parallel_state}）"
+                )
+                if diff:
+                    print(f"  对照上一帧: {diff['summary']}")
+                else:
+                    print("  对照上一帧: （无历史帧，本帧为基线）")
+            elif measured.get("error"):
+                print(f"  空间帧(deliver): 跳过（{measured['error']}）")
+        except Exception as exc:
+            print(f"  空间帧(deliver): 跳过（{type(exc).__name__}: {exc}）")
     return 0
 
 

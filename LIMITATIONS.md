@@ -30,6 +30,8 @@ SOP Control **v0.2** 是可用的实验性控制平面，不是企业治理套�
 - `git push --no-verify` 可绕过本地 hook（CI gate 为后盾）
 - 任务 YAML 可被有写权限者手改状态（完成门重跑审计兜底）
 - 检测「旁路仍在」≠ 自动删掉旁路；消歧要人 `candidate enact` 圈范围
+- 久悬 gap 的 `retire_rule` 只是候选建议；`rule suspend` / `deprecate` 仍须两阶段人工确认
+- `doctor`「下一刀」是导航，不是第二套权威；命令里的 `--allow` 路径常需人改成真实旁路文件
 
 ## 安全与信任模型
 

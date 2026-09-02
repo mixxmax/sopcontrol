@@ -274,6 +274,7 @@ def cmd_doctor(args) -> int:
             problems.append("垂直役用要求已安装 pre-push 终态门（sopctl hook install）")
     print(f"pre-push 终态门: {state}")
 
+    inv = None
     try:
         from .inventory import build_entry_inventory
 
@@ -301,7 +302,7 @@ def cmd_doctor(args) -> int:
         print(f"项目编年: 跳过（{type(exc).__name__}: {exc}）")
 
     try:
-        from .growth import load_growth_state
+        from .growth import load_growth_state, load_space_snapshots
 
         gs = load_growth_state(root)
         print(
@@ -310,8 +311,26 @@ def cmd_doctor(args) -> int:
             f"（delete_entry={gs.candidates_delete_entry}）；"
             f"明细 sopctl growth status"
         )
+        snaps = load_space_snapshots(root)
+        if snaps:
+            latest = snaps[-1]
+            print(
+                f"空间度量: ambiguity_index={latest.ambiguity_index} "
+                f"（旁路开 {latest.bypass_open} / 平行状态 {latest.parallel_state}；"
+                f"sopctl growth measure|diff）"
+            )
     except Exception as exc:
         print(f"空间生长: 跳过（{type(exc).__name__}: {exc}）")
+
+    try:
+        from .next_moves import adoption_next_moves, format_next_moves
+
+        for line in format_next_moves(
+            adoption_next_moves(root, limit=3, inventory=inv)
+        ):
+            print(line)
+    except Exception as exc:
+        print(f"下一刀: 跳过（{type(exc).__name__}: {exc}）")
 
     if problems:
         for p in problems:

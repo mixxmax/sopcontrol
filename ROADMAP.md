@@ -146,6 +146,8 @@
 
 ## 状态（每次运行后更新）
 
+- 2026-09-02（产品加固 1–3）：doctor「下一刀」；`task deliver`→空间帧+变窄叙事；
+  缺消费者→`improve_entry`，久悬→`retire_rule` 候选（人确认 suspend/deprecate）。
 - 2026-09-02（harness 执行者校验）：`GUARD-EXECUTOR-IDENTITY`——进行中任务已绑定 model_identity
   且载荷声明当前模型时，写/bash 不一致即 deny 并提示 `task rebind`；无 model 字段保持兼容。
 - 2026-09-02（生长可度量）：`SpaceSnapshot` + `sopctl growth measure|diff`；ambiguity_index=

@@ -94,8 +94,14 @@ sopctl audit . --compact
 sopctl growth status .             # 待人定型的候选（发现已自动）
 sopctl growth measure .            # 打一帧空间快照（旁路/平行状态/歧义指数）
 sopctl growth diff .               # 对照最近两帧：指数下降=空间变窄
+# 本地机制验证（抛开真实多周 dogfood）：bash scripts/verify-product-sim.sh
+# → docs/verification/SIM_*.md（消歧前后 ambiguity_index + rebind/harness deny）
+# 中途接入 / 下一刀（最多 3 步：武装 → 真规则 → enact/吸收/退场）
+sopctl doctor .                    # 末尾「下一刀」；含 ambiguity_index 一行
 # 消歧：把 delete_entry 收成有界删旁路任务（人只圈 --allow，不「推进发现」）
 sopctl candidate enact CAND-xxxx . --allow src/legacy_path.py
+# 交付后自动打空间帧并对照上一帧（变窄叙事）；久悬缺消费者 → improve_entry，
+# 再悬 → retire_rule 候选（人确认 rule suspend/deprecate，不自动退场）
 sopctl inventory .                 # 受控/冗余入口/平行状态；应删旁路优先于再加守卫
 sopctl explain MY-001 .
 

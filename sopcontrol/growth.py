@@ -66,7 +66,8 @@ class SpaceSnapshot(BaseModel):
     """空间可度量快照：旁路/平行状态越少，歧义越小。"""
     snapshot_id: str = ""
     captured_at: datetime = Field(default_factory=utcnow)
-    source: str = "measure"  # measure | ambient | enact
+    source: str = "measure"  # measure | ambient | enact | deliver
+    task_id: str = ""  # deliver 路径可选关联
     hard_rules: int = 0
     controlled_markers: int = 0
     declared_legacy_markers: int = 0
@@ -486,6 +487,68 @@ def diff_space_snapshots(
     }
 
 
+def on_task_delivered(root: Path, task_id: str, *, objective: str = "") -> dict[str, Any]:
+    """任务 delivered 后打全量空间帧，并对照上一帧给出变窄叙事。
+
+    不写 registry、不改任务；失败时返回 ok=False，调用方不应阻断交付。
+    """
+    from .chronicle import append_project_event
+
+    root = Path(root)
+    snaps_before = load_space_snapshots(root)
+    older = snaps_before[-1] if snaps_before else None
+    try:
+        newer = capture_space_snapshot(
+            root,
+            source="deliver",
+            persist=True,
+            light=False,
+        )
+        # 关联任务（snapshot_id 已在 model_post_init 生成；补 task_id 再持久化一行过重，
+        # 仅在返回与编年里带上）
+        newer = newer.model_copy(update={"task_id": task_id})
+    except Exception as exc:
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+    diff = None
+    if older is not None:
+        diff = diff_space_snapshots(older, newer)
+    detail = {
+        "task_id": task_id,
+        "snapshot_id": newer.snapshot_id,
+        "ambiguity_index": newer.ambiguity_index,
+        "bypass_open": newer.bypass_open,
+        "parallel_state": newer.parallel_state,
+        "objective_prefix": (objective or "")[:80],
+    }
+    if diff:
+        detail["verdict"] = diff["verdict"]
+        detail["summary"] = diff["summary"]
+        detail["from_index"] = diff["deltas"]["ambiguity_index"]["from"]
+        detail["to_index"] = diff["deltas"]["ambiguity_index"]["to"]
+    try:
+        append_project_event(
+            root,
+            kind="growth.deliver_measure",
+            subject=task_id,
+            outcome=(diff or {}).get("verdict") or "measured",
+            detail=detail,
+        )
+    except Exception:
+        pass
+    # 覆盖刚写入的无 task_id 行：追加带 task_id 的同内容不理想；
+    # 改为重写末行（仅 deliver 路径，快照文件局部）。
+    try:
+        path = _snapshots_path(root)
+        lines = [ln for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+        if lines:
+            lines[-1] = newer.model_dump_json()
+            path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    except OSError:
+        pass
+    return {"ok": True, "snapshot": newer, "diff": diff, "older": older}
+
+
 def growth_lines(root: Path, *, limit: int = 5) -> list[str]:
     """投影用：无感生长现状；定型入口指向人。"""
     state = load_growth_state(root)
@@ -495,6 +558,7 @@ def growth_lines(root: Path, *, limit: int = 5) -> list[str]:
             "空间生长：尚无自动观察；日常 audit/gate 会无感积累。",
             "定型仍需人：`sopctl candidate triage` / `rule add`；修剪：`rule deprecate`。",
             "度量：`sopctl growth measure` / `growth diff`。",
+            "中途接入：`sopctl doctor` 看「下一刀」。",
         ]
     lines = [
         f"空间生长（无感）：观察 {state.observation_count}；"
@@ -521,7 +585,13 @@ def growth_lines(root: Path, *, limit: int = 5) -> list[str]:
             "消歧优先：`sopctl candidate enact <CAND> --allow <旁路路径>` "
             "开有界删旁路任务；不要再加 MUST_NOT。"
         )
+    if any(item.get("action") == "retire_rule" for item in state.pending_human):
+        lines.append(
+            "久悬 gap：候选 `retire_rule` 仅建议；"
+            "接线或 `sopctl rule suspend` / `deprecate`（两阶段确认）。"
+        )
     lines.append(
-        "明细：`sopctl growth status|measure|diff`；全量候选：`sopctl candidate list`。"
+        "明细：`sopctl growth status|measure|diff`；全量候选：`sopctl candidate list`；"
+        "中途接入看 `sopctl doctor`「下一刀」。"
     )
     return lines
