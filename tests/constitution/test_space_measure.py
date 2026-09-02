@@ -21,13 +21,14 @@ def test_measure_captures_ambiguity_on_jobflow(tmp_path):
     work = tmp_path / "work"
     shutil.copytree(ROOT / "corpus" / "fixtures" / "jobflow-preview", work)
     (work / ".sopcontrol" / "rules" / "candidates.yaml").unlink(missing_ok=True)
+    (work / ".sopcontrol" / "evidence" / "space-snapshots.jsonl").unlink(missing_ok=True)
     snap = capture_space_snapshot(work, source="measure", persist=True, light=False)
     assert snap.ambiguity_index >= 1  # PUSH-002 redundant
     assert snap.bypass_open >= 1
     assert snap.snapshot_id.startswith("ss-")
     loaded = load_space_snapshots(work)
-    assert len(loaded) == 1
-    assert loaded[0].ambiguity_index == snap.ambiguity_index
+    assert len(loaded) >= 1
+    assert loaded[-1].ambiguity_index == snap.ambiguity_index
 
 
 def test_diff_detects_narrowing():

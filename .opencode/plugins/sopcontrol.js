@@ -14,6 +14,15 @@ export const SopControl = async () => {
         payload = { tool_name: "Write", tool_input: { file_path: output.args.filePath ?? output.args.file_path } };
       }
       if (!payload) return; // 非受控工具：观察，不阻断
+      // 能拿到当前模型就带上，供执行者身份校验（中途换模型 → rebind）
+      const model =
+        input.model ??
+        input.session?.model ??
+        input.session?.modelID ??
+        process.env.OPENCODE_MODEL ??
+        process.env.SOPCONTROL_MODEL ??
+        "";
+      if (model) payload.model = String(model);
       let decision;
       try {
         const out = execFileSync(PY, ["-m", "sopcontrol.cli", "harness-check", "--payload",
