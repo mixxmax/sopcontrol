@@ -304,8 +304,8 @@ def growth_lines(root: Path, *, limit: int = 5) -> list[str]:
         )
     if state.candidates_delete_entry:
         lines.append(
-            "消歧优先：对 delete_entry 用 `sopctl candidate show` 后开有界修复/删旁路，"
-            "不要再加 MUST_NOT。"
+            "消歧优先：`sopctl candidate enact <CAND> --allow <旁路路径>` "
+            "开有界删旁路任务；不要再加 MUST_NOT。"
         )
     lines.append("明细：`sopctl growth status`；全量候选：`sopctl candidate list`。")
     return lines

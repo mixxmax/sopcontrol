@@ -6,6 +6,7 @@ import sys
 
 from .candidate import CandidateStore, correction_observation, refresh_candidates
 from .cli_common import _project
+from .repair import RepairError, open_delete_entry_from_candidate
 
 
 def cmd_candidate(args) -> int:
@@ -86,6 +87,31 @@ def cmd_candidate(args) -> int:
             + ", ".join(record.candidate_id for record in records)
         )
         print("未写入 registry；候选仍无授权力")
+        return 0
+
+    if args.sub == "enact":
+        from plugins import DETECTORS, SENSORS
+
+        allows = list(args.allow or [])
+        if not allows:
+            print("错误: enact 必须用 --allow 圈定有界写入范围（人控消歧半径）", file=sys.stderr)
+            return 2
+        try:
+            task, finding_id = open_delete_entry_from_candidate(
+                root, args.candidate_id, allows, SENSORS, DETECTORS,
+            )
+        except RepairError as exc:
+            print(f"错误: {exc}", file=sys.stderr)
+            return 2
+        print(
+            f"已从候选 {args.candidate_id} 开删旁路任务 {task.task_id} "
+            f"[contract_proposed]（finding {finding_id}）"
+        )
+        print(f"  目标: {task.contract.objective[:100]}")
+        print(f"  写入范围: {', '.join(task.contract.allowed_writes)}")
+        print(f"  完成定义: 规则 {', '.join(task.contract.required_rules)} 判定 pass")
+        print("  候选已标 triaged（接手消歧，未写入 registry）")
+        print(f"  下一步: sopctl task accept {task.task_id} 后最小删除/合流旁路")
         return 0
 
     return 2

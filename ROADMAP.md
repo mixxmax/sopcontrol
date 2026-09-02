@@ -146,6 +146,8 @@
 
 ## 状态（每次运行后更新）
 
+- 2026-09-02（消歧 enact）：`sopctl candidate enact` 将 delete_entry 候选收成有界删旁路任务
+  （人圈 --allow）；候选 triaged；不写 registry；编年 growth.enact_delete。
 - 2026-09-02（无感生长·拒绝即记账）：harness `deny` 与 gate 阻断调用 `ambient_grow_on_control_deny`，
   不跑全仓 audit；三次拦即可推进 improve_entry/调查类候选。与 audit 生长并列。
 - 2026-09-02（无感生长回路）：persist audit 自动 `ambient_grow`——每轮 finding 记独立观察

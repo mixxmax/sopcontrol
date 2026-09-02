@@ -371,6 +371,11 @@ def _format_event_line(event: ProjectEvent) -> str:
             f"无感生长：观察+{detail.get('observations_written', 0)}；"
             f"新候选 {detail.get('materialized', 0)}；待定型 {detail.get('pending', 0)}"
         )
+    if event.kind == "growth.enact_delete":
+        return (
+            f"enact 删旁路 {event.subject} → 任务 {detail.get('task_id')} "
+            f"（规则 {detail.get('rule_id')}）"
+        )
     if event.kind == "view.snapshot":
         return f"视图快照（events={detail.get('event_count', '?')}）"
     return f"{event.kind} {event.subject}"

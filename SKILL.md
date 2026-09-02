@@ -30,6 +30,7 @@ sopctl intake . --conversation chat.txt  # 讨论/政策句 → Candidate 或 di
 sopctl growth status .                   # 无感生长状态（audit 已自动积累；定型仍需人）
 sopctl candidate refresh .              # 冷路径聚合；通常不必手工，audit 已调用
 sopctl candidate list .                  # 查看候选
+sopctl candidate enact <CAND> . --allow <path>  # delete_entry→有界删旁路任务（人圈范围）
 sopctl candidate batch-triage . --candidate-id <ID> --status triaged  # 原子批量裁决，不晋升
 sopctl intent clear .                    # 解除讨论锁定
 sopctl repair open <finding_id> --allow <path>

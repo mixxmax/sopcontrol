@@ -148,6 +148,90 @@ def open_repair(
     return task
 
 
+def open_delete_entry_from_candidate(
+    root: Path,
+    candidate_id: str,
+    allowed_writes: list[str],
+    sensors: list,
+    detectors: list,
+) -> tuple[TaskRecord, str]:
+    """将 delete_entry 候选收成有界删旁路任务（人圈定 --allow；不写 registry）。
+
+    返回 (task, finding_id)。候选标为 triaged，表示人已接手消歧，而非授权新规则。
+    """
+    from .candidate import CandidateStore
+    from .chronicle import append_project_event
+
+    root = Path(root)
+    store_c = CandidateStore(root)
+    try:
+        record = store_c.get(candidate_id)
+    except KeyError as exc:
+        raise RepairError(str(exc)) from exc
+    if record.suggested_action != "delete_entry":
+        raise RepairError(
+            f"候选 {candidate_id} 建议动作是 {record.suggested_action}，"
+            "只有 delete_entry 可 enact 为删旁路任务"
+        )
+    if record.status == "rejected":
+        raise RepairError(f"候选 {candidate_id} 已 rejected，不能 enact")
+
+    findings = Ledger(root / ".sopcontrol" / "evidence" / "ledger.jsonl").load_findings()
+    fingerprints = {
+        source.ref
+        for source in record.sources
+        if source.source_type in {"finding", "growth_observation"} and source.ref
+    }
+    matching = [
+        f for f in findings
+        if f.fingerprint in fingerprints
+        and f.pattern_id in {"legacy_entry_alive", "redundant_entry_point"}
+    ]
+    if not matching and record.scope_guess and record.scope_guess != "project":
+        matching = [
+            f for f in findings
+            if f.rule_id == record.scope_guess
+            and f.pattern_id in {"legacy_entry_alive", "redundant_entry_point"}
+        ]
+    if not matching:
+        raise RepairError(
+            f"候选 {candidate_id} 找不到关联的 legacy/redundant finding；"
+            "先 sopctl audit 再 enact"
+        )
+    # 取最新检测到的一条
+    finding = max(matching, key=lambda f: f.detected_at)
+
+    task = open_repair(root, finding.finding_id, allowed_writes, sensors, detectors)
+    # 强化目标：明确来自候选 enact
+    expected = task.revision
+    task.contract.objective = (
+        f"[enact {candidate_id}] 删除或合并旧入口（规则 {finding.rule_id}）："
+        f"{finding.summary}；使旁路不再可达——优先删文件/合流，不要再接线守卫"
+    )
+    task.revision += 1
+    TaskStore(root).save(task, expected_revision=expected)
+
+    try:
+        store_c.triage(candidate_id, "triaged")
+    except (KeyError, ValueError):
+        pass
+
+    append_project_event(
+        root,
+        kind="growth.enact_delete",
+        subject=candidate_id,
+        outcome="opened",
+        detail={
+            "task_id": task.task_id,
+            "finding_id": finding.finding_id,
+            "rule_id": finding.rule_id,
+            "pattern_id": finding.pattern_id,
+            "allowed_writes": list(allowed_writes),
+        },
+    )
+    return TaskStore(root).load(task.task_id), finding.finding_id
+
+
 def list_repairs(root: Path) -> list[TaskRecord]:
     return [t for t in TaskStore(root).list_all() if t.contract.repairs_fingerprint]
 

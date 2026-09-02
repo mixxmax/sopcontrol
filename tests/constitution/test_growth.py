@@ -85,3 +85,37 @@ def test_gate_block_records_control_observation(tmp_path):
     assert rc == 1
     state = load_growth_state(work)
     assert state.observation_count >= 1
+
+
+def test_candidate_enact_opens_bounded_delete_task(tmp_path):
+    """delete_entry 候选 → enact → 有界删旁路任务；不写新规则。"""
+    from sopcontrol.chronicle import load_project_events
+    from sopcontrol.task import TaskStore
+
+    work = tmp_path / "work"
+    shutil.copytree(ROOT / "corpus" / "fixtures" / "jobflow-preview", work)
+    (work / ".sopcontrol" / "rules" / "candidates.yaml").unlink(missing_ok=True)
+    for _ in range(3):
+        run_audit(work, SENSORS, DETECTORS, persist=True)
+    delete = [
+        r for r in CandidateStore(work).load()
+        if r.suggested_action == "delete_entry"
+    ]
+    assert delete
+    cand_id = delete[0].candidate_id
+    before_rules = (work / ".sopcontrol" / "rules" / "registry.yaml").read_bytes()
+
+    assert main([
+        "candidate", "enact", cand_id, str(work),
+        "--allow", "src/sheet_direct.py",
+    ]) == 0
+
+    after_rules = (work / ".sopcontrol" / "rules" / "registry.yaml").read_bytes()
+    assert before_rules == after_rules
+    tasks = TaskStore(work).list_all()
+    assert any("删除或合并旧入口" in t.contract.objective for t in tasks)
+    assert any(cand_id in t.contract.objective for t in tasks)
+    assert CandidateStore(work).get(cand_id).status == "triaged"
+    assert any(
+        e.kind == "growth.enact_delete" for e in load_project_events(work).events
+    )

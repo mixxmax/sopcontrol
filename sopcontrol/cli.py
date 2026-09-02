@@ -312,6 +312,18 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_candidate)
 
     p = candidate_sub.add_parser(
+        "enact",
+        help="将 delete_entry 候选收成有界删旁路任务（人圈 --allow；不写 registry）",
+    )
+    p.add_argument("candidate_id")
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument(
+        "--allow", action="append", required=True,
+        help="允许修改的路径（可重复）；人控消歧半径，防止全仓乱删",
+    )
+    p.set_defaults(func=cmd_candidate)
+
+    p = candidate_sub.add_parser(
         "batch-triage",
         help="原子裁决多条候选；任一 ID 无效则全部不变",
     )
