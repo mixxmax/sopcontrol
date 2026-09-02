@@ -141,6 +141,18 @@ def build_parser() -> argparse.ArgumentParser:
     p = growth_sub.add_parser("refresh", help="手动跑一轮无感生长（audit 已会自动跑）")
     p.add_argument("path", nargs="?", default=".")
     p.set_defaults(func=cmd_growth, sub="refresh")
+    p = growth_sub.add_parser(
+        "measure",
+        help="捕获空间度量快照（旁路/平行状态/歧义指数）",
+    )
+    p.add_argument("path", nargs="?", default=".")
+    p.set_defaults(func=cmd_growth, sub="measure")
+    p = growth_sub.add_parser(
+        "diff",
+        help="对照最近两帧：ambiguity_index 下降=空间变窄",
+    )
+    p.add_argument("path", nargs="?", default=".")
+    p.set_defaults(func=cmd_growth, sub="diff")
     growth.set_defaults(func=cmd_growth, sub="status", path=".")
 
     chronicle = sub.add_parser(

@@ -28,6 +28,8 @@ sopctl task submit <TASK-ID> . --changed <path> --model <CURRENT-MODEL>  # 须�
 sopctl task takeover <TASK-ID> .          # 换会话最小接手包
 sopctl intake . --conversation chat.txt  # 讨论/政策句 → Candidate 或 discuss_only
 sopctl growth status .                   # 无感生长状态（audit 已自动积累；定型仍需人）
+sopctl growth measure .                  # 空间快照；diff 看是否变窄
+sopctl growth diff .
 sopctl candidate refresh .              # 冷路径聚合；通常不必手工，audit 已调用
 sopctl candidate list .                  # 查看候选
 sopctl candidate enact <CAND> . --allow <path>  # delete_entry→有界删旁路任务（人圈范围）

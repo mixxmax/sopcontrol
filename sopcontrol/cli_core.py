@@ -53,8 +53,14 @@ def cmd_audit(args) -> int:
 
 
 def cmd_growth(args) -> int:
-    """无感生长状态：发现自动；定型仍人控。"""
-    from .growth import ambient_grow, load_growth_state
+    """无感生长状态：发现自动；定型仍人控；measure/diff 度量空间是否变窄。"""
+    from .growth import (
+        ambient_grow,
+        capture_space_snapshot,
+        diff_space_snapshots,
+        load_growth_state,
+        load_space_snapshots,
+    )
 
     root = _project(args.path)
     sub = getattr(args, "sub", None) or "status"
@@ -69,6 +75,50 @@ def cmd_growth(args) -> int:
         )
         print(f"  {state.note}")
         return 0
+    if sub == "measure":
+        snap = capture_space_snapshot(root, source="measure", persist=True, light=False)
+        print(
+            f"空间快照 {snap.snapshot_id} @ {snap.captured_at:%Y-%m-%dT%H:%M}Z"
+        )
+        print(
+            f"  ambiguity_index={snap.ambiguity_index} "
+            f"（旁路开 {snap.bypass_open} + 平行状态 {snap.parallel_state}）"
+        )
+        print(
+            f"  硬规则 {snap.hard_rules}；受控标记 {snap.controlled_markers}；"
+            f"声明旧入口 {snap.declared_legacy_markers}"
+        )
+        print(
+            f"  待删入口候选 {snap.pending_delete_entry}；"
+            f"待改善入口 {snap.pending_improve_entry}；观察 {snap.observations}"
+        )
+        print(f"  {snap.note}")
+        print("  对照上一帧：sopctl growth diff")
+        return 0
+    if sub == "diff":
+        snaps = load_space_snapshots(root)
+        if len(snaps) < 2:
+            # 自动打一帧再比
+            capture_space_snapshot(root, source="measure", persist=True, light=False)
+            snaps = load_space_snapshots(root)
+        if len(snaps) < 2:
+            print("快照不足两帧；先跑两次 sopctl growth measure（或中间做一轮消歧）")
+            return 1
+        report = diff_space_snapshots(snaps[-2], snaps[-1])
+        print(report["summary"])
+        print(f"  帧: {report['older_id'][:12]}… → {report['newer_id'][:12]}…")
+        print(f"  时间: {report['older_at']} → {report['newer_at']}")
+        for key in (
+            "ambiguity_index",
+            "bypass_open",
+            "parallel_state",
+            "pending_delete_entry",
+            "observations",
+        ):
+            d = report["deltas"][key]
+            sign = "+" if d["delta"] > 0 else ""
+            print(f"  {key}: {d['from']} → {d['to']} ({sign}{d['delta']})")
+        return 0 if report["verdict"] != "widened" else 0  # 加宽不失败，只报告
     state = load_growth_state(root)
     print(
         f"空间生长 {root}：观察 {state.observation_count}；"
@@ -80,6 +130,13 @@ def cmd_growth(args) -> int:
     print(f"  {state.note}")
     for item in state.pending_human:
         print(f"  [{item['action']}] {item['candidate_id']}: {item['statement']}")
+    snaps = load_space_snapshots(root)
+    if snaps:
+        latest = snaps[-1]
+        print(
+            f"  最近度量：ambiguity_index={latest.ambiguity_index} "
+            f"（sopctl growth measure|diff）"
+        )
     return 0
 
 
@@ -332,12 +389,21 @@ def cmd_metrics(args) -> int:
         else:
             print(
                 f"结构信号 {ss['root']}: "
+                f"ambiguity_index={ss.get('ambiguity_index', ss.get('bypass_findings', 0))} "
                 f"redundant={ss.get('redundant_entry_point_findings', 0)} "
                 f"legacy={ss['legacy_entry_alive_findings']} "
                 f"parallel_state={ss.get('state_in_parallel_files_findings', 0)}；"
                 f"delete_entry 候选 observed={ss['delete_entry_candidates_observed']} "
                 f"triaged={ss['delete_entry_candidates_triaged']}"
             )
+            latest = ss.get("latest_space_snapshot")
+            if latest:
+                print(
+                    f"  最近空间快照 {latest.get('snapshot_id', '')[:14]}… "
+                    f"index={latest.get('ambiguity_index')} "
+                    f"（sopctl growth diff）"
+                )
+
     m = snapshot["mutations"]
     state = "通过" if m.get("passed") else ("未通过!" if m.get("passed") is False else "未执行")
     print(f"变异执法: {m['declared_mutations']} 条声明，{state}（{m.get('kill_semantics', 'tests/corpus/test_mutations.py')}）")

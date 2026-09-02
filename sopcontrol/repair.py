@@ -229,6 +229,12 @@ def open_delete_entry_from_candidate(
             "allowed_writes": list(allowed_writes),
         },
     )
+    try:
+        from .growth import capture_space_snapshot
+
+        capture_space_snapshot(root, source="enact", persist=True, light=False)
+    except Exception:
+        pass
     return TaskStore(root).load(task.task_id), finding.finding_id
 
 

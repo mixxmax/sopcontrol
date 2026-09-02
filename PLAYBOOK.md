@@ -92,6 +92,8 @@ sopctl rule attest MY-001 . --bypass-note "可绕过路径：直接调用底层 
 # audit / gate 阻断 / harness 拒绝 都会无感生长（拒绝不依赖完整 audit）
 sopctl audit . --compact
 sopctl growth status .             # 待人定型的候选（发现已自动）
+sopctl growth measure .            # 打一帧空间快照（旁路/平行状态/歧义指数）
+sopctl growth diff .               # 对照最近两帧：指数下降=空间变窄
 # 消歧：把 delete_entry 收成有界删旁路任务（人只圈 --allow，不「推进发现」）
 sopctl candidate enact CAND-xxxx . --allow src/legacy_path.py
 sopctl inventory .                 # 受控/冗余入口/平行状态；应删旁路优先于再加守卫

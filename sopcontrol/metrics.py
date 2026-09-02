@@ -160,15 +160,32 @@ def structure_signals(root: Path, sensors: list | None = None, detectors: list |
         1 for r in records
         if r.suggested_action == "delete_entry" and r.status == "triaged"
     )
+    ambiguity_index = legacy_alive + redundant + parallel_state
+    latest_snap = None
+    try:
+        from .growth import load_space_snapshots
+
+        snaps = load_space_snapshots(root)
+        if snaps:
+            latest_snap = {
+                "snapshot_id": snaps[-1].snapshot_id,
+                "ambiguity_index": snaps[-1].ambiguity_index,
+                "captured_at": snaps[-1].captured_at.isoformat(),
+                "source": snaps[-1].source,
+            }
+    except Exception:
+        pass
     return {
         "root": str(root),
         "legacy_entry_alive_findings": legacy_alive,
         "redundant_entry_point_findings": redundant,
         "state_in_parallel_files_findings": parallel_state,
         "bypass_findings": legacy_alive + redundant,
+        "ambiguity_index": ambiguity_index,
         "delete_entry_candidates_observed": delete_observed,
         "delete_entry_candidates_triaged": delete_triaged,
-        "note": "计量入口残留与删除候选；不发明宇宙入口清单",
+        "latest_space_snapshot": latest_snap,
+        "note": "ambiguity_index=旁路开+平行状态；下降即空间变窄（sopctl growth diff）",
     }
 
 
