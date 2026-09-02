@@ -12,73 +12,111 @@
   <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Version-v0.2.0-blue.svg" alt="Version"></a>
 </p>
 
-**Stop constraining coding agents with ever-longer prompts. Put architectural discipline into your Git repository.**
+**Keep coding agents faithful to decisions already made.**
 
-> **SOP Control** is a **model-neutral local control plane** for coding agents (Claude Code, OpenCode, Codex, Cursor). It does not burn your tokens acting as a middleman. Instead, it uses deterministic local gates (Git Hooks / Tool interception) and objective code evidence to prevent models from bypassing architectural invariants across chat sessions, model switches, and legacy code traps.
+> **SOP Control** is a **low-overhead, model-neutral local control plane** for coding agents (Claude Code, OpenCode, Codex, Cursor). It turns user- and project-defined SOPs into a living repository boundary that agents must follow across tasks, sessions, model switches, and legacy code.
+>
+> It is not another coding agent or an always-on review bot. The fast path is local and deterministic: constrain the task, intercept unauthorized actions, and run only the checks needed for the current change. Stronger semantic review is an escalation for high-risk work, not a ceremony required for every edit.
 
 **Status:** v0.2.0 · Living-project loop · [LIMITATIONS](LIMITATIONS.md) · [CHANGELOG](CHANGELOG.md) · [PLAYBOOK](PLAYBOOK.md)
 
 ---
 
-## ⚡ The Pain: Drift vs Control (Before / After)
+## ⚡ The Pain: Decisions Drift, Work Repeats
 
-When capable models operate without physical repo constraints, the biggest risk isn't merely "syntax errors"—it is **freely wandering inside an unconstrained ambiguity space**:
+When a model receives a new session, a new model, or a difficult bug, a decision that was clear to the user can become a suggestion. The cost is not merely a syntax error—it is **unauthorized choice inside an unconstrained ambiguity space**:
 
-### Real Scenario: All data mutations MUST go through `AuditLog`
+### Real Scenario: “Only modify the parser; all data mutations go through `AuditLog`”
 
 * ❌ **Traditional Approach (Prompt-Only Constraints)**:
-  * **Practice**: You fill the System Prompt with *"Must call safe_update(), never write directly to DB"*.
-  * **The Drift**: When the agent encounters a complex bugfix or discovers an obsolete `raw_update()` function, it bypasses the safety wrapper or deletes assertions just to make tests green.
-  * **Consequence**: Delivery *looks* successful on paper, but core product invariants quietly rot. Start a new session or switch models, and previous prompt agreements evaporate.
+  * **Practice**: You tell the agent *"only modify the parser; never write directly to the database"* and repeat it in prompts.
+  * **The Drift**: A difficult bug makes the agent broaden the file scope, reopen the settled design, skip a workflow step, or repeat an already completed investigation.
+  * **Consequence**: Time and tokens are spent on work the user did not authorize. Start a new session or switch models, and the agreement is easy to reinterpret.
 
 * ✅ **SOP Control Approach (Local Control Plane Takeover)**:
-  1. **Rules live in Git**: Rule `RULE-001` is committed in `.sopcontrol/`, declaring required consumer markers;
-  2. **Static absorption audit**: `sopctl audit` scans the AST (TS / Go / Rust / Python), flags unconstrained `raw_update()`, and raises a gap warning;
-  3. **Deterministic physical gate**: `sopctl gate` blocks unauthorized changes in Pre-push / CI and Harness runtimes (zero token cost);
-  4. **Disambiguation (Enact)**: Guides the model to run `sopctl candidate enact` to generate a bounded task that **physically deletes `raw_update()`**, permanently shrinking the model's error space.
+  1. **Bind the decision**: A project rule or task contract records what the agent must follow and which files it may touch;
+  2. **Project the current boundary**: The relevant control state is compiled into the agent-facing context instead of relying on an ever-longer prompt;
+  3. **Intercept the action**: Local hooks and harness checks reject unauthorized writes or workflow skips before they become repository state (zero model tokens);
+  4. **Narrow the space over time**: `sopctl audit` and `sopctl growth` surface real bypasses and parallel states; approved cleanup tasks can physically remove them.
 
 ---
 
-## 🛠️ Architecture & Engineering Loop
+## 🛠️ The Living Control Plane
 
 ```text
-[ Developer / CI ]        [ Production & Legacy Code ]
-       │                                │
-       ▼                                ▼
-.sopcontrol/ (Local Truth) ◄───  sopctl audit (Detect parallel states & bypasses)
-       │                                │
-       ├─► Compile Projections ──► Injected into AGENTS.md / CLAUDE.md (<1500 Tokens)
-       │
-       └─► Deterministic Gates ──► Git Hooks / Harness Interception (Zero Tokens)
-                                        │
-                                        ▼
-                           Block unauthorized writes / Force deleting legacy paths
+[ User decisions / Project SOP ]
+                 │
+                 ▼
+ .sopcontrol/ (authoritative control plane)
+      │                  │                    │
+      ▼                  ▼                    ▼
+  task contract     agent projection      living observations
+  (what may change) (what must be followed) (where ambiguity remains)
+      │                  │                    │
+      └──────────────┬───┴────────────────────┘
+                     ▼
+          Git hooks / Harness interception
+                     │
+                     ▼
+        allow, reject, or require explicit action
 ```
 
-### 1. Task Contracts & Anti-Smuggling (Task Contract)
-Agents must operate within bounded task contracts specifying `allowed_writes` (file write whitelist) and `require_rules`. Unauthorized file touches or missing verifications are rejected immediately.
+The control plane grows with the project: it captures settled decisions, projects only the relevant boundary to the current agent, blocks unauthorized actions, and turns repeated ambiguity into human-reviewable cleanup or rule candidates. Observations do not silently become permanent rules; authority remains explicit.
 
-### 2. Real Absorption Auditing (Absorption Audit)
+### 1. Decision Fidelity & Task Contracts
+When a decision is bound to a task, the agent must follow it even if a later model would choose a different approach. Task contracts specify `allowed_writes` (file write whitelist) and `require_rules`; unauthorized file touches are rejected immediately.
+
+### 2. Boundary Enforcement
+Git hooks and harness interception enforce the boundary at the action point. The fast path does not need a second model: local scope, rule, and controller-integrity checks can reject an invalid operation before it changes the repository.
+
+### 3. Real Absorption Auditing (Absorption Audit)
 Rules never stay merely on paper. The system uses AST parsers (TS / Go / Rust / Python) to independently verify whether a rule has real production callers (`consumer_markers`) and test coverage (`documented` → `wired` → `wired_and_tested`).
 
-### 3. Model Switch Safety (`task rebind`)
+### 4. Model Switch Safety (`task rebind`)
 Switching models mid-task often accidentally broadens permissions. SOP Control enforces `task rebind`: permissions for new models **only tighten, never loosen** (taking the most conservative intersection).
 
-### 4. Ambiguity Space Measurement (Ambiguity Index)
+### 5. A Living, Measurable Space (Ambiguity Index)
 Track repository ambiguity via `sopctl growth measure` (active bypasses + parallel states). Verify that refactoring truly **narrowed** the model's wanderable decision space using `sopctl growth diff`.
+
+### Cost and assurance are separate controls
+SOP Control separates cheap enforcement from expensive judgment:
+
+* **Fast path**: local task-scope, rule, hook, and gate checks; no extra model call is required.
+* **Normal delivery**: run the tests and audits required by the current task, once at the handoff boundary.
+* **High-risk escalation**: add a fresh semantic review only when the risk or uncertainty justifies its cost.
+
+Changing the code or the governing rule invalidates the affected evidence. Unchanged state should not be re-litigated merely because a new chat session has started.
 
 ---
 
-## 📖 Terminology Mapping
+## 📖 What SOP Control Is—and Is Not
 
-To make adoption seamless, here is how SOP Control concepts map to standard engineering terms:
+SOP Control is:
+
+* a repository-local authority for user and project decisions;
+* a boundary that constrains Agent actions and workflow transitions;
+* a living space that records where the project is still ambiguous;
+* a model-neutral control layer that can sit above Codex, Claude Code, OpenCode, or Cursor.
+
+SOP Control is not:
+
+* a coding model or software factory;
+* an always-on second Agent that repeats every piece of work;
+* a replacement for tests, code review, or human authority on policy changes.
+
+### Terminology Mapping
+
+Here is how SOP Control concepts map to standard engineering terms:
 
 | Project Term | Common Engineering Concept | What Problem It Solves |
 | :--- | :--- | :--- |
+| **Decision Fidelity** | Keeping settled user/project decisions binding for the current task | Prevents silent reinterpretation by a later model or session |
+| **Living Control Space** | Tracking active bypasses, parallel states, and unresolved ambiguity | Makes the project's remaining freedom measurable and reducible |
 | **Eliminate Ambiguity** | Physically deleting legacy dead code & bypasses | Leaves no physical loopholes for models to bypass rules |
 | **Absorption Audit** | Static checks ensuring rules have real code callers | Prevents architectural guidelines from rotting into empty docs |
 | **Task Rebind** | Re-aligning permissions to minimum intersection upon model switch | Prevents security degradation when switching models mid-task |
 | **Task Contract** | Sandboxed ticket with strict file write whitelists & rules | Prevents agents from altering unrelated infrastructure files |
+| **Boundary Gate** | Local hook / harness / CI enforcement at the action boundary | Stops an invalid action before it becomes repository state |
 | **Chronicle** | Git-persisted decision log of rules and invariant changes | Explains "how we got here" to the next developer / model session |
 
 ---
@@ -87,7 +125,7 @@ To make adoption seamless, here is how SOP Control concepts map to standard engi
 
 ### Option A: 2-Minute Minimal Demo
 
-Experience a physical gate blocking an agent violation without setting up a full project:
+Experience a local physical gate blocking an agent violation without setting up a full project or another model:
 
 ```bash
 git clone https://github.com/mixxmax/sopcontrol.git && cd sopcontrol
@@ -110,7 +148,7 @@ sopctl init .
 sopctl doctor .          # Diagnoses parallel states & open bypasses; outputs next moves
 ```
 
-#### Step 2. Lock Down Your First Core Rule
+#### Step 2. Bind Your First Core SOP
 
 ```bash
 sopctl rule add --id RULE-001 \
@@ -121,28 +159,30 @@ sopctl rule add --id RULE-001 \
 sopctl rule accept RULE-001 .
 ```
 
-#### Step 3. Mount Git Gate & Start Bounded Tasks
+#### Step 3. Mount the Boundary & Start a Bounded Task
 
 ```bash
 # 1. Install pre-push gate hook
 sopctl hook install .
 
-# 2. Open a bounded task for your agent (restricted to service.py)
+# 2. Bind the current decision to a bounded task (restricted to service.py)
 sopctl task open . --model claude-3-7-sonnet --objective "Refactor billing logic" \
   --allow src/service.py --require-rule RULE-001
 
-# 3. Agent submits changes upon completion
+# 3. Agent submits the bounded change; verify only at the handoff boundary
 sopctl task submit <TASK-ID> . --changed src/service.py --model claude-3-7-sonnet
 sopctl task verify <TASK-ID> .
 sopctl task deliver <TASK-ID> .
 
-# 4. Final verification gate (unified local hook and CI check)
+# 4. Final local/CI gate: the same boundary applies before delivery
 sopctl gate .
 ```
 
 ---
 
 ## 🔌 Supported Agent Harnesses
+
+All harness adapters consume the same repository control plane. They are execution surfaces, not competing sources of truth.
 
 | Harness | Interception Mechanism | Status |
 | :--- | :--- | :--- |
