@@ -146,6 +146,9 @@
 
 ## 状态（每次运行后更新）
 
+- 2026-09-02（中途换模型适配）：`sopctl task rebind --model` 重绑执行者，旋钮与旧契约取更保守交集
+  （只收紧）；编年 `task.rebind`；投影链头显示执行者；`task submit --model` 与契约不一致则拒绝。
+  覆盖手册「中途换模型不得扩大可达集合」。
 - 2026-09-02（Living-Project Batch 4·编年）：`project-events.jsonl` 记录规则/任务治理；
   `sopctl chronicle` 展示何以至此、check 核对重放、snapshot 写视图摘要；投影与 doctor
   暴露最小旅程。ledger compact 不触及编年。撤销 dry-run 扩展留余量。

@@ -133,13 +133,20 @@ def _render_task_chain(slice_info: ProjectionTaskSlice) -> list[str]:
     for t in slice_info.heads:
         action = LEGAL_ACTIONS[t.status][0]
         reason = slice_info.inclusion_reasons.get(t.task_id, "")
+        executor = t.contract.model_identity or "（未绑定）"
         lines.append(f"- {t.task_id} [{t.status.value}] {t.contract.objective[:60]}")
         lines.append(
-            f"  完成定义: {', '.join(t.contract.required_rules) or '（无）'} 全部 pass；"
+            f"  执行者: {executor}；完成定义: "
+            f"{', '.join(t.contract.required_rules) or '（无）'} 全部 pass；"
             f"修复预算: {t.repair_count}/{t.contract.max_repairs}；合法动作: {action}"
         )
         if reason:
             lines.append(f"  为何在切片: {reason}")
+        if t.contract.model_identity:
+            lines.append(
+                "  中途换模型: "
+                f"`sopctl task rebind {t.task_id} --model <NEW>`（只收紧，不继承旧放宽）"
+            )
         if t.resolution_of:
             lines.append(f"  接替: {', '.join(t.resolution_of)}")
         if t.status in TERMINAL_FAILED:

@@ -99,6 +99,9 @@ sopctl explain MY-001 .
 sopctl project all .                   # 刷新投影后 project check 应 OK
 sopctl chronicle show .                # 换会话：项目何以至此（给模型看的编年）
 sopctl chronicle check .               # 编年重放 vs registry 核对
+# 对话中途换模型（项目事实不变；旋钮只收紧，不继承上一执行者的放宽）
+sopctl task rebind TASK-xxxx . --model <NEW-MODEL>
+sopctl task submit TASK-xxxx . --changed src/foo.py --model <NEW-MODEL>  # 须与执行者一致
 sopctl task open . --objective "接线 MY-001" \
   --allow src/foo.py --require-rule MY-001 \
   --require-field digest --require-field status   # strict_schema 时需要

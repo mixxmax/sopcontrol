@@ -22,8 +22,12 @@ def test_takeover_pack_shape():
     assert pack["status"] == "repair_required"
     assert pack["repair_budget"] == "1/2"
     assert pack["rule_verdicts"] == {"X-001": "gap"}
-    assert pack["next_legal_actions"] == LEGAL_ACTIONS[TaskStatus.repair_required]
+    for action in LEGAL_ACTIONS[TaskStatus.repair_required]:
+        assert action in pack["next_legal_actions"]
+    assert any("rebind" in a for a in pack["next_legal_actions"])
+    assert pack.get("executor") == "（未绑定）"
     assert "不得重新解释" in pack["note"]
+    assert "rebind" in pack["note"]
 
 
 def test_takeover_via_cli_is_readonly(tmp_path, capsys):

@@ -211,14 +211,31 @@ def build_parser() -> argparse.ArgumentParser:
         p.set_defaults(func=cmd_task)
 
     _task_cmd("accept", "接受契约 → executing", task_id=True)
-    _task_cmd(
-        "submit", "提交改动路径 → verification_pending（范围检查 + MUST 字段）",
-        task_id=True, changed=True, fields=True,
+    p = task_sub.add_parser(
+        "submit",
+        help="提交改动路径 → verification_pending（范围检查 + MUST 字段）",
     )
+    p.add_argument("task_id")
+    p.add_argument("--changed", action="append", help="本次改动路径，可重复")
+    p.add_argument("--field", action="append", help="提交时的 MUST 字段 key=value，可重复")
+    p.add_argument(
+        "--model",
+        help="当前执行模型；若任务已绑定执行者则必须一致，否则先 task rebind",
+    )
+    p.add_argument("path", nargs="?", default=".")
+    p.set_defaults(func=cmd_task)
     _task_cmd("verify", "完成门：独立审计 → verified/repair/blocked/failed", task_id=True)
     _task_cmd("deliver", "交付（仅 verified 可交付）", task_id=True)
     _task_cmd("show", "查看任务状态与 envelope 历史", task_id=True)
     _task_cmd("takeover", "接管包：新模型/新会话的最小接手信息（只读）", task_id=True)
+    p = task_sub.add_parser(
+        "rebind",
+        help="对话中途换执行模型：重算控制旋钮（只收紧，不继承旧放宽）",
+    )
+    p.add_argument("task_id")
+    p.add_argument("--model", required=True, help="新的当前执行模型身份")
+    p.add_argument("path", nargs="?", default=".")
+    p.set_defaults(func=cmd_task)
     _task_cmd("list", "列出任务")
 
     identity = sub.add_parser("identity", help="项目身份（Phase 6 种子：跨 harness 识别同一项目）")

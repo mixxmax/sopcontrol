@@ -315,13 +315,144 @@ def takeover_pack(
         "changed_paths": task.changed_paths,
         "rule_verdicts": {r: rule_verdicts.get(r) for r in required},
         "open_findings": open_findings,
-        "next_legal_actions": LEGAL_ACTIONS[task.status],
+        "executor": task.contract.model_identity or "（未绑定）",
+        "write_granularity": task.contract.write_granularity,
+        "strict_schema": task.contract.strict_schema,
+        "next_legal_actions": LEGAL_ACTIONS[task.status] + (
+            ["rebind --model <NEW>（中途换模型；只收紧）"]
+            if task.status not in TERMINAL
+            else []
+        ),
         "note": (
             "接管者不得重新解释已接受的契约或扩大写入范围；"
             "只按 next_legal_actions 推进。"
             "投影「当前链头」与本包同源：权威在项目内，上下文只是切片。"
+            "对话中途换模型须 task rebind，不得继承上一执行者的放宽旋钮。"
         ),
     }
+
+
+_GRAN_RANK = {"file": 0, "prefer_file": 1, "prefix": 2}
+
+
+def stricter_write_granularity(a: Optional[str], b: Optional[str]) -> str:
+    """取更严的写入粒度；未知按 prefix（最宽）再与对方取严。"""
+    ra = _GRAN_RANK.get(a or "prefix", 2)
+    rb = _GRAN_RANK.get(b or "prefix", 2)
+    winner = a if ra <= rb else b
+    return winner or "file"
+
+
+class RebindError(ValueError):
+    """中途换模型重绑失败（可行动原因）。"""
+
+
+def rebind_executor(
+    store: "TaskStore",
+    task: TaskRecord,
+    *,
+    new_model: str,
+    knobs_max_repairs: int,
+    knobs_write_granularity: str,
+    knobs_strict_schema: bool,
+    knobs_tier: str,
+    capability_note: str,
+    root: Optional[Path] = None,
+) -> TaskRecord:
+    """对话中途换执行模型：项目事实不变，控制旋钮只收紧不放宽。
+
+    手册 6.3.3：切换模型重新计算，不继承另一身份的放宽结果。
+    """
+    new_model = (new_model or "").strip()
+    if not new_model:
+        raise RebindError("必须声明新执行模型 --model")
+    if task.status in TERMINAL:
+        raise RebindError(
+            f"任务已处于终态 {task.status.value}，不能 rebind；"
+            "请另开任务或 --resolves 接替"
+        )
+    old_model = task.contract.model_identity or "（未绑定）"
+    old_repairs = task.contract.max_repairs
+    old_gran = task.contract.write_granularity or "prefix"
+    old_strict = bool(task.contract.strict_schema)
+
+    new_repairs = min(old_repairs, int(knobs_max_repairs))
+    new_gran = stricter_write_granularity(old_gran, knobs_write_granularity)
+    new_strict = old_strict or bool(knobs_strict_schema)
+
+    project_root = Path(root) if root is not None else store.root
+    if new_gran == "file":
+        directories = [
+            p for p in task.contract.allowed_writes
+            if (project_root / p).is_dir()
+        ]
+        if directories:
+            raise RebindError(
+                "新执行者要求 file 级写入，但契约 allowed_writes 含目录: "
+                + ", ".join(directories)
+                + "。请另开精确到文件的任务，或先把范围收成具体文件后再 rebind"
+            )
+
+    expected = task.revision
+    task.contract.max_repairs = new_repairs
+    task.contract.write_granularity = new_gran
+    task.contract.strict_schema = new_strict
+    task.contract.model_identity = new_model
+    task.contract.capability_note = (
+        f"rebind {old_model}→{new_model} tier={knobs_tier}；{capability_note}"
+    )
+    task.history.append(
+        EnvelopeRecord(
+            action="rebind",
+            from_status=task.status,
+            to_status=task.status,
+            allowed=True,
+            reason=(
+                f"执行者 {old_model}→{new_model}；旋钮只收紧 "
+                f"repairs {old_repairs}→{new_repairs}，"
+                f"granularity {old_gran}→{new_gran}，"
+                f"strict_schema {old_strict}→{new_strict}"
+            ),
+            detail={
+                "from_model": old_model,
+                "to_model": new_model,
+                "tier": knobs_tier,
+                "max_repairs": new_repairs,
+                "write_granularity": new_gran,
+                "strict_schema": new_strict,
+            },
+        )
+    )
+    task.revision += 1
+    store.save(task, expected_revision=expected)
+    store._chronicle(
+        kind="task.rebind",
+        subject=task.task_id,
+        detail={
+            "from_model": old_model,
+            "to_model": new_model,
+            "tier": knobs_tier,
+            "max_repairs": new_repairs,
+            "write_granularity": new_gran,
+            "strict_schema": new_strict,
+        },
+    )
+    return store.load(task.task_id)
+
+
+def assert_executor_matches(task: TaskRecord, claimed_model: Optional[str]) -> None:
+    """提交/运行时声明的当前模型必须与契约执行者一致（中途换了须先 rebind）。"""
+    claimed = (claimed_model or "").strip()
+    bound = (task.contract.model_identity or "").strip()
+    if not claimed:
+        return  # 未声明则不在此层拦（兼容旧调用）；有绑定也不强制
+    if not bound:
+        return
+    if claimed != bound:
+        raise RebindError(
+            f"当前模型 {claimed} 与任务执行者 {bound} 不一致；"
+            f"对话中途换模型请先: sopctl task rebind {task.task_id} --model {claimed}"
+        )
 
 
 class TransitionDecision(BaseModel):

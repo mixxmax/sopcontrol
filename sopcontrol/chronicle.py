@@ -360,6 +360,12 @@ def _format_event_line(event: ProjectEvent) -> str:
             f"{event.subject} {detail.get('from_status')}→{detail.get('to_status')}"
             f"（{detail.get('action', '')}）"
         )
+    if event.kind == "task.rebind":
+        return (
+            f"{event.subject} 执行者 "
+            f"{detail.get('from_model')}→{detail.get('to_model')} "
+            f"（{detail.get('write_granularity')}, repairs≤{detail.get('max_repairs')}）"
+        )
     if event.kind == "view.snapshot":
         return f"视图快照（events={detail.get('event_count', '?')}）"
     return f"{event.kind} {event.subject}"

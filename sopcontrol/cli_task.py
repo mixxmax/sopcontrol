@@ -16,12 +16,15 @@ from .registry import Registry, RegistryError
 from .repair import RepairError, list_repairs, open_repair
 from .task import (
     Contract,
+    RebindError,
     TaskRecord,
     TaskStore,
+    assert_executor_matches,
     attach_resolution_links,
     evaluate_transition,
     normalize_relpath,
     normalize_resolves,
+    rebind_executor,
     takeover_pack,
     validate_resolution_targets,
 )
@@ -330,6 +333,12 @@ def cmd_task(args) -> int:
             print(f"  已被接替: {task.superseded_by_task}")
         if task.blocked_reason_code:
             print(f"  阻断原因: {task.blocked_reason_code}")
+        if c.model_identity:
+            print(f"  执行者: {c.model_identity}")
+            print(
+                f"  旋钮: repairs≤{c.max_repairs}；"
+                f"granularity={c.write_granularity}；strict_schema={c.strict_schema}"
+            )
         if task.changed_paths:
             print(f"  已提交改动: {', '.join(task.changed_paths)}")
         for env in task.history[-5:]:
@@ -351,12 +360,118 @@ def cmd_task(args) -> int:
         print(yaml.safe_dump(pack, allow_unicode=True, sort_keys=False).strip())
         return 0
 
+    if sub == "rebind":
+        task = store.load(args.task_id)
+        new_model = args.model
+        from .behavior_state import activate_behavior_ceiling, effective_behavior_ceiling
+        from .capability import (
+            apply_knobs_to_open,
+            load_profile,
+            profile_approval_is_current,
+        )
+        from .capability_events import (
+            CapabilityEvent,
+            append_capability_event,
+            derive_behavior_profile,
+            load_capability_events_checked,
+        )
+
+        profile = load_profile(root)
+        loaded_events = load_capability_events_checked(root)
+        behavior = derive_behavior_profile(
+            loaded_events.events,
+            model=new_model,
+            integrity_ok=loaded_events.integrity_ok,
+        )
+        state_required = profile_approval_is_current(profile, current_model=new_model)
+        durable_ceiling, state_integrity_ok, source_ids = effective_behavior_ceiling(
+            root, model=new_model, required=state_required,
+        )
+        if state_integrity_ok and behavior.ceiling_source_event_ids:
+            events_by_id = {event.event_id: event for event in loaded_events.events}
+            for source_event_id in behavior.ceiling_source_event_ids:
+                source_event = events_by_id.get(source_event_id)
+                activate_behavior_ceiling(
+                    root,
+                    model=new_model,
+                    source_event_id=source_event_id,
+                    source_observed_at=source_event.observed_at if source_event else None,
+                )
+            durable_ceiling, state_integrity_ok, source_ids = effective_behavior_ceiling(
+                root, model=new_model, required=state_required,
+            )
+        if durable_ceiling == "weak" or not state_integrity_ok:
+            behavior = behavior.model_copy(
+                update={
+                    "enforced_ceiling": "weak",
+                    "event_ids": sorted(set(behavior.event_ids + source_ids)),
+                    "integrity_ok": behavior.integrity_ok and state_integrity_ok,
+                }
+            )
+        repairs, knobs, note = apply_knobs_to_open(
+            max_repairs=2,
+            max_repairs_explicit=False,
+            profile=profile,
+            current_model=new_model,
+            behavior=behavior,
+        )
+        try:
+            task = rebind_executor(
+                store,
+                task,
+                new_model=new_model,
+                knobs_max_repairs=repairs,
+                knobs_write_granularity=knobs.write_granularity,
+                knobs_strict_schema=knobs.strict_schema,
+                knobs_tier=knobs.tier,
+                capability_note=note,
+                root=root,
+            )
+        except RebindError as exc:
+            print(f"错误: {exc}", file=sys.stderr)
+            return 2
+        append_capability_event(
+            root,
+            CapabilityEvent(
+                kind="task.rebind",
+                subject=task.task_id,
+                outcome="rebound",
+                model=new_model,
+                tier=knobs.tier,
+                detail={
+                    "write_granularity": task.contract.write_granularity,
+                    "strict_schema": task.contract.strict_schema,
+                    "max_repairs": task.contract.max_repairs,
+                },
+            ),
+        )
+        print(
+            f"已重绑执行者 {task.task_id} → {new_model} "
+            f"[r{task.revision}] tier={knobs.tier}"
+        )
+        print(
+            f"  旋钮: repairs≤{task.contract.max_repairs}；"
+            f"granularity={task.contract.write_granularity}；"
+            f"strict_schema={task.contract.strict_schema}"
+        )
+        print(f"  说明: {task.contract.capability_note}")
+        print("  （只收紧；项目规则/目标未改。继续按 next_legal_actions 推进）")
+        return 0
+
     if sub == "accept":
         return _task_decide(root, args.task_id, "accept")
     if sub == "submit":
         try:
             fields = _parse_fields(getattr(args, "field", None))
         except ValueError as exc:
+            print(f"错误: {exc}", file=sys.stderr)
+            return 2
+        try:
+            assert_executor_matches(
+                store.load(args.task_id),
+                getattr(args, "model", None),
+            )
+        except RebindError as exc:
             print(f"错误: {exc}", file=sys.stderr)
             return 2
         return _task_decide(
