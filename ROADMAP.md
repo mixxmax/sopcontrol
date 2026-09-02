@@ -146,6 +146,9 @@
 
 ## 状态（每次运行后更新）
 
+- 2026-09-02（无感生长回路）：persist audit 自动 `ambient_grow`——每轮 finding 记独立观察
+  （打破 ledger 去重）、聚合 Candidate、写 growth-state；投影「空间生长」节；`sopctl growth status|refresh`。
+  发现无感；`rule add`/删代码仍人控。三轮 audit 即可物化 delete_entry，无需手工 candidate refresh。
 - 2026-09-02（中途换模型适配）：`sopctl task rebind --model` 重绑执行者，旋钮与旧契约取更保守交集
   （只收紧）；编年 `task.rebind`；投影链头显示执行者；`task submit --model` 与契约不一致则拒绝。
   覆盖手册「中途换模型不得扩大可达集合」。

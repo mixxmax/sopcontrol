@@ -366,6 +366,11 @@ def _format_event_line(event: ProjectEvent) -> str:
             f"{detail.get('from_model')}→{detail.get('to_model')} "
             f"（{detail.get('write_granularity')}, repairs≤{detail.get('max_repairs')}）"
         )
+    if event.kind == "growth.ambient":
+        return (
+            f"无感生长：观察+{detail.get('observations_written', 0)}；"
+            f"新候选 {detail.get('materialized', 0)}；待定型 {detail.get('pending', 0)}"
+        )
     if event.kind == "view.snapshot":
         return f"视图快照（events={detail.get('event_count', '?')}）"
     return f"{event.kind} {event.subject}"

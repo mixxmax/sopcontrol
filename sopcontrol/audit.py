@@ -13,7 +13,7 @@ from .attest import attestation_evidence
 from .bootstrap import maturity_evidence
 from .context import ProjectContext
 from .ledger import Ledger
-from .model import Evidence, Finding, Rule, Verdict, effective_rules, utcnow
+from .model import Evidence, Finding, Rule, Verdict, content_hash, effective_rules, utcnow
 from .registry import Registry
 from .task import TaskRecord, TransitionDecision, evaluate_transition
 from .testrun import declaration_evidence
@@ -85,6 +85,21 @@ def run_audit(
                 ledger.append_evidence(ev)
             for f in findings:
                 ledger.append_finding(f)
+        # 无感生长：记本轮观察并聚合候选（不写 registry）
+        try:
+            from .growth import ambient_grow
+
+            ambient_grow(
+                root,
+                findings=findings,
+                round_id=content_hash({
+                    "at": audit_at.isoformat(),
+                    "findings": len(findings),
+                }),
+                at=audit_at,
+            )
+        except Exception:
+            pass
 
     return AuditReport(
         rules=rules, evidence=evidence, findings=findings, verdicts=verdicts, at=audit_at

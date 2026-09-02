@@ -89,7 +89,9 @@ sopctl rule attest MY-001 . --bypass-note "可绕过路径：直接调用底层 
 
 ```bash
 # 观察断口（--compact 用本轮证据替换账本，去掉 stale 噪音）
+# audit/gate 会无感生长：自动记观察、聚合候选；不必手工「推进发现」
 sopctl audit . --compact
+sopctl growth status .             # 待人定型的候选（发现已自动）
 sopctl inventory .                 # 受控/冗余入口/平行状态；应删旁路优先于再加守卫
 sopctl explain MY-001 .
 

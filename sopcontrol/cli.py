@@ -130,6 +130,19 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("path", nargs="?", default=".")
     p.set_defaults(func=cmd_inventory)
 
+    growth = sub.add_parser(
+        "growth",
+        help="无感生长：观察/候选自动积累；定型仍需人（非主动推进发现）",
+    )
+    growth_sub = growth.add_subparsers(dest="sub")
+    p = growth_sub.add_parser("status", help="查看生长状态与待人定型候选")
+    p.add_argument("path", nargs="?", default=".")
+    p.set_defaults(func=cmd_growth, sub="status")
+    p = growth_sub.add_parser("refresh", help="手动跑一轮无感生长（audit 已会自动跑）")
+    p.add_argument("path", nargs="?", default=".")
+    p.set_defaults(func=cmd_growth, sub="refresh")
+    growth.set_defaults(func=cmd_growth, sub="status", path=".")
+
     chronicle = sub.add_parser(
         "chronicle",
         help="项目编年（换会话/换模型：何以至此；事件只追加，可核对重建）",

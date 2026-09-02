@@ -27,7 +27,8 @@ sopctl task rebind <TASK-ID> . --model <NEW-MODEL>   # 对话中途换模型：�
 sopctl task submit <TASK-ID> . --changed <path> --model <CURRENT-MODEL>  # 须与执行者一致
 sopctl task takeover <TASK-ID> .          # 换会话最小接手包
 sopctl intake . --conversation chat.txt  # 讨论/政策句 → Candidate 或 discuss_only
-sopctl candidate refresh .              # 冷路径聚合重复事实；3 次才物化，不自动授权
+sopctl growth status .                   # 无感生长状态（audit 已自动积累；定型仍需人）
+sopctl candidate refresh .              # 冷路径聚合；通常不必手工，audit 已调用
 sopctl candidate list .                  # 查看候选
 sopctl candidate batch-triage . --candidate-id <ID> --status triaged  # 原子批量裁决，不晋升
 sopctl intent clear .                    # 解除讨论锁定

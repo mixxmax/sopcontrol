@@ -52,6 +52,37 @@ def cmd_audit(args) -> int:
 
 
 
+def cmd_growth(args) -> int:
+    """无感生长状态：发现自动；定型仍人控。"""
+    from .growth import ambient_grow, load_growth_state
+
+    root = _project(args.path)
+    sub = getattr(args, "sub", None) or "status"
+    if sub == "refresh":
+        result = ambient_grow(root)
+        state = result["state"]
+        print(
+            f"无感生长已跑一轮：观察+{result['observations_written']}；"
+            f"新物化候选 {state.last_materialized}；"
+            f"待人定型 {state.candidates_observed}"
+            f"（delete_entry={state.candidates_delete_entry}）"
+        )
+        print(f"  {state.note}")
+        return 0
+    state = load_growth_state(root)
+    print(
+        f"空间生长 {root}：观察 {state.observation_count}；"
+        f"待人定型 {state.candidates_observed} "
+        f"（删入口 {state.candidates_delete_entry} / "
+        f"改善入口 {state.candidates_improve_entry} / "
+        f"登记 {state.candidates_register_rule}）"
+    )
+    print(f"  {state.note}")
+    for item in state.pending_human:
+        print(f"  [{item['action']}] {item['candidate_id']}: {item['statement']}")
+    return 0
+
+
 def cmd_chronicle(args) -> int:
     """项目编年：换会话可知何以至此；check 核对事件重放 vs registry。"""
     from .chronicle import (
@@ -211,6 +242,19 @@ def cmd_doctor(args) -> int:
         )
     except Exception as exc:
         print(f"项目编年: 跳过（{type(exc).__name__}: {exc}）")
+
+    try:
+        from .growth import load_growth_state
+
+        gs = load_growth_state(root)
+        print(
+            f"空间生长: 观察 {gs.observation_count}；"
+            f"待人定型 {gs.candidates_observed}"
+            f"（delete_entry={gs.candidates_delete_entry}）；"
+            f"明细 sopctl growth status"
+        )
+    except Exception as exc:
+        print(f"空间生长: 跳过（{type(exc).__name__}: {exc}）")
 
     if problems:
         for p in problems:

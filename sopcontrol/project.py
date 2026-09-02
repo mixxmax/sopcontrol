@@ -82,6 +82,17 @@ def render_projection(
             lines.append("## 何以至此（换模型/换会话）")
             lines.append("- （编年暂不可用；权威仍在 `.sopcontrol/`）")
             lines.append("")
+        try:
+            from .growth import growth_lines
+
+            lines.append("## 空间生长（无感观察；定型需人）")
+            for item in growth_lines(Path(project_root), limit=4):
+                lines.append(item if item.startswith("- ") else f"- {item}")
+            lines.append("")
+        except Exception:
+            lines.append("## 空间生长（无感观察；定型需人）")
+            lines.append("- （生长状态暂不可用）")
+            lines.append("")
     if maturity is not None:
         lines.append(f"## 控制成熟度：{maturity.level} {maturity.level_desc}")
         lines.append(

@@ -296,30 +296,34 @@ def refresh_candidates(root: Path) -> dict[str, int]:
         findings = ledger.load_findings()
     except (OSError, ValueError, json.JSONDecodeError):
         findings = []
-    for finding in findings:
-        key = "finding:" + finding.fingerprint
-        if finding.pattern_id in {"legacy_entry_alive", "redundant_entry_point"}:
-            spec = {
+    def _finding_spec(pattern_id: str, rule_id: str, summary: str) -> dict:
+        if pattern_id in {"legacy_entry_alive", "redundant_entry_point"}:
+            return {
                 "kind": "deprecation",
                 "statement": (
-                    f"冗余/旧入口仍可达（规则 {finding.rule_id or '未关联'}）："
-                    f"{finding.summary}；应删除或合并至唯一受控入口，而不是再登记禁止规则"
+                    f"冗余/旧入口仍可达（规则 {rule_id or '未关联'}）："
+                    f"{summary}；应删除或合并至唯一受控入口，而不是再登记禁止规则"
                 ),
-                "scope_guess": finding.rule_id or "project",
+                "scope_guess": rule_id or "project",
                 "suggested_action": "delete_entry",
                 "suggested_modality": "MUST",
             }
-        else:
-            spec = {
-                "kind": "finding_pattern",
-                "statement": (
-                    f"重复发现 {finding.pattern_id}（规则 {finding.rule_id or '未关联'}）；"
-                    "应调查并登记稳定修复"
-                ),
-                "scope_guess": finding.rule_id or "project",
-                "suggested_action": "investigate_finding",
-                "suggested_modality": "MUST",
-            }
+        return {
+            "kind": "finding_pattern",
+            "statement": (
+                f"重复发现 {pattern_id}（规则 {rule_id or '未关联'}）；"
+                "应调查并登记稳定修复"
+            ),
+            "scope_guess": rule_id or "project",
+            "suggested_action": "investigate_finding",
+            "suggested_modality": "MUST",
+        }
+
+    for finding in findings:
+        key = "finding:" + finding.fingerprint
+        spec = _finding_spec(
+            finding.pattern_id, finding.rule_id or "", finding.summary or "",
+        )
         observations.append((
             key,
             CandidateSource(
@@ -330,6 +334,26 @@ def refresh_candidates(root: Path) -> dict[str, int]:
             ),
             spec,
         ))
+
+    # 无感生长：每轮 audit 的 finding 观察（打破 ledger 内容寻址去重）
+    try:
+        from .growth import load_growth_observations
+
+        for gob in load_growth_observations(root):
+            key = "finding:" + gob.fingerprint
+            spec = _finding_spec(gob.pattern_id, gob.rule_id, gob.summary)
+            observations.append((
+                key,
+                CandidateSource(
+                    source_type="growth_observation",
+                    ref=gob.fingerprint,
+                    occurrence_id=gob.occurrence_id,
+                    observed_at=gob.observed_at,
+                ),
+                spec,
+            ))
+    except Exception:
+        pass
 
     for correction in _load_corrections(root):
         key = "correction:" + content_hash({
