@@ -6,7 +6,6 @@
 
 **Status:** v0.2.0 · vertical backbone + living-project loop · [LIMITATIONS](LIMITATIONS.md) · [CHANGELOG](CHANGELOG.md)
 
-Replace `GITHUB_REPO` below with your real clone URL when you publish.
 
 ---
 
@@ -27,7 +26,7 @@ Philosophy (short): **eliminate ambiguity** (prefer deleting old entry points) o
 
 ```bash
 # Python >= 3.10
-git clone GITHUB_REPO sopcontrol && cd sopcontrol
+git clone https://github.com/mixxmax/sopcontrol.git && cd sopcontrol
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 sopctl --help
@@ -41,7 +40,8 @@ sopctl vertical-check .
 **On any other project:**
 
 ```bash
-pip install -e /path/to/sopcontrol    # or: pip install "git+GITHUB_REPO"
+pip install -e /path/to/sopcontrol
+# or: pip install "git+https://github.com/mixxmax/sopcontrol.git"
 cd /path/to/your-app
 sopctl init .
 sopctl identity init .

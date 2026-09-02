@@ -45,10 +45,9 @@ dependencies = [
 dev = ["pytest>=7"]
 
 [project.urls]
-# Replace GITHUB_REPO with your public clone URL before publishing.
-Homepage = "https://GITHUB_REPO"
-Documentation = "https://GITHUB_REPO#readme"
-Issues = "https://GITHUB_REPO/issues"
+Homepage = "https://github.com/mixxmax/sopcontrol"
+Documentation = "https://github.com/mixxmax/sopcontrol#readme"
+Issues = "https://github.com/mixxmax/sopcontrol/issues"
 
 [project.scripts]
 sopctl = "sopcontrol.cli:main"
