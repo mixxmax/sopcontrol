@@ -32,6 +32,8 @@ SOP Control **v0.2** 是可用的实验性控制平面，不是企业治理套�
 - 检测「旁路仍在」≠ 自动删掉旁路；消歧要人 `candidate enact` 圈范围
 - 久悬 gap 的 `retire_rule` 只是候选建议；`rule suspend` / `deprecate` 仍须两阶段人工确认
 - `doctor`「下一刀」是导航，不是第二套权威；命令里的 `--allow` 路径常需人改成真实旁路文件
+- `doctor` 默认轻量：入口数字来自上一帧空间快照，可能略旧；要权威旁路计数用 `inventory` / `doctor --full`
+- 投影有 token/行数预算，超限会截断软段落；全量仍以 `growth status` / `task list` / `chronicle` 为准
 
 ## 安全与信任模型
 

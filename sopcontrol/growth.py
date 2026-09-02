@@ -273,13 +273,22 @@ def ambient_grow(
     delete_n = sum(1 for r in pending if r.suggested_action == "delete_entry")
     improve_n = sum(1 for r in pending if r.suggested_action == "improve_entry")
     register_n = sum(1 for r in pending if r.suggested_action == "register_rule")
+    from .energy import ACTION_PRIORITY, PENDING_HUMAN_DISPLAY
+
+    ranked = sorted(
+        pending,
+        key=lambda r: (
+            ACTION_PRIORITY.get(r.suggested_action, 9),
+            -(r.last_seen_at.timestamp() if r.last_seen_at else 0),
+        ),
+    )[:PENDING_HUMAN_DISPLAY]
     pending_human = [
         {
             "candidate_id": r.candidate_id,
             "action": r.suggested_action,
             "statement": r.statement[:80],
         }
-        for r in sorted(pending, key=lambda x: x.last_seen_at, reverse=True)[:8]
+        for r in ranked
     ]
     state = GrowthState(
         updated_at=when,
@@ -549,8 +558,16 @@ def on_task_delivered(root: Path, task_id: str, *, objective: str = "") -> dict[
     return {"ok": True, "snapshot": newer, "diff": diff, "older": older}
 
 
-def growth_lines(root: Path, *, limit: int = 5) -> list[str]:
-    """投影用：无感生长现状；定型入口指向人。"""
+def growth_lines(root: Path, *, limit: int | None = None) -> list[str]:
+    """投影用：无感生长现状；定型入口指向人。默认条数受节能预算约束。"""
+    from .energy import (
+        GROWTH_PROJECT_LIMIT,
+        candidates_budget_warning,
+        sort_pending_by_energy,
+    )
+
+    if limit is None:
+        limit = GROWTH_PROJECT_LIMIT
     state = load_growth_state(root)
     snaps = load_space_snapshots(root)
     if state.observation_count == 0 and state.candidates_observed == 0 and not snaps:
@@ -558,7 +575,7 @@ def growth_lines(root: Path, *, limit: int = 5) -> list[str]:
             "空间生长：尚无自动观察；日常 audit/gate 会无感积累。",
             "定型仍需人：`sopctl candidate triage` / `rule add`；修剪：`rule deprecate`。",
             "度量：`sopctl growth measure` / `growth diff`。",
-            "中途接入：`sopctl doctor` 看「下一刀」。",
+            "中途接入：`sopctl doctor`（默认轻量）看「下一刀」。",
         ]
     lines = [
         f"空间生长（无感）：观察 {state.observation_count}；"
@@ -567,6 +584,9 @@ def growth_lines(root: Path, *, limit: int = 5) -> list[str]:
         f"登记规则 {state.candidates_register_rule}）",
         "发现已自动；写入权威或删代码仍需人确认——不是要你「推进发现」。",
     ]
+    warn = candidates_budget_warning(state.candidates_observed)
+    if warn:
+        lines.append(warn)
     if len(snaps) >= 1:
         latest = snaps[-1]
         lines.append(
@@ -576,7 +596,7 @@ def growth_lines(root: Path, *, limit: int = 5) -> list[str]:
     if len(snaps) >= 2:
         d = diff_space_snapshots(snaps[-2], snaps[-1])
         lines.append(f"相对上一帧：{d['summary']}（`sopctl growth diff`）")
-    for item in state.pending_human[:limit]:
+    for item in sort_pending_by_energy(list(state.pending_human))[:limit]:
         lines.append(
             f"- [{item['action']}] {item['candidate_id']}: {item['statement']}"
         )
@@ -592,6 +612,6 @@ def growth_lines(root: Path, *, limit: int = 5) -> list[str]:
         )
     lines.append(
         "明细：`sopctl growth status|measure|diff`；全量候选：`sopctl candidate list`；"
-        "中途接入看 `sopctl doctor`「下一刀」。"
+        "中途接入看 `sopctl doctor`（默认轻量，全量加 `--full`）。"
     )
     return lines

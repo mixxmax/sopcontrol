@@ -10,11 +10,12 @@ def adoption_next_moves(
     *,
     limit: int = 3,
     inventory: dict[str, Any] | None = None,
+    allow_audit: bool = False,
 ) -> list[dict[str, str]]:
     """返回最多 `limit` 条可执行下一步（title / command / why）。
 
     面向中途挂上的仓：先武装 → 真规则 → 消歧/吸收或退场。
-    可传入已算好的 inventory，避免 doctor 路径重复 audit。
+    可传入已算好的 inventory；`allow_audit=False`（默认）时绝不触发全仓 audit。
     """
     root = Path(root)
     moves: list[dict[str, str]] = []
@@ -101,18 +102,25 @@ def adoption_next_moves(
             ),
         })
     else:
-        # 无候选时看入口清单是否仍有应删旁路
+        # 无候选时看入口清单 / 轻量快照是否仍有应删旁路（默认不跑 audit）
         try:
-            if inv is None:
+            if inv is None and allow_audit:
                 from .inventory import build_entry_inventory
 
                 inv = build_entry_inventory(root)
-            if int(inv.get("delete_first_actions") or 0) > 0:
+            if inv is None:
+                from .energy import inventory_from_snapshot
+                from .growth import load_space_snapshots
+
+                snaps = load_space_snapshots(root)
+                inv = inventory_from_snapshot(snaps[-1] if snaps else None)
+            if inv is not None and int(inv.get("delete_first_actions") or 0) > 0:
                 moves.append({
                     "title": "跑 audit 物化删入口候选",
                     "command": f"sopctl audit {root} --compact",
                     "why": (
-                        f"入口清单仍有应删旁路 {inv['delete_first_actions']}；"
+                        f"仍有应删旁路信号 {inv['delete_first_actions']}"
+                        f"{'（轻量上一帧）' if inv.get('light') else ''}；"
                         "连续 audit 无感生长达阈值后即可 enact"
                     ),
                 })

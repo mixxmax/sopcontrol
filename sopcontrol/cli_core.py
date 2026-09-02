@@ -119,6 +119,8 @@ def cmd_growth(args) -> int:
             sign = "+" if d["delta"] > 0 else ""
             print(f"  {key}: {d['from']} → {d['to']} ({sign}{d['delta']})")
         return 0 if report["verdict"] != "widened" else 0  # 加宽不失败，只报告
+    from .energy import candidates_budget_warning, sort_pending_by_energy
+
     state = load_growth_state(root)
     print(
         f"空间生长 {root}：观察 {state.observation_count}；"
@@ -128,7 +130,10 @@ def cmd_growth(args) -> int:
         f"登记 {state.candidates_register_rule}）"
     )
     print(f"  {state.note}")
-    for item in state.pending_human:
+    warn = candidates_budget_warning(state.candidates_observed)
+    if warn:
+        print(f"  {warn}")
+    for item in sort_pending_by_energy(list(state.pending_human)):
         print(f"  [{item['action']}] {item['candidate_id']}: {item['statement']}")
     snaps = load_space_snapshots(root)
     if snaps:
@@ -218,9 +223,10 @@ def cmd_inventory(args) -> int:
 
 
 def cmd_doctor(args) -> int:
-    """安装自诊（CC Safety Net doctor 同款）：注册表可载入、账本未被篡改、插件可用。"""
+    """安装自诊：注册表/账本/插件/门。默认轻量（不跑全仓 audit）；`--full` 才 inventory。"""
     root = _project(args.path)
     problems = []
+    full = bool(getattr(args, "full", False))
 
     registry_path = root / ".sopcontrol" / "rules" / "registry.yaml"
     try:
@@ -275,18 +281,43 @@ def cmd_doctor(args) -> int:
     print(f"pre-push 终态门: {state}")
 
     inv = None
+    snaps = []
     try:
-        from .inventory import build_entry_inventory
+        from .growth import load_space_snapshots
 
-        inv = build_entry_inventory(root)
-        print(
-            f"入口清单: 冗余 {inv['redundant_entry_points']} / "
-            f"裸legacy {inv['legacy_alive']} / "
-            f"平行状态 {inv['parallel_state_sources']} "
-            f"（应删旁路 {inv['delete_first_actions']}；明细 sopctl inventory）"
-        )
-    except Exception as exc:
-        print(f"入口清单: 跳过（{type(exc).__name__}: {exc}）")
+        snaps = load_space_snapshots(root)
+    except Exception:
+        snaps = []
+
+    if full:
+        try:
+            from .inventory import build_entry_inventory
+
+            inv = build_entry_inventory(root)
+            print(
+                f"入口清单(全量): 冗余 {inv['redundant_entry_points']} / "
+                f"裸legacy {inv['legacy_alive']} / "
+                f"平行状态 {inv['parallel_state_sources']} "
+                f"（应删旁路 {inv['delete_first_actions']}；明细 sopctl inventory）"
+            )
+        except Exception as exc:
+            print(f"入口清单: 跳过（{type(exc).__name__}: {exc}）")
+    else:
+        from .energy import inventory_from_snapshot
+
+        latest = snaps[-1] if snaps else None
+        inv = inventory_from_snapshot(latest)
+        if latest is not None:
+            print(
+                f"入口清单(轻量·上一帧): 旁路开 {latest.bypass_open} / "
+                f"平行状态 {latest.parallel_state} "
+                f"（全量: sopctl inventory 或 doctor --full）"
+            )
+        else:
+            print(
+                "入口清单(轻量): 尚无空间帧；"
+                "跑 sopctl growth measure 或 doctor --full"
+            )
 
     try:
         from .chronicle import check_reconstruction, load_project_events
@@ -302,7 +333,8 @@ def cmd_doctor(args) -> int:
         print(f"项目编年: 跳过（{type(exc).__name__}: {exc}）")
 
     try:
-        from .growth import load_growth_state, load_space_snapshots
+        from .energy import candidates_budget_warning
+        from .growth import load_growth_state
 
         gs = load_growth_state(root)
         print(
@@ -311,7 +343,9 @@ def cmd_doctor(args) -> int:
             f"（delete_entry={gs.candidates_delete_entry}）；"
             f"明细 sopctl growth status"
         )
-        snaps = load_space_snapshots(root)
+        warn = candidates_budget_warning(gs.candidates_observed)
+        if warn:
+            print(warn)
         if snaps:
             latest = snaps[-1]
             print(
@@ -326,17 +360,19 @@ def cmd_doctor(args) -> int:
         from .next_moves import adoption_next_moves, format_next_moves
 
         for line in format_next_moves(
-            adoption_next_moves(root, limit=3, inventory=inv)
+            adoption_next_moves(root, limit=3, inventory=inv, allow_audit=full)
         ):
             print(line)
     except Exception as exc:
         print(f"下一刀: 跳过（{type(exc).__name__}: {exc}）")
 
+    mode = "全量" if full else "轻量"
     if problems:
         for p in problems:
             print(f"问题: {p}", file=sys.stderr)
         return 1
-    print("doctor: 全部通过" + ("（垂直役用就绪）" if getattr(args, "vertical", False) else ""))
+    suffix = "（垂直役用就绪）" if getattr(args, "vertical", False) else ""
+    print(f"doctor: 全部通过（{mode}）{suffix}")
     return 0
 
 

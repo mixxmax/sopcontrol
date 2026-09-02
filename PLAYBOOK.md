@@ -31,7 +31,8 @@ sopctl hook install .            # pre-push 终态门
 sopctl project all .             # AGENTS.md + CLAUDE.md 投影
 sopctl capability-eval --model local --fixture strong .   # 或 fragile/weak
 sopctl capability-compare --live opencode --baseline strong .  # live vs 基线归档
-sopctl doctor . --vertical       # 应全部通过；身份与钩子已武装
+sopctl doctor . --vertical       # 应全部通过；身份与钩子已武装（doctor 默认轻量）
+sopctl doctor --full .           # 全量入口清单（会跑 inventory/audit；更慢）
 sopctl project check .           # 投影是否相对 registry 过期
 sopctl graph .                   # Python import 邻接（认知薄卡）
 ```
@@ -97,7 +98,9 @@ sopctl growth diff .               # 对照最近两帧：指数下降=空间变
 # 本地机制验证（抛开真实多周 dogfood）：bash scripts/verify-product-sim.sh
 # → docs/verification/SIM_*.md（消歧前后 ambiguity_index + rebind/harness deny）
 # 中途接入 / 下一刀（最多 3 步：武装 → 真规则 → enact/吸收/退场）
+# 节能：doctor 默认轻量（用上一帧空间快照，不重跑全仓 audit）；全量加 --full
 sopctl doctor .                    # 末尾「下一刀」；含 ambiguity_index 一行
+# 投影预算 ≤~1500 tokens / 80 行；候选过多会提示 triage（消歧类优先展示）
 # 消歧：把 delete_entry 收成有界删旁路任务（人只圈 --allow，不「推进发现」）
 sopctl candidate enact CAND-xxxx . --allow src/legacy_path.py
 # 交付后自动打空间帧并对照上一帧（变窄叙事）；久悬缺消费者 → improve_entry，

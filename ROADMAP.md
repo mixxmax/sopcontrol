@@ -146,6 +146,8 @@
 
 ## 状态（每次运行后更新）
 
+- 2026-09-02（节能）：doctor 默认轻量（不重跑 audit）；投影 ≤~1500 tokens/80 行；
+  候选展示消歧优先并在 >32 条时告警。
 - 2026-09-02（产品加固 1–3）：doctor「下一刀」；`task deliver`→空间帧+变窄叙事；
   缺消费者→`improve_entry`，久悬→`retire_rule` 候选（人确认 suspend/deprecate）。
 - 2026-09-02（harness 执行者校验）：`GUARD-EXECUTOR-IDENTITY`——进行中任务已绑定 model_identity

@@ -86,7 +86,7 @@ def render_projection(
             from .growth import growth_lines
 
             lines.append("## 空间生长（无感观察；定型需人）")
-            for item in growth_lines(Path(project_root), limit=4):
+            for item in growth_lines(Path(project_root)):
                 lines.append(item if item.startswith("- ") else f"- {item}")
             lines.append("")
         except Exception:
@@ -131,7 +131,10 @@ def render_projection(
         "- 不要卸 hook/插件（提权，需人工）。日用全序见仓库 `PLAYBOOK.md` / `SKILL.md`。",
         SECTION_END,
     ]
-    return "\n".join(lines) + "\n"
+    from .energy import fit_projection_text
+
+    text, _trimmed = fit_projection_text("\n".join(lines) + "\n")
+    return text
 
 
 def _render_task_chain(slice_info: ProjectionTaskSlice) -> list[str]:

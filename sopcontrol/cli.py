@@ -115,11 +115,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.set_defaults(func=cmd_audit)
 
-    p = sub.add_parser("doctor", help="安装自诊：注册表、账本完整性、插件可用性、终态门状态")
+    p = sub.add_parser(
+        "doctor",
+        help="安装自诊：注册表、账本、插件、终态门；默认轻量（不跑全仓 audit）",
+    )
     p.add_argument("path", nargs="?", default=".")
     p.add_argument(
         "--vertical", action="store_true",
         help="垂直役用标准：身份与 pre-push 未武装则失败",
+    )
+    p.add_argument(
+        "--full", action="store_true",
+        help="全量：入口清单跑 inventory/audit（更慢）；默认只用上一帧空间快照",
     )
     p.set_defaults(func=cmd_doctor)
 
