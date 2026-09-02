@@ -149,6 +149,8 @@ def test_suspend_preview_is_read_only_and_confirmation_is_idempotent(
     confirmation_time = datetime(2026, 9, 1, 12, 0, tzinfo=timezone.utc)
     until = confirmation_time + timedelta(hours=2)
     before = registry.path.read_bytes()
+    # preview 也会读 utcnow 校验 until；必须在预览前冻结，否则日历越过冻结日即红
+    monkeypatch.setattr("sopcontrol.registry.utcnow", lambda: confirmation_time)
 
     preview = registry.lifecycle_preview(
         "LIFE-001",
@@ -159,7 +161,6 @@ def test_suspend_preview_is_read_only_and_confirmation_is_idempotent(
     )
 
     assert registry.path.read_bytes() == before
-    monkeypatch.setattr("sopcontrol.registry.utcnow", lambda: confirmation_time)
     suspended = registry.confirm_lifecycle(
         "LIFE-001",
         action="suspend",

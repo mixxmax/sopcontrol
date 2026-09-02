@@ -13,145 +13,20 @@
 - [SELF-002][MUST] 检测模式 state_in_parallel_files 必须在生产代码接线并具备回归测试 （生产消费者标记: finding_state_in_parallel_files）
 - [CTRL-001][MUST] 控制器状态目录 .sopcontrol/ 内任何文件不得直接读写或修改，一切写入必须经 sopctl 子命令 （生产消费者标记: touches_protected_path, check_tool_call）
 
-## 任务状态（换会话/换模型先看这里；以下即全量信息，无需再用命令查询任务）
-- TASK-0001 [delivered] 扩展检测模式库：两个状态健康模式（接线+跨域语料+回归测试）
-  完成定义: SELF-001, SELF-002 全部 pass；修复预算: 0/2；合法动作: （终态）无
-  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
+## 任务状态（当前可执行切片；全量历史在项目内：`sopctl task list` / `task show` / `task takeover`）
 - TASK-0002 [blocked] 骨架收口两件：1) 判定输出带证据强度自曝（structural/lexical/mixed）——跨语言 pass 必须
   完成定义: SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）人工裁决后另开任务
-- TASK-0003 [delivered] 对 TASK-0002 已提交基线（commit 6192d05：证据强度自曝+语料基线快照）运行完成门独立复核：本任务
-  完成定义: SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
-  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
-- TASK-0004 [delivered] Go 深度化（用户 2026-08-30 授权越过依赖边界引入解析器）：go_ast_scan 传感器（tree-sit
-  完成定义: SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
-  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
-- TASK-0005 [delivered] 首个 enforced（垂直最后一步）：把 AGENTS.md 硬约束「不得直接写 .sopcontrol，一切经 so
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
-  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
-- TASK-0006 [delivered] 首个 enforced（垂直最后一步）：CTRL-001（.sopcontrol 写保护，guard: GUARD-CO
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
-  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
-- TASK-0007 [delivered] 修复首次 enforced 走查发现的真 bug：is_input_stale 对 harness.trace 证据落进
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
-  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
-- TASK-0008 [delivered] Phase 6 第一批·TS 深度化（照 Go 模板复制）：ts_ast_scan 传感器（tree-sitter-ty
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
-  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
-- TASK-0009 [delivered] Phase 6 件5 收尾·Rust 深度化（Go/TS 模板复制）：rust_ast_scan 传感器（tree-si
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
-  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
-- TASK-0010 [delivered] 件5收尾·Rust 深度化（Go/TS 模板复制）：rust_ast_scan 传感器（tree-sitter-rust
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
-  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
-- TASK-0011 [delivered] 编写“活在项目里”的可进化确定性空间技术手册：阐明构想、双向生命周期、现有代码改造路线、未来演进规则与项目持久化实现
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
-  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
-- TASK-0012 [delivered] 第一批：未知或缺失模型画像采用保守执行旋钮，消除 strong 等价 fail-open，并验证 task open 真
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
-  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
-- TASK-0013 [delivered] 第一批伴随回归修正：移除生命周期与接管测试对无画像目录级放行的隐式依赖，改用明确文件范围
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
-  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
-- TASK-0014 [delivered] 第一批公开契约同步：将 CLI 帮助、设计说明与操作示例更新为 unknown/无画像保守策略，消除项目自相矛盾
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
-  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
-- TASK-0015 [delivered] 第一批安全边界修复：file 粒度改为精确路径授权，阻断带点目录前缀绕过并兼容无扩展名文件
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
-  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
-- TASK-0016 [delivered] 第一批最终公开契约修正：同步 SKILL 常用命令与 ROADMAP 能力预算语义，确保陌生模型可照文档执行
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
-  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
-- TASK-0017 [delivered] 第一批验收修复：能力评测结果与权限授权分离，fixture/responses 不得放宽，live 评测进入高影响人工确
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
-  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
-- TASK-0018 [delivered] 第二批：被动采集任务迁移、运行时 guard 与总门的客观能力事件；内容寻址去重、可重放、有界日志、失败静默；事件不得自
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
-  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
-- TASK-0019 [delivered] 第二批伴随接线：task open 追加模型身份与最终能力 tier 的客观事件，供后续任务迁移事件关联；不参与权限计算
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
-  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
-- TASK-0020 [delivered] 第三批：从被动能力事件确定性推导按模型隔离的行为画像；高风险失败立即收紧，稳定成功只建议升级，live 批准过期回到 u
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
-  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
-- TASK-0021 [delivered] 第三批伴随接线：task open 消费有界行为画像并将其与人工批准画像取更保守交集
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
-  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
-- TASK-0022 [delivered] 二三批联合修复：校验能力事件内容摘要，持久化不可被普通遥测驱逐的行为收紧状态，并优化有界事件追加路径
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
-  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
-- TASK-0023 [delivered] 二三批联合修复：补 gate 审计异常事件、能力事件与行为画像查看入口及公开文档
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
-  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
-- TASK-0024 [delivered] 二三批联合修复伴随接线：任务契约固化模型身份，迁移事件直接携带身份，不依赖可驱逐 task.open 遥测
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
-  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
-- TASK-0025 [delivered] 第四批核心：统一运行时规则候选 schema、稳定指纹、来源 occurrence 聚合与兼容旧 candidates.
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
-  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
-- TASK-0026 [delivered] 第四批接线：现有文档与对话 intake 复用中心 Candidate 存储，保持显式永久政策可立即成为 observe
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
-  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
-- TASK-0027 [delivered] 第四批离线学习入口：从重复 guard 拒绝、Finding 指纹和结构化纠正聚合候选，并提供 list/show/tr
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
-  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
-- TASK-0028 [delivered] 第五批同步修复：封闭含 sopctl 子串的复合 shell 命令绕过，只有单一受控 sopctl 调用可触碰控制面
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
-  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
-- TASK-0029 [delivered] 第五批同步修复：已批准画像锚定行为状态存在性，状态文件删除时 fail-closed，历史拒绝重放不得滑动续期
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
-  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
-- TASK-0030 [delivered] 第五批同步收口：补事件完整性、迁移模型身份、Candidate triage 盲区测试，并优化 Candidate YA
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
-  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
-- TASK-0031 [delivered] 第五批正式功能：Candidate 原子批量 triage，一次校验全部 ID、一次保存、未知 ID 零变更且绝不自动晋
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
-  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
-- TASK-0032 [delivered] 第五批同步修复伴随接线：迁移拒绝携带原始发生时间，能力状态查看识别已批准画像的缺失锚点
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
-  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
-- TASK-0033 [delivered] 第六批核心：规则永久退出，支持 deprecate 与 supersede 的原子、可审计生命周期，并统一当前有效规则集
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
-  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
-- TASK-0034 [delivered] 第六批同步加固：repair worktree task_id 必须是单一路径分量，阻断未来调用方路径穿越
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
-  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
-- TASK-0035 [delivered] 第六批伴随接线：conflict、verdict、bootstrap 统一消费当前有效规则集合，退出规则不再参与执法或成
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
-  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
-- TASK-0036 [delivered] 第六批伴随接线：审计检测器、任务契约与 repair 只接受当前有效规则，退休规则保留历史但不能产生新执法义务
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
-  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
-- TASK-0037 [delivered] 第六批路径加固测试接线：worktree_path 底层拒绝路径穿越并记录残余风险边界
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
-  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
-- TASK-0038 [delivered] 第六批验收加固 6R：封闭普通迁移和 rule add 直建退休状态的旁路，并补 M8/M15/M16/M17 行为变异
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
-  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
-- TASK-0039 [delivered] 第六批 6R 代码审查修正：封闭 Registry.save 直接注入或改写退休生命周期的底层旁路，保留 confirm
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
-  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
-- TASK-0040 [delivered] 第六批 6R 最终复审修正：Registry.save 在写盘前拒绝重复 rule_id，阻断重复项绕过历史退休终态校验
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
-  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
-- TASK-0041 [delivered] 第六批 6R 并发修正：串行化 Registry 退休确认事务，旧 preview 在并发写入后必须失效且不得恢复已退休
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
-  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
-- TASK-0042 [delivered] 第六批 6R 投影事务并发修正：退休确认、双平台投影与失败回滚必须持有同一 Registry 排他锁，回滚不得抹除并发合
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
-  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
-- TASK-0043 [delivered] 第六批 6R 最终并发与故障语义加固：attest 完整事务锁、符号链接别名共享跨进程锁、投影回滚失败必须如实失败且不谎
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）无
-  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件
-- TASK-0044 [verification_pending] 第七批 7A：建立可逆生命周期数据模型、固定时点有效性与仓库相对路径 scope 纯函数，保持旧 registry 兼容
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: verify
-- TASK-0045 [verification_pending] 第七批 7B：实现 suspend、reinstate、narrow 的内容寻址预览确认、并发安全写入、幂等与普通写入口
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: verify
-- TASK-0046 [verification_pending] 第七批 7C：新增 suspend、reinstate、narrow CLI 和统一 Registry+AGENTS+C
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: verify
-- TASK-0047 [verification_pending] 第七批 7D：统一固定时点 effective rules 与路径 scope 消费，接入 audit、verdict、
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: verify
-- TASK-0048 [verification_pending] 第七批 7E：生命周期 revision 绑定 attestation 与 trace 新鲜度，同步公开文档、残余风险和
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: verify
+  ⚠ 已阻断（other）；另开决议任务：`sopctl task open --resolves TASK-0002 ...`
+- TASK-0044 [verified] 第七批 7A：建立可逆生命周期数据模型、固定时点有效性与仓库相对路径 scope 纯函数，保持旧 registry 兼容
+  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: deliver
+- TASK-0045 [verified] 第七批 7B：实现 suspend、reinstate、narrow 的内容寻址预览确认、并发安全写入、幂等与普通写入口
+  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: deliver
+- TASK-0046 [verified] 第七批 7C：新增 suspend、reinstate、narrow CLI 和统一 Registry+AGENTS+C
+  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: deliver
+- TASK-0047 [verified] 第七批 7D：统一固定时点 effective rules 与路径 scope 消费，接入 audit、verdict、
+  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: deliver
+- TASK-0048 [verified] 第七批 7E：生命周期 revision 绑定 attestation 与 trace 新鲜度，同步公开文档、残余风险和
+  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: deliver
 - TASK-0049 [verification_pending] 第七批 7E 测试迁移：确认书正例使用 Registry 权威 revision，并补 attestation/trac
   完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: verify
 - TASK-0050 [verification_pending] 第七批 7D 测试补充：验证 task open/accept 与 repair open/apply 对 effect

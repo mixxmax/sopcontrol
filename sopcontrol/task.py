@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import Enum
 from pathlib import Path, PurePosixPath
-from typing import Optional
+from typing import Literal, Optional
 
 import yaml
 from pydantic import BaseModel, Field
@@ -27,6 +27,19 @@ class TaskStatus(str, Enum):
     blocked = "blocked"
     failed_unverified = "failed_unverified"
     delivered = "delivered"
+
+
+# 终态：不可复活；裁决后另开任务并用 resolution 链衔接（不重开旧契约）
+TERMINAL_FAILED = frozenset({TaskStatus.blocked, TaskStatus.failed_unverified})
+TERMINAL_DONE = frozenset({TaskStatus.delivered})
+TERMINAL = TERMINAL_FAILED | TERMINAL_DONE
+
+BlockedReasonCode = Literal[
+    "policy_fail", "evidence_gap", "scope", "budget", "trust_root", "other"
+]
+BLOCKED_REASON_CODES = frozenset(
+    {"policy_fail", "evidence_gap", "scope", "budget", "trust_root", "other"}
+)
 
 
 TASK_TRANSITIONS: dict[TaskStatus, frozenset] = {
@@ -79,6 +92,97 @@ class TaskRecord(BaseModel):
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
     history: list[EnvelopeRecord] = Field(default_factory=list)
+    # 裁决链：旧终态不可复活；新任务用 resolution_of 指向它，旧任务写 superseded_by_task
+    resolution_of: list[str] = Field(default_factory=list)
+    superseded_by_task: str = ""
+    blocked_reason_code: str = ""
+
+
+def infer_blocked_reason_code(reason: str) -> BlockedReasonCode:
+    """从完成门理由推导稳定原因码（供投影/裁决链，不引入新权限）。"""
+    text = reason or ""
+    if "篡改" in text or "信任根" in text:
+        return "trust_root"
+    if "scope" in text.lower() or "写入范围" in text or "allowed_writes" in text:
+        return "scope"
+    if "判定为 fail" in text or "策略违反" in text:
+        return "policy_fail"
+    if "预算耗尽" in text:
+        return "budget"
+    if "gap" in text or "无判定" in text or "unknown" in text:
+        return "evidence_gap"
+    return "other"
+
+
+def tasks_for_projection(tasks: list[TaskRecord]) -> list[TaskRecord]:
+    """投影只保留当前可执行链头：活跃任务 + 尚未被接替的阻断终态。
+
+    delivered 与已 superseded 的 blocked/failed 留在项目内（sopctl task list），
+    不灌进模型上下文——权威在项目里，投影是有损切片。
+    """
+    out: list[TaskRecord] = []
+    for task in tasks:
+        if task.status in TERMINAL_DONE:
+            continue
+        if task.status in TERMINAL_FAILED:
+            if task.superseded_by_task:
+                continue
+            out.append(task)
+            continue
+        out.append(task)
+    return out
+
+
+def normalize_resolves(resolves: list[str] | None) -> list[str]:
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for task_id in resolves or []:
+        tid = str(task_id).strip()
+        if not tid or tid in seen:
+            continue
+        seen.add(tid)
+        ordered.append(tid)
+    return ordered
+
+
+def validate_resolution_targets(
+    store: "TaskStore",
+    new_task_id: str,
+    resolves: list[str],
+) -> list[TaskRecord]:
+    """校验 --resolves 目标；返回待接替的旧任务（仍为终态）。"""
+    ordered = normalize_resolves(resolves)
+    if not ordered:
+        return []
+    if new_task_id in ordered:
+        raise ValueError(f"任务不能 resolve 自身: {new_task_id}")
+    old_tasks: list[TaskRecord] = []
+    for tid in ordered:
+        old = store.load(tid)
+        if old.status not in TERMINAL_FAILED:
+            raise ValueError(
+                f"{tid} 状态为 {old.status.value}；--resolves 只能接替 "
+                "blocked / failed_unverified"
+            )
+        if old.superseded_by_task:
+            raise ValueError(
+                f"{tid} 已被 {old.superseded_by_task} 接替，不能再挂另一条决议链"
+            )
+        old_tasks.append(old)
+    return old_tasks
+
+
+def attach_resolution_links(
+    store: "TaskStore",
+    new_task: TaskRecord,
+    old_tasks: list[TaskRecord],
+) -> None:
+    """在新任务已落盘后，为旧终态任务写入 superseded_by_task。"""
+    for old in old_tasks:
+        expected = old.revision
+        old.superseded_by_task = new_task.task_id
+        old.revision += 1
+        store.save(old, expected_revision=expected)
 
 
 LEGAL_ACTIONS: dict[TaskStatus, list[str]] = {
@@ -479,6 +583,11 @@ class TaskStore:
             task.repair_count = decision.repair_count if action == "verify" else task.repair_count
             if action == "submit":
                 task.changed_paths = list(changed_paths or [])
+            if (
+                decision.to_status in TERMINAL_FAILED
+                and not task.blocked_reason_code
+            ):
+                task.blocked_reason_code = infer_blocked_reason_code(decision.reason)
         task.revision += 1
         self.save(task)
         return task

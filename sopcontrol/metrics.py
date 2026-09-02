@@ -128,11 +128,49 @@ def external_datapoint(root: Path, sensors: list, detectors: list) -> dict:
     }
 
 
+def structure_signals(root: Path, sensors: list | None = None, detectors: list | None = None) -> dict:
+    """删除优先的可计算信号：legacy 存活与 delete_entry 候选计数（有数据才算）。"""
+    from plugins import DETECTORS as _D, SENSORS as _S
+
+    from .candidate import CandidateStore
+
+    root = Path(root)
+    sensors = sensors if sensors is not None else _S
+    detectors = detectors if detectors is not None else _D
+    try:
+        report = run_audit(root, sensors, detectors, persist=False)
+        legacy_alive = sum(1 for f in report.findings if f.pattern_id == "legacy_entry_alive")
+    except Exception as exc:
+        return {"root": str(root), "error": f"{type(exc).__name__}: {exc}"}
+
+    store = CandidateStore(root)
+    try:
+        records = store.load()
+    except (OSError, ValueError):
+        records = []
+    delete_observed = sum(
+        1 for r in records
+        if r.suggested_action == "delete_entry" and r.status == "observed"
+    )
+    delete_triaged = sum(
+        1 for r in records
+        if r.suggested_action == "delete_entry" and r.status == "triaged"
+    )
+    return {
+        "root": str(root),
+        "legacy_entry_alive_findings": legacy_alive,
+        "delete_entry_candidates_observed": delete_observed,
+        "delete_entry_candidates_triaged": delete_triaged,
+        "note": "计量入口残留与删除候选；不发明宇宙入口清单",
+    }
+
+
 def build_snapshot(
     cases_path: Path | None = None,
     fixtures_root: Path | None = None,
     mutations_test_path: Path | None = None,
     jobsflow_root: Path | None = None,
+    project_root: Path | None = None,
     sensors: list | None = None,
     detectors: list | None = None,
     enforce_mutations: bool = True,
@@ -204,6 +242,8 @@ def build_snapshot(
     }
     if jobsflow_root is not None:
         snapshot["external_datapoint"] = external_datapoint(jobsflow_root, sensors, detectors)
+    if project_root is not None:
+        snapshot["structure_signals"] = structure_signals(project_root, sensors, detectors)
     return snapshot
 
 

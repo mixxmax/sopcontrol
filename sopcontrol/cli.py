@@ -169,6 +169,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--max-repairs", type=int, default=None,
         help="修复预算（受能力等级上限约束；显式值只能收紧，unknown/无画像最多 1 轮）",
     )
+    p.add_argument(
+        "--resolves", action="append",
+        help="接替的 blocked/failed_unverified 任务 ID（可重复）；旧任务保持终态并写入 superseded_by_task",
+    )
     p.set_defaults(func=cmd_task)
     def _task_cmd(name: str, help_text: str, *, task_id: bool = False, changed: bool = False, fields: bool = False):
         p = task_sub.add_parser(name, help=help_text)
@@ -407,6 +411,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_explain)
 
     p = sub.add_parser("metrics", help="控制平面自我度量：语料准确率+变异执法+依据强度分布（14.2 可计算子集）")
+    p.add_argument("path", nargs="?", default=".", help="项目根（结构信号：legacy 存活与 delete_entry 候选）")
     p.add_argument("--out", help="快照输出路径（JSON）；不写则只打印")
     p.add_argument("--jobsflow", help="外部真实代码库数据点（只读 audit，不写对方任何文件）")
     p.set_defaults(func=cmd_metrics)

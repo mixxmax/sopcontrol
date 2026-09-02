@@ -165,7 +165,8 @@ def cmd_metrics(args) -> int:
     from .metrics import build_snapshot
 
     jobsflow_root = Path(args.jobsflow) if getattr(args, "jobsflow", None) else None
-    snapshot = build_snapshot(jobsflow_root=jobsflow_root)
+    project_root = Path(getattr(args, "path", None) or ".")
+    snapshot = build_snapshot(jobsflow_root=jobsflow_root, project_root=project_root)
 
     t = snapshot["totals"]
     print("语料基线（分母 = 语料，不是本项目自己的规则）")
@@ -177,6 +178,16 @@ def cmd_metrics(args) -> int:
         print(f"  {pid:36} {b['verdict_match']}/{b['cases']}")
     print(f"吸收分布: {snapshot['absorption_distribution']}")
     print(f"依据强度分布: {snapshot['grounding_distribution']}")
+    if "structure_signals" in snapshot:
+        ss = snapshot["structure_signals"]
+        if "error" in ss:
+            print(f"结构信号 {ss['root']}: 失败（{ss['error']}）")
+        else:
+            print(
+                f"结构信号 {ss['root']}: legacy存活 {ss['legacy_entry_alive_findings']}；"
+                f"delete_entry 候选 observed={ss['delete_entry_candidates_observed']} "
+                f"triaged={ss['delete_entry_candidates_triaged']}"
+            )
     m = snapshot["mutations"]
     state = "通过" if m.get("passed") else ("未通过!" if m.get("passed") is False else "未执行")
     print(f"变异执法: {m['declared_mutations']} 条声明，{state}（{m.get('kill_semantics', 'tests/corpus/test_mutations.py')}）")

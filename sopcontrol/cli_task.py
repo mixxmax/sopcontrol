@@ -14,7 +14,17 @@ from .ledger import Ledger
 from .model import Modality, RiskLevel, Rule, RuleStatus, SourceRef
 from .registry import Registry, RegistryError
 from .repair import RepairError, list_repairs, open_repair
-from .task import Contract, TaskRecord, TaskStore, evaluate_transition, normalize_relpath, takeover_pack
+from .task import (
+    Contract,
+    TaskRecord,
+    TaskStore,
+    attach_resolution_links,
+    evaluate_transition,
+    normalize_relpath,
+    normalize_resolves,
+    takeover_pack,
+    validate_resolution_targets,
+)
 from .verdict import evaluate_rule
 from plugins import DETECTORS, SENSORS
 
@@ -226,7 +236,13 @@ def cmd_task(args) -> int:
                     file=sys.stderr,
                 )
                 return 2
+            resolves = normalize_resolves(getattr(args, "resolves", None))
             task_id = store.next_task_id()
+            try:
+                old_tasks = validate_resolution_targets(store, task_id, resolves)
+            except (KeyError, ValueError) as exc:
+                print(f"错误: {exc}", file=sys.stderr)
+                return 2
             task = TaskRecord(
                 task_id=task_id,
                 contract=Contract(
@@ -240,8 +256,11 @@ def cmd_task(args) -> int:
                     capability_note=note,
                     model_identity=current_model or "",
                 ),
+                resolution_of=list(resolves),
             )
             store.save(task)
+            if old_tasks:
+                attach_resolution_links(store, task, old_tasks)
         from .capability_events import CapabilityEvent, append_capability_event
 
         append_capability_event(
@@ -262,6 +281,8 @@ def cmd_task(args) -> int:
         print(f"已创建任务 {task_id} [contract_proposed]：{args.objective}")
         print(f"  写入范围: {', '.join(writes)}")
         print(f"  完成定义: 规则 {', '.join(args.require_rule or [])} 全部判定 pass")
+        if resolves:
+            print(f"  接替: {', '.join(resolves)}")
         if fields:
             print(f"  MUST 字段: {', '.join(fields)}")
         elif strict:
@@ -291,6 +312,12 @@ def cmd_task(args) -> int:
         print(f"  状态: {task.status.value}  revision: r{task.revision}  修复轮数: {task.repair_count}/{c.max_repairs}")
         print(f"  写入范围: {', '.join(c.allowed_writes)}")
         print(f"  完成定义: {', '.join(c.required_rules)} 全部 pass")
+        if task.resolution_of:
+            print(f"  接替: {', '.join(task.resolution_of)}")
+        if task.superseded_by_task:
+            print(f"  已被接替: {task.superseded_by_task}")
+        if task.blocked_reason_code:
+            print(f"  阻断原因: {task.blocked_reason_code}")
         if task.changed_paths:
             print(f"  已提交改动: {', '.join(task.changed_paths)}")
         for env in task.history[-5:]:

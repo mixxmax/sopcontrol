@@ -99,6 +99,14 @@
 
 ## 状态（每次运行后更新）
 
+- 2026-09-02（Living-Project Batch 1·消歧批）：按「消除歧义空间 / 双向修剪 / 活在项目里」落地三刀。
+  ① 最小任务投影：`tasks_for_projection` 只保留活跃任务与未被接替的 blocked/failed；
+  delivered 与已 superseded 终态留在项目内（`sopctl task list`）。本仓 AGENTS 任务节
+  从 ~54 条降至当前可执行切片（约 178→53 行）。② blocked 裁决链：`resolution_of` /
+  `superseded_by_task` / `blocked_reason_code`；`task open --resolves` 双边写指针，
+  旧契约仍终态。③ `delete_entry` 一等候选：`legacy_entry_alive` 达阈值 → deprecation
+  候选；repair 目标偏向删/并入口；`metrics` 增加 structure_signals。顺手修生命周期测试
+  在日历越过冻结日后、preview 前未打补丁即红的既有问题。521 测试全绿。
 - 2026-08-30（Phase 6 件5 收尾·Rust 深度化）：rust_ast_scan（tree-sitter-rust，
   结构化引用 + use/mod 模块边）。rust-gate 的同名替身（tests/gate_test.rs 零 use）
   被 test_cannot_reach_consumer 识破转 gap/wired（CASE-027 翻转），经 use 闭合的

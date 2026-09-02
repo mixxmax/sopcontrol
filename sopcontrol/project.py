@@ -9,7 +9,7 @@ from pathlib import Path
 
 from .model import Rule, effective_rules, utcnow
 from .registry import Registry
-from .task import LEGAL_ACTIONS
+from .task import LEGAL_ACTIONS, TERMINAL_FAILED, tasks_for_projection
 
 SECTION_START = "<!-- sopcontrol:v1 -->"
 SECTION_END = "<!-- /sopcontrol:v1 -->"
@@ -71,20 +71,29 @@ def render_projection(
                 bits.append(f"（旧入口不得存活: {', '.join(r.legacy_markers)}）")
             lines.append("- " + " ".join(bits))
         lines.append("")
-    if tasks:
+    slice_tasks = tasks_for_projection(list(tasks or []))
+    lines.append(
+        "## 任务状态（当前可执行切片；全量历史在项目内："
+        "`sopctl task list` / `task show` / `task takeover`）"
+    )
+    if not slice_tasks:
+        lines.append("- （当前无可执行任务；勿凭记忆重做已交付副作用）")
+    for t in slice_tasks:
+        action = LEGAL_ACTIONS[t.status][0]
+        lines.append(f"- {t.task_id} [{t.status.value}] {t.contract.objective[:60]}")
         lines.append(
-            "## 任务状态（换会话/换模型先看这里；以下即全量信息，无需再用命令查询任务）"
+            f"  完成定义: {', '.join(t.contract.required_rules) or '（无）'} 全部 pass；"
+            f"修复预算: {t.repair_count}/{t.contract.max_repairs}；合法动作: {action}"
         )
-        for t in tasks:
-            action = LEGAL_ACTIONS[t.status][0]
-            lines.append(f"- {t.task_id} [{t.status.value}] {t.contract.objective[:60]}")
+        if t.resolution_of:
+            lines.append(f"  接替: {', '.join(t.resolution_of)}")
+        if t.status in TERMINAL_FAILED:
+            reason = t.blocked_reason_code or "other"
             lines.append(
-                f"  完成定义: {', '.join(t.contract.required_rules) or '（无）'} 全部 pass；"
-                f"修复预算: {t.repair_count}/{t.contract.max_repairs}；合法动作: {action}"
+                f"  ⚠ 已阻断（{reason}）；另开决议任务："
+                f"`sopctl task open --resolves {t.task_id} ...`"
             )
-            if t.status.value == "delivered":
-                lines.append("  ⚠ 此任务已完成并经完成门独立验证——不得重复执行其副作用，勿改相关文件")
-        lines.append("")
+    lines.append("")
     lines += [
         "## 硬约束",
         "- 不得直接读写或修改 `.sopcontrol/` 内任何文件；一切经 `sopctl` 子命令。",
@@ -142,9 +151,10 @@ def _projection_inputs(root: Path, *, at):
     from .task import TaskStore
 
     try:
-        tasks = TaskStore(root).list_all()
+        # 写入与 check 必须同一过滤：全量任务留在仓库，投影只吃切片。
+        tasks = tasks_for_projection(TaskStore(root).list_all())
     except Exception:
-        tasks = None
+        tasks = []
     return rules, tasks, assess_maturity(root, rules, at=at)
 
 

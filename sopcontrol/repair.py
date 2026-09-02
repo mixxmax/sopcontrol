@@ -128,10 +128,17 @@ def open_repair(
     if verdict is not None and verdict.status == "pass":
         raise RepairError(f"规则 {rule.rule_id} 当前判定 pass，无需修复")
 
+    if finding.pattern_id == "legacy_entry_alive":
+        objective = (
+            f"删除或合并旧入口（规则 {rule.rule_id}）：{finding.summary}；"
+            "使 legacy_markers 不再存活——优先删入口，不要再接线守卫"
+        )
+    else:
+        objective = f"修复断口 {finding.pattern_id}（规则 {rule.rule_id}）：{finding.summary}"
     task = TaskRecord(
         task_id=store.next_task_id(),
         contract=Contract(
-            objective=f"修复断口 {finding.pattern_id}（规则 {rule.rule_id}）：{finding.summary}",
+            objective=objective,
             allowed_writes=list(allowed_writes),
             required_rules=[rule.rule_id],
             repairs_fingerprint=finding.fingerprint,

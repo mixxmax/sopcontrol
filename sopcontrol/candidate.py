@@ -13,9 +13,11 @@ from .capability_events import load_capability_events_checked
 from .ledger import Ledger
 from .model import content_hash, utcnow
 
-CandidateKind = Literal["policy", "guard_pattern", "finding_pattern", "correction"]
+CandidateKind = Literal["policy", "guard_pattern", "finding_pattern", "correction", "deprecation"]
 CandidateStatus = Literal["observed", "triaged", "rejected", "expired"]
-CandidateAction = Literal["register_rule", "improve_entry", "investigate_finding"]
+CandidateAction = Literal[
+    "register_rule", "improve_entry", "investigate_finding", "delete_entry"
+]
 
 CANDIDATE_THRESHOLD = 3
 CORRECTION_REL = ".sopcontrol/evidence/corrections.jsonl"
@@ -296,6 +298,28 @@ def refresh_candidates(root: Path) -> dict[str, int]:
         findings = []
     for finding in findings:
         key = "finding:" + finding.fingerprint
+        if finding.pattern_id == "legacy_entry_alive":
+            spec = {
+                "kind": "deprecation",
+                "statement": (
+                    f"旧入口仍存活（规则 {finding.rule_id or '未关联'}）："
+                    f"{finding.summary}；应删除或合并至唯一受控入口，而不是再登记禁止规则"
+                ),
+                "scope_guess": finding.rule_id or "project",
+                "suggested_action": "delete_entry",
+                "suggested_modality": "MUST",
+            }
+        else:
+            spec = {
+                "kind": "finding_pattern",
+                "statement": (
+                    f"重复发现 {finding.pattern_id}（规则 {finding.rule_id or '未关联'}）；"
+                    "应调查并登记稳定修复"
+                ),
+                "scope_guess": finding.rule_id or "project",
+                "suggested_action": "investigate_finding",
+                "suggested_modality": "MUST",
+            }
         observations.append((
             key,
             CandidateSource(
@@ -304,13 +328,7 @@ def refresh_candidates(root: Path) -> dict[str, int]:
                 occurrence_id=finding.finding_id,
                 observed_at=finding.detected_at,
             ),
-            {
-                "kind": "finding_pattern",
-                "statement": f"重复发现 {finding.pattern_id}（规则 {finding.rule_id or '未关联'}）；应调查并登记稳定修复",
-                "scope_guess": finding.rule_id or "project",
-                "suggested_action": "investigate_finding",
-                "suggested_modality": "MUST",
-            },
+            spec,
         ))
 
     for correction in _load_corrections(root):
