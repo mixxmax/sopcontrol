@@ -66,3 +66,132 @@ def test_expired_evidence_excluded(tmp_path):
     current = ledger.load_evidence(current_only=True)
     assert [e.subject for e in current] == ["src/new.py"]
     assert len(ledger.load_evidence(current_only=False)) == 2
+
+
+def test_concurrent_append_same_evidence_is_idempotent(tmp_path):
+    """两线程追加同一 Evidence：最终只有一条。"""
+    import threading
+
+    ledger = Ledger(tmp_path / "ledger.jsonl")
+    ev = make_evidence(subject="src/same.py")
+    errors: list[BaseException] = []
+
+    def worker() -> None:
+        try:
+            for _ in range(40):
+                ledger.append_evidence(ev)
+        except BaseException as exc:  # noqa: BLE001 — 收集线程异常
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert not errors
+    lines = [ln for ln in ledger.path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    assert len(lines) == 1
+    assert ledger.verify() is True
+
+
+def test_concurrent_append_distinct_evidence_keeps_all(tmp_path):
+    """两线程追加不同 Evidence：两条都保留。"""
+    import threading
+
+    ledger = Ledger(tmp_path / "ledger.jsonl")
+    errors: list[BaseException] = []
+
+    def worker(subject: str) -> None:
+        try:
+            ledger.append_evidence(make_evidence(subject=subject))
+        except BaseException as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    threads = [
+        threading.Thread(target=worker, args=(f"src/w{i}.py",))
+        for i in range(20)
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert not errors
+    lines = [ln for ln in ledger.path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    assert len(lines) == 20
+    assert ledger.verify() is True
+
+
+def test_append_and_compact_concurrent_remain_valid(tmp_path):
+    """append 与 compact 并发：最终 JSONL 完整可解析且 verify 通过。"""
+    import threading
+    import time
+
+    ledger = Ledger(tmp_path / "ledger.jsonl")
+    for i in range(5):
+        ledger.append_evidence(make_evidence(subject=f"src/seed{i}.py"))
+    errors: list[BaseException] = []
+    stop = threading.Event()
+
+    def appender() -> None:
+        try:
+            n = 0
+            while not stop.is_set() and n < 60:
+                ledger.append_evidence(make_evidence(subject=f"src/app{n}.py"))
+                n += 1
+                time.sleep(0.001)
+        except BaseException as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    def compactor() -> None:
+        try:
+            for round_i in range(20):
+                evs = [
+                    make_evidence(subject=f"src/snap{round_i}-{j}.py")
+                    for j in range(3)
+                ]
+                ledger.replace_snapshot(evs, [])
+                time.sleep(0.002)
+        except BaseException as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    t_append = threading.Thread(target=appender)
+    t_compact = threading.Thread(target=compactor)
+    t_append.start()
+    t_compact.start()
+    t_compact.join()
+    stop.set()
+    t_append.join()
+    assert not errors
+    text = ledger.path.read_text(encoding="utf-8")
+    for line in text.splitlines():
+        if line.strip():
+            json.loads(line)
+    assert ledger.verify() is True
+
+
+def test_replace_snapshot_keeps_old_file_on_write_failure(tmp_path, monkeypatch):
+    """写入异常时旧账本仍完整（原子替换失败不丢原文件）。"""
+    ledger = Ledger(tmp_path / "ledger.jsonl")
+    ledger.append_evidence(make_evidence(subject="src/keep.py"))
+    before = ledger.path.read_text(encoding="utf-8")
+
+    def boom(*_args, **_kwargs):
+        raise OSError("simulated write failure")
+
+    monkeypatch.setattr("sopcontrol.ledger.os.replace", boom)
+    try:
+        ledger.replace_snapshot([make_evidence(subject="src/new.py")], [])
+        raised = False
+    except OSError:
+        raised = True
+    assert raised
+    assert ledger.path.read_text(encoding="utf-8") == before
+    assert ledger.verify() is True
+
+
+def test_corrupt_line_fails_verify_closed(tmp_path):
+    ledger = Ledger(tmp_path / "ledger.jsonl")
+    ledger.append_evidence(make_evidence())
+    with ledger.path.open("a", encoding="utf-8") as fh:
+        fh.write("{not-json\n")
+    assert ledger.verify() is False
