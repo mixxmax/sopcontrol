@@ -458,6 +458,45 @@ def cmd_task(args) -> int:
         print("  （只收紧；项目规则/目标未改。继续按 next_legal_actions 推进）")
         return 0
 
+    if sub == "withdraw":
+        # 自包含处理：withdraw 不需要审计视图，只需纯函数迁移 + envelope 留痕
+        task = store.load(args.task_id)
+        from .model import effective_rules, utcnow
+
+        check_at = utcnow()
+        registry = Registry(root / ".sopcontrol" / "rules" / "registry.yaml")
+        current_rules = effective_rules(registry.load(), at=check_at)
+        from_status = task.status.value
+        decision = evaluate_transition(
+            task,
+            "withdraw",
+            known_rule_ids={rule.rule_id for rule in current_rules},
+            rule_scopes={rule.rule_id: rule.scope_paths for rule in current_rules},
+            withdraw_reason=args.reason,
+        )
+        task = store.apply(task, decision, "withdraw")
+        from .capability_events import CapabilityEvent, append_capability_event
+
+        append_capability_event(
+            root,
+            CapabilityEvent(
+                kind="task.transition",
+                subject=task.task_id,
+                outcome="allowed" if decision.allowed else "denied",
+                model=task.contract.model_identity,
+                detail={
+                    "action": "withdraw",
+                    "from_status": from_status,
+                    "to_status": decision.to_status.value if decision.to_status else "",
+                },
+            ),
+        )
+        mark = "迁移" if decision.allowed and decision.to_status else "拒绝"
+        print(f"{mark}: {task.task_id} {task.status.value} (r{task.revision})")
+        print(f"  理由: {decision.reason}")
+        print(f"  下一步: {decision.next_action}")
+        return 0
+
     if sub == "accept":
         return _task_decide(root, args.task_id, "accept")
     if sub == "submit":

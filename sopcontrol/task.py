@@ -29,6 +29,7 @@ class TaskStatus(str, Enum):
     blocked = "blocked"
     failed_unverified = "failed_unverified"
     delivered = "delivered"
+    withdrawn = "withdrawn"
 
 
 # 终态：不可复活；裁决后另开任务并用 resolution 链衔接（不重开旧契约）
@@ -45,7 +46,7 @@ BLOCKED_REASON_CODES = frozenset(
 
 
 TASK_TRANSITIONS: dict[TaskStatus, frozenset] = {
-    TaskStatus.contract_proposed: frozenset({TaskStatus.executing}),
+    TaskStatus.contract_proposed: frozenset({TaskStatus.executing, TaskStatus.withdrawn}),
     TaskStatus.executing: frozenset({TaskStatus.verification_pending}),
     TaskStatus.verification_pending: frozenset(
         {TaskStatus.verified, TaskStatus.repair_required, TaskStatus.blocked, TaskStatus.failed_unverified}
@@ -57,6 +58,7 @@ TASK_TRANSITIONS: dict[TaskStatus, frozenset] = {
     TaskStatus.blocked: frozenset(),
     TaskStatus.failed_unverified: frozenset(),
     TaskStatus.delivered: frozenset(),
+    TaskStatus.withdrawn: frozenset(),
 }
 
 
@@ -146,7 +148,9 @@ def tasks_for_projection(tasks: list[TaskRecord]) -> list[TaskRecord]:
     """
     out: list[TaskRecord] = []
     for task in tasks:
-        if task.status in TERMINAL_DONE:
+        if task.status in TERMINAL_DONE or task.status is TaskStatus.withdrawn:
+            # withdrawn：从未接受的契约合法退出，权威记录在 task list，
+            # 不再占用模型上下文（投影是有损切片）。
             continue
         if task.status in TERMINAL_FAILED:
             if task.superseded_by_task:
@@ -300,7 +304,10 @@ def attach_resolution_links(
 
 
 LEGAL_ACTIONS: dict[TaskStatus, list[str]] = {
-    TaskStatus.contract_proposed: ["accept（契约完整时）"],
+    TaskStatus.contract_proposed: [
+        "accept（契约完整时）",
+        "withdraw --reason（放弃未接受的契约提案）",
+    ],
     TaskStatus.executing: ["submit --changed <paths>"],
     TaskStatus.verification_pending: ["verify"],
     TaskStatus.repair_required: ["submit --changed <paths>（最小修复后重新提交）"],
@@ -308,6 +315,7 @@ LEGAL_ACTIONS: dict[TaskStatus, list[str]] = {
     TaskStatus.blocked: ["（终态）人工裁决后另开任务"],
     TaskStatus.failed_unverified: ["（终态）人工分析后另开任务"],
     TaskStatus.delivered: ["（终态）无"],
+    TaskStatus.withdrawn: ["（终态）无"],
 }
 
 
@@ -541,6 +549,7 @@ def evaluate_transition(
     rule_verdicts: Optional[dict[str, str]] = None,
     known_rule_ids: Optional[set[str]] = None,
     rule_scopes: Optional[dict[str, list[str]]] = None,
+    withdraw_reason: Optional[str] = None,
     ledger_tampered: bool = False,
     controller_dirty: Optional[list[str]] = None,
     test_run: Optional[dict] = None,
@@ -573,6 +582,24 @@ def evaluate_transition(
                     + ", ".join(scope_violations)
                 )
         return problems
+
+    if action == "withdraw":
+        if task.contract.repairs_fingerprint:
+            return _reject(
+                "修复任务不适用 withdraw：同指纹熔断与预算耗尽走 repair 终态，人工另开任务"
+            )
+        if status != TaskStatus.contract_proposed:
+            return _reject(
+                f"任务处于 {status.value}；只有未接受的 contract_proposed 可 withdraw"
+            )
+        reason = (withdraw_reason or "").strip()
+        if not reason:
+            return _reject("withdraw 需要非空 --reason（放弃原因进入 envelope 历史）")
+        return TransitionDecision(
+            allowed=True, to_status=TaskStatus.withdrawn,
+            reason=f"契约提案已放弃：{reason}",
+            next_action="无（withdrawn 为终态；如需继续请重新 task open）",
+        )
 
     if action == "accept":
         if status != TaskStatus.contract_proposed:

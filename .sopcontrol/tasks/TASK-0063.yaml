@@ -1,0 +1,42 @@
+task_id: TASK-0063
+contract:
+  objective: contract_proposed 出口：新增 task withdraw，允许从未接受的契约提案合法退出为终态（withdrawn），堵住悬空任务无删除通道的边界
+  allowed_writes:
+  - sopcontrol/task.py
+  - sopcontrol/cli_task.py
+  - sopcontrol/cli.py
+  - tests/constitution/test_task_gate.py
+  - tests/gate/test_task_cli.py
+  required_rules:
+  - CTRL-001
+  - SELF-001
+  - SELF-002
+  required_fields:
+  - withdraw_transition
+  - terminal_isolation
+  - compatibility
+  max_repairs: 1
+  repairs_fingerprint: null
+  write_granularity: file
+  strict_schema: true
+  capability_note: 当前模型未声明（已有画像 vertical-backbone 不适用） tier=unknown：模型能力未知：按保守边界执行，文件级写入
+    + 强制 MUST 字段清单；行为事件触发 weak 上限（近期任务迁移被拒）
+  model_identity: ''
+status: contract_proposed
+repair_count: 0
+changed_paths: []
+revision: 2
+created_at: '2026-09-05T17:42:50.040509Z'
+updated_at: '2026-09-05T17:53:38.171031Z'
+history:
+- at: '2026-09-05T17:53:38.168824Z'
+  action: submit
+  from_status: contract_proposed
+  to_status: null
+  allowed: false
+  reason: 任务处于 contract_proposed，不可提交
+  detail:
+    next_action: sopctl task show 查看当前状态与契约
+resolution_of: []
+superseded_by_task: ''
+blocked_reason_code: ''

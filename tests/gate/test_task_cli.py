@@ -218,3 +218,23 @@ def test_task_accept_holds_registry_lock_through_task_save(tmp_path, monkeypatch
     assert Registry(work / ".sopcontrol/rules/registry.yaml").get(
         "PUSH-001"
     ).scope_paths == ["docs"]
+
+
+def test_task_withdraw_via_cli(tmp_path, capsys):
+    work = _work(tmp_path)
+    assert _open_task(work, "src/push_job.py") == 0
+
+    assert main([
+        "task", "withdraw", "TASK-0001", str(work),
+        "--reason", "目标已由后继任务交付",
+    ]) == 0
+    task = TaskStore(work).load("TASK-0001")
+    assert task.status.value == "withdrawn"
+    assert task.history[-1].allowed is True
+    assert "后继任务" in task.history[-1].reason
+
+    # 终态：再次迁移被拒并留痕
+    assert main(["task", "accept", "TASK-0001", str(work)]) == 0
+    task = TaskStore(work).load("TASK-0001")
+    assert task.status.value == "withdrawn"
+    assert task.history[-1].allowed is False

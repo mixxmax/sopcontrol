@@ -8,12 +8,14 @@ from sopcontrol.bootstrap import MATURITY_KIND
 from sopcontrol.model import effective_rules
 from sopcontrol.registry import Registry
 from sopcontrol.task import (
+    TASK_TRANSITIONS,
     Contract,
     TaskRecord,
     TaskStatus,
     evaluate_transition,
     normalize_relpath,
     path_allowed,
+    tasks_for_projection,
 )
 
 
@@ -283,3 +285,33 @@ def test_run_audit_uses_one_fixed_time_for_verdicts_and_maturity(tmp_path):
     assert [verdict.rule_id for verdict in after.verdicts] == active_ids
     assert before_l1["satisfied"] is False
     assert after_l1["satisfied"] is True
+
+
+def test_withdraw_allows_only_unaccepted_contract_with_reason():
+    task = make_task()
+    decision = evaluate_transition(
+        task, "withdraw", withdraw_reason="已被后继任务交付"
+    )
+    assert decision.allowed
+    assert decision.to_status == TaskStatus.withdrawn
+    assert "已被后继任务交付" in decision.reason
+
+    no_reason = evaluate_transition(task, "withdraw")
+    assert not no_reason.allowed
+    assert "reason" in no_reason.reason
+
+    executing = make_task(status=TaskStatus.executing)
+    late = evaluate_transition(executing, "withdraw", withdraw_reason="晚了")
+    assert not late.allowed
+
+    repair = make_task()
+    repair.contract.repairs_fingerprint = "fn-print"
+    fenced = evaluate_transition(repair, "withdraw", withdraw_reason="不想修了")
+    assert not fenced.allowed
+    assert "修复任务" in fenced.reason
+
+
+def test_withdrawn_is_terminal_and_out_of_projection():
+    assert TASK_TRANSITIONS[TaskStatus.withdrawn] == frozenset()
+    withdrawn = make_task(status=TaskStatus.withdrawn)
+    assert tasks_for_projection([withdrawn]) == []

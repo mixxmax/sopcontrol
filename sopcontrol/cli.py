@@ -268,6 +268,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--model", required=True, help="新的当前执行模型身份")
     p.add_argument("path", nargs="?", default=".")
     p.set_defaults(func=cmd_task)
+    p = task_sub.add_parser(
+        "withdraw",
+        help="放弃未接受的契约提案 → withdrawn 终态（需非空 reason）",
+    )
+    p.add_argument("task_id")
+    p.add_argument("--reason", required=True, help="放弃原因（进入 envelope 历史）")
+    p.add_argument("path", nargs="?", default=".")
+    p.set_defaults(func=cmd_task)
     _task_cmd("list", "列出任务")
 
     identity = sub.add_parser("identity", help="项目身份（Phase 6 种子：跨 harness 识别同一项目）")
