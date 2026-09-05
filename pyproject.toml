@@ -67,7 +67,7 @@ branch = true
 source = ["sopcontrol", "plugins"]
 
 [tool.coverage.report]
-fail_under = 82
+fail_under = 85
 precision = 1
 show_missing = true
 skip_covered = true
