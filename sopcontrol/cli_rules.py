@@ -165,10 +165,18 @@ def _confirm_with_projections(
             return False, None
 
 
-def _print_impact(root: Path, rule: Rule) -> None:
+def _print_impact(root: Path, rule: Rule, impact: dict | None = None) -> None:
     print(f"  受影响消费者: {', '.join(rule.consumer_markers) or '无'}")
     print(f"  受影响任务: {', '.join(_affected_tasks(root, rule.rule_id)) or '无'}")
     print(f"  受影响 guard: {', '.join(rule.guard_ids) or '无'}")
+    if impact is not None:
+        lost = ", ".join(impact.get("effective_rules_lost") or []) or "无"
+        losing = ", ".join(impact.get("guards_losing_last_rule") or []) or "无"
+        print(f"  dry-run 将退出当前有效集合: {lost}")
+        print(
+            f"  dry-run 失去最后治理记录的 guard: {losing}"
+            "（运行时 guard 本身是静态信任边界，不受影响）"
+        )
     print("  静态 invariant guard 保留；仅规则的动态有效集合/路径作用域变化")
     print("  投影目标: AGENTS.md, CLAUDE.md")
 
@@ -210,7 +218,7 @@ def cmd_rule_lifecycle(args) -> int:
         print(f"  until: {shown_until.isoformat() if shown_until else '无'}")
         print(f"  reason: {preview['reason']}")
         print(f"  actor: {preview['actor']}")
-        _print_impact(root, rule)
+        _print_impact(root, rule, impact=preview.get("impact"))
         print(f"  preview_id: {preview['preview_id']}")
         print("未修改任何文件；确认时原样重跑并带 --confirm-preview <preview_id>")
         return 0
@@ -259,7 +267,7 @@ def cmd_rule_retire(args) -> int:
             print(f"  replacement: {replacement}")
         print(f"  reason: {preview['reason']}")
         print(f"  actor: {preview['actor']}")
-        _print_impact(root, registry.get(args.rule_id))
+        _print_impact(root, registry.get(args.rule_id), impact=preview.get("impact"))
         print(f"  preview_id: {preview['preview_id']}")
         print("未修改任何文件；确认时原样重跑并带 --confirm-preview <preview_id>")
         return 0

@@ -17,8 +17,12 @@ from typing import Any, Optional
 import yaml
 from pydantic import BaseModel, Field
 
-from .candidate import CandidateStore, refresh_candidates
-from .model import Finding, content_hash, utcnow
+from .candidate import (
+    LEGACY_CLEARED_PATTERN,
+    CandidateStore,
+    refresh_candidates,
+)
+from .model import Finding, content_hash, rule_is_effective, utcnow
 
 GROWTH_OBS_REL = ".sopcontrol/evidence/growth-observations.jsonl"
 GROWTH_STATE_REL = ".sopcontrol/evidence/growth-state.yaml"
@@ -124,6 +128,58 @@ def record_finding_observations(
                 rule_id=finding.rule_id or "",
                 summary=(finding.summary or "")[:160],
                 round_id=rid,
+                observed_at=when,
+            )
+            fh.write(obs.model_dump_json() + "\n")
+            written += 1
+    _maybe_compact_obs(path)
+    return written
+
+
+def record_structural_observations(
+    root: Path,
+    *,
+    rules: list,
+    findings: list[Finding],
+    round_id: str,
+    at: Optional[datetime] = None,
+) -> int:
+    """把「声明 legacy 的有效硬规则本轮无存活旁路」记为独立 occurrence。
+
+    与 finding 观察同构：持续多轮后由候选聚合器物化 retire_rule 建议
+    （人确认两阶段 deprecate）；本函数只观察，不写 registry。
+    """
+    live_legacy = {
+        finding.rule_id
+        for finding in findings
+        if finding.pattern_id == "legacy_entry_alive" and finding.rule_id
+    }
+    cleared = [
+        rule for rule in rules
+        if rule.legacy_markers
+        and rule.rule_id not in live_legacy
+        and rule_is_effective(rule, at=at or utcnow())
+    ]
+    if not cleared:
+        return 0
+    root = Path(root)
+    when = at or utcnow()
+    path = _obs_path(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    written = 0
+    with path.open("a", encoding="utf-8") as fh:
+        for rule in cleared:
+            obs = GrowthObservation(
+                fingerprint=content_hash({
+                    "pattern_id": LEGACY_CLEARED_PATTERN,
+                    "rule_id": rule.rule_id,
+                }),
+                pattern_id=LEGACY_CLEARED_PATTERN,
+                rule_id=rule.rule_id,
+                summary=(
+                    f"声明的旧入口 [{', '.join(rule.legacy_markers)}] 已无存活 finding"
+                )[:160],
+                round_id=round_id,
                 observed_at=when,
             )
             fh.write(obs.model_dump_json() + "\n")
@@ -260,6 +316,24 @@ def ambient_grow(
         observed = record_finding_observations(
             root, findings, round_id=rid, at=when,
         )
+    if findings is not None:
+        # 审计路径同时记录结构性事实（如 legacy 清零），供 retire 候选达阈值
+        try:
+            from .model import effective_rules
+            from .registry import Registry
+
+            observed += record_structural_observations(
+                root,
+                rules=effective_rules(
+                    Registry(root / ".sopcontrol" / "rules" / "registry.yaml").load(),
+                    at=when,
+                ),
+                findings=findings,
+                round_id=rid,
+                at=when,
+            )
+        except Exception:  # noqa: BLE001 — 生长观察失败不得阻断原动作
+            pass
     result = refresh_candidates(root)
     store = CandidateStore(root)
     try:

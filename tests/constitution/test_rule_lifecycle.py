@@ -13,6 +13,7 @@ from sopcontrol.conflict import find_conflicts
 from sopcontrol.model import (
     Absorption,
     Evidence,
+    Finding,
     Modality,
     Rule,
     RuleLifecycleEvent,
@@ -20,6 +21,12 @@ from sopcontrol.model import (
     SourceRef,
     effective_rules,
     rule_is_effective,
+)
+from sopcontrol.candidate import CandidateStore, refresh_candidates
+from sopcontrol.growth import (
+    ambient_grow,
+    load_growth_observations,
+    record_structural_observations,
 )
 from sopcontrol.registry import Registry, RegistryError
 from sopcontrol.verdict import evaluate_rule
@@ -1185,3 +1192,140 @@ def test_reachability_does_not_use_import_bridge_outside_scope():
     findings = ReachabilityDetector().detect([rule], evidence)
 
     assert any(item.pattern_id == "test_cannot_reach_consumer" for item in findings)
+
+
+def test_lifecycle_and_retirement_previews_report_dry_run_impact(tmp_path):
+    registry = Registry(tmp_path / "registry.yaml")
+    rules = [
+        _rule(
+            rule_id="IMP-001",
+            guard_ids=["GUARD-PUSH-GATE"],
+            consumer_markers=["imp_one"],
+        ),
+        _rule(
+            rule_id="IMP-002",
+            guard_ids=["GUARD-PUSH-GATE"],
+            consumer_markers=["imp_two"],
+        ),
+        _rule(
+            rule_id="IMP-003",
+            guard_ids=["GUARD-EXECUTOR-IDENTITY"],
+            consumer_markers=["imp_three"],
+        ),
+    ]
+    registry.save(rules)
+
+    suspend = registry.lifecycle_preview(
+        "IMP-001", action="suspend", reason="维护", actor="human-reviewer",
+        until=datetime(2099, 9, 1, tzinfo=timezone.utc),
+    )
+    impact = suspend["impact"]
+    assert impact["effective_rules_lost"] == ["IMP-001"]
+    # IMP-002 仍声明同一 guard：PUSH-GATE 治理记录不消失；列表只含目标自身 guard
+    assert impact["guards_losing_last_rule"] == []
+
+    retire = registry.retirement_preview(
+        "IMP-003", action="deprecate", reason="退出", actor="human-reviewer",
+    )
+    assert retire["impact"]["effective_rules_lost"] == ["IMP-003"]
+    assert retire["impact"]["guards_losing_last_rule"] == ["GUARD-EXECUTOR-IDENTITY"]
+
+    supersede = registry.retirement_preview(
+        "IMP-001", action="supersede", reason="接管", actor="human-reviewer",
+        replacement="IMP-002",
+    )
+    assert supersede["impact"]["effective_rules_lost"] == ["IMP-001"]
+    # replacement 仍声明同一 guard：不产生失去治理记录的 guard
+    assert supersede["impact"]["guards_losing_last_rule"] == []
+
+
+def test_cli_lifecycle_preview_prints_dry_run_impact(tmp_path, capsys):
+    work = _cli_work(tmp_path)
+    assert main(_lifecycle_command(work)) == 0
+    output = capsys.readouterr().out
+    assert "将退出当前有效集合: DEPLOY-001" in output
+    assert "失去最后治理记录的 guard: 无" in output
+
+
+def test_legacy_cleared_materializes_retire_rule_candidate(tmp_path):
+    work = _cli_work(tmp_path)
+    registry = Registry(work / ".sopcontrol/rules/registry.yaml")
+    target = registry.get("RELEASE-001")
+    assert target.legacy_markers
+
+    for index in range(6):
+        record_structural_observations(
+            work,
+            rules=registry.load(),
+            findings=[],
+            round_id=f"legacy-clear-{index}",
+        )
+    refresh_candidates(work)
+
+    store = CandidateStore(work)
+    retire = [
+        record for record in store.load()
+        if record.suggested_action == "retire_rule"
+        and "RELEASE-001" in record.statement
+    ]
+    assert len(retire) == 1
+    assert "deprecate RELEASE-001" in retire[0].statement
+    # 候选永不写 registry：目标规则保持 accepted
+    assert registry.get("RELEASE-001").status == RuleStatus.accepted
+
+
+def test_legacy_cleared_candidate_requires_threshold_rounds(tmp_path):
+    work = _cli_work(tmp_path)
+    registry = Registry(work / ".sopcontrol/rules/registry.yaml")
+    for index in range(5):
+        record_structural_observations(
+            work,
+            rules=registry.load(),
+            findings=[],
+            round_id=f"short-{index}",
+        )
+    refresh_candidates(work)
+    store = CandidateStore(work)
+    # fixture 预置的久悬 gap 候选与本题无关；只断言 RELEASE-001 的 legacy 清零候选未物化
+    assert not [
+        record for record in store.load()
+        if record.suggested_action == "retire_rule"
+        and "RELEASE-001" in record.statement
+    ]
+
+
+def test_legacy_cleared_observation_skips_round_with_live_legacy(tmp_path):
+    work = _cli_work(tmp_path)
+    registry = Registry(work / ".sopcontrol/rules/registry.yaml")
+    live = Finding(
+        pattern_id="legacy_entry_alive",
+        rule_id="RELEASE-001",
+        summary="旧入口仍存活",
+        detector="no_consumer",
+    )
+    for index in range(6):
+        findings = [live] if index == 3 else []
+        record_structural_observations(
+            work,
+            rules=registry.load(),
+            findings=findings,
+            round_id=f"mixed-{index}",
+        )
+    refresh_candidates(work)
+    store = CandidateStore(work)
+    assert not [
+        record for record in store.load()
+        if record.suggested_action == "retire_rule"
+        and "RELEASE-001" in record.statement
+    ]
+
+
+def test_ambient_grow_records_legacy_cleared_structural_observations(tmp_path):
+    work = _cli_work(tmp_path)
+    registry = Registry(work / ".sopcontrol/rules/registry.yaml")
+    ambient_grow(work, findings=[], round_id="ambient-1")
+    patterns = {
+        obs.pattern_id for obs in load_growth_observations(work)
+    }
+    assert "legacy_cleared" in patterns
+    assert registry.get("RELEASE-001").status == RuleStatus.accepted

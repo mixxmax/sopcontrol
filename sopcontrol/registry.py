@@ -448,6 +448,13 @@ class Registry:
             "actor": normalized_actor,
             "until": normalized_until,
             "scope_paths": normalized_scope,
+            "impact": self._dry_run_impact(
+                rules,
+                rule,
+                action=action,
+                replacement_id="",
+                at=check_at,
+            ),
         }
 
     def lifecycle_preview(
@@ -598,6 +605,50 @@ class Registry:
             )
             return rule
 
+    @staticmethod
+    def _dry_run_impact(
+        rules: list[Rule],
+        target: Rule,
+        *,
+        action: str,
+        replacement_id: str,
+        at: datetime,
+    ) -> dict:
+        """撤销 dry-run：本动作后哪些有效规则消失、哪些 guard 失去最后治理记录。
+
+        只读 registry 推导，不跑审计；运行时 guard 本身是静态信任边界，
+        这里回答的是「治理记录是否还在」。
+        """
+        effective = [rule for rule in rules if rule_is_effective(rule, at=at)]
+        if action in {"suspend", "deprecate"}:
+            prospective = [rule for rule in effective if rule.rule_id != target.rule_id]
+        elif action == "supersede":
+            replacement = next(
+                (rule for rule in rules if rule.rule_id == replacement_id), None,
+            )
+            prospective = [
+                rule for rule in effective if rule.rule_id != target.rule_id
+            ]
+            if (
+                replacement is not None
+                and replacement.rule_id != target.rule_id
+                and not rule_is_effective(replacement, at=at)
+            ):
+                prospective.append(replacement)
+        else:  # narrow / reinstate：规则仍留在有效集合
+            prospective = list(effective)
+        lost = sorted(
+            {rule.rule_id for rule in effective} - {rule.rule_id for rule in prospective}
+        )
+        losing = sorted({
+            guard for guard in target.guard_ids
+            if not any(guard in rule.guard_ids for rule in prospective)
+        })
+        return {
+            "effective_rules_lost": lost,
+            "guards_losing_last_rule": losing,
+        }
+
     def _retirement_preview(
         self,
         rules: list[Rule],
@@ -657,6 +708,13 @@ class Registry:
         elif replacement:
             raise RegistryError("deprecate 不接受 replacement；需要替代关系请使用 supersede")
 
+        impact = self._dry_run_impact(
+            rules,
+            rule,
+            action=action,
+            replacement_id=replacement,
+            at=utcnow(),
+        )
         payload = {
             "registry": [item.model_dump(mode="json") for item in rules],
             "rule_id": rule_id,
@@ -675,6 +733,7 @@ class Registry:
             "consumer_markers": list(rule.consumer_markers),
             "guard_ids": list(rule.guard_ids),
             "replacement_rule": replacement_rule,
+            "impact": impact,
         }
 
     def retirement_preview(

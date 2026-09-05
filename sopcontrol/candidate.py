@@ -26,6 +26,9 @@ CandidateAction = Literal[
 CANDIDATE_THRESHOLD = 3
 # 久悬 gap：约两倍物化频率后，额外建议人确认 suspend/deprecate（不自动退场）
 RETIRE_GAP_THRESHOLD = 6
+# legacy 清零：同轮数持续「声明的旧入口无存活 finding」后，建议人确认 deprecate
+LEGACY_CLEARED_THRESHOLD = RETIRE_GAP_THRESHOLD
+LEGACY_CLEARED_PATTERN = "legacy_cleared"
 GAP_ABSORB_PATTERNS = frozenset({
     "documented_rule_no_consumer",
     "consumer_markers_undefined",
@@ -380,10 +383,19 @@ def refresh_candidates(root: Path) -> dict[str, int]:
 
     # 无感生长：每轮 audit 的 finding 观察（打破 ledger 内容寻址去重）
     gap_round_meta: dict[str, dict] = {}
+    legacy_cleared_meta: dict[str, dict] = {}
     try:
         from .growth import load_growth_observations
 
         for gob in load_growth_observations(root):
+            if gob.pattern_id == LEGACY_CLEARED_PATTERN:
+                meta = legacy_cleared_meta.setdefault(
+                    gob.fingerprint,
+                    {"rounds": set(), "rule_id": gob.rule_id, "sources": []},
+                )
+                meta["rounds"].add(gob.round_id or gob.occurrence_id)
+                meta["sources"].append(gob)
+                continue
             key = "finding:" + gob.fingerprint
             spec = _finding_spec(gob.pattern_id, gob.rule_id, gob.summary)
             observations.append((
@@ -436,6 +448,34 @@ def refresh_candidates(root: Path) -> dict[str, int]:
                     source_type="growth_observation",
                     ref=fingerprint,
                     occurrence_id="retire-" + gob.occurrence_id,
+                    observed_at=gob.observed_at,
+                ),
+                retire_spec,
+            ))
+
+    # legacy 清零：结构保证接管后，建议人确认 deprecate 纯禁止/旧入口型规则（不自动退场）
+    for fingerprint, meta in legacy_cleared_meta.items():
+        if len(meta["rounds"]) < LEGACY_CLEARED_THRESHOLD:
+            continue
+        rule_id = meta["rule_id"] or "未关联"
+        retire_spec = {
+            "kind": "deprecation",
+            "statement": (
+                f"规则 {rule_id} 声明的旧入口已清零（{len(meta['rounds'])} 轮无存活旁路）："
+                f"结构保证已接管，建议人确认 `sopctl rule deprecate {rule_id}` 退出硬门"
+                f"（两阶段、历史保留）——本候选不自动退场"
+            ),
+            "scope_guess": meta["rule_id"] or "project",
+            "suggested_action": "retire_rule",
+            "suggested_modality": "MUST",
+        }
+        for gob in meta["sources"]:
+            observations.append((
+                "retire-legacy:" + fingerprint,
+                CandidateSource(
+                    source_type="growth_observation",
+                    ref=fingerprint,
+                    occurrence_id="retire-legacy-" + gob.occurrence_id,
                     observed_at=gob.observed_at,
                 ),
                 retire_spec,
