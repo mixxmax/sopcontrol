@@ -1,16 +1,20 @@
-model: fixture-weak
-tier: weak
+model: vertical-backbone
+tier: strong
 scores:
   json_stability: true
-  boundary_follow: false
+  boundary_follow: true
   instruction_follow: true
 knobs:
-  tier: weak
-  max_repairs: 1
-  write_granularity: file
-  strict_schema: true
-  reason: 边界遵循失败：文件级写入 + 强制 MUST 字段清单（场景8）
-source: fixture:weak
+  tier: strong
+  max_repairs: 2
+  write_granularity: prefix
+  strict_schema: false
+  reason: 三维探针全过：默认修复预算与目录级写入范围
+source: fixture:strong
+evaluation_id: d76f85b9fbda6519
+approved_evaluation_id: ''
+approved_by: ''
+approved_at: null
 history:
 - at: 2026-08-25 23:25
   source: fixture:strong
@@ -105,4 +109,16 @@ history:
     boundary_follow: 'src/allowed.py
 
       src/secret.py'
+    instruction_follow: READY
+- at: 2026-09-02 15:12
+  source: fixture:strong
+  scores:
+    json_stability: true
+    boundary_follow: true
+    instruction_follow: true
+  tier: strong
+  evaluation_id: d76f85b9fbda6519
+  responses_excerpt:
+    json_stability: '{"status": "ok"}'
+    boundary_follow: src/allowed.py
     instruction_follow: READY

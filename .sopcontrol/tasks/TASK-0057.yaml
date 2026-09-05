@@ -1,33 +1,33 @@
-task_id: TASK-0052
+task_id: TASK-0057
 contract:
-  objective: 第七批审查加固：静态保证生产传感器路径 Evidence kind 与 PATH_SCOPED_EVIDENCE_KINDS 精确一致，并保持
-    harness.trace 为项目级证据
+  objective: 质量9.0第一步：Ledger 进程内RLock+跨进程文件锁；append与compact同锁；replace_snapshot 原子写入(fsync+os.replace)
   allowed_writes:
-  - tests/constitution/test_evidence_scope_contract.py
+  - sopcontrol/ledger.py
+  - tests/constitution/test_ledger.py
+  - tests/constitution/test_ledger_compact.py
   required_rules:
   - CTRL-001
   - SELF-001
   - SELF-002
   required_fields:
-  - evidence_kind_contract
-  - trace_project_scope
-  - compatibility
+  - ledger_lock_tests
   max_repairs: 1
   repairs_fingerprint: null
   write_granularity: file
   strict_schema: true
-  capability_note: 当前模型未声明（已有画像 fixture-weak 不适用） tier=unknown：模型能力未知：按保守边界执行，文件级写入
-    + 强制 MUST 字段清单；行为事件建议 tier=strong（仅建议，不自动授权）
-  model_identity: ''
+  capability_note: 当前模型 quality-9 与画像 vertical-backbone 不匹配 tier=unknown：模型能力未知：按保守边界执行，文件级写入
+    + 强制 MUST 字段清单
+  model_identity: quality-9
 status: delivered
 repair_count: 0
 changed_paths:
-- tests/constitution/test_evidence_scope_contract.py
+- sopcontrol/ledger.py
+- tests/constitution/test_ledger.py
 revision: 5
-created_at: '2026-08-31T15:06:50.507502Z'
-updated_at: '2026-09-05T16:32:53.013941Z'
+created_at: '2026-09-02T09:18:08.614012Z'
+updated_at: '2026-09-02T09:21:12.811572Z'
 history:
-- at: '2026-08-31T15:07:08.321241Z'
+- at: '2026-09-02T09:18:14.543968Z'
   action: accept
   from_status: contract_proposed
   to_status: executing
@@ -35,25 +35,24 @@ history:
   reason: 契约完整：目标、写入范围与可验证完成定义齐备
   detail:
     next_action: 执行变更后 task submit 提交改动路径
-- at: '2026-08-31T16:08:06.385629Z'
+- at: '2026-09-02T09:19:39.950629Z'
   action: submit
   from_status: executing
   to_status: verification_pending
   allowed: true
-  reason: 改动 1 个路径，全部在写入范围内；MUST 字段齐备 [evidence_kind_contract, trace_project_scope,
-    compatibility]
+  reason: 改动 2 个路径，全部在写入范围内；MUST 字段齐备 [ledger_lock_tests]
   detail:
     next_action: 运行 task verify 由控制器独立审计
-- at: '2026-09-05T16:31:16.412787Z'
+- at: '2026-09-02T09:21:05.374394Z'
   action: verify
   from_status: verification_pending
   to_status: verified
   allowed: true
   reason: 完成门通过：全部必需规则 [CTRL-001, SELF-001, SELF-002] 判定 pass（E4 实测：本轮执行 .venv/bin/python
-    -m pytest -q 通过（335.245s）+ E3 独立审计）
+    -m pytest -q 通过（69.64s）+ E3 独立审计）
   detail:
     next_action: task deliver 交付
-- at: '2026-09-05T16:32:53.008192Z'
+- at: '2026-09-02T09:21:12.808260Z'
   action: deliver
   from_status: verified
   to_status: delivered

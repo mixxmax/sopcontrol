@@ -33,7 +33,7 @@ contract:
   capability_note: 当前模型未声明（已有画像 fixture-weak 不适用） tier=unknown：模型能力未知：按保守边界执行，文件级写入
     + 强制 MUST 字段清单；行为事件建议 tier=strong（仅建议，不自动授权）
   model_identity: ''
-status: verification_pending
+status: delivered
 repair_count: 0
 changed_paths:
 - sopcontrol/registry.py
@@ -49,9 +49,9 @@ changed_paths:
 - tests/constitution/test_task_gate.py
 - tests/gate/test_task_cli.py
 - tests/repair/test_repair_apply.py
-revision: 3
+revision: 5
 created_at: '2026-08-31T15:34:48.095191Z'
-updated_at: '2026-08-31T16:08:07.324855Z'
+updated_at: '2026-09-02T09:12:11.277322Z'
 history:
 - at: '2026-08-31T15:35:13.132688Z'
   action: accept
@@ -70,3 +70,23 @@ history:
     repair_source_race, compatibility]
   detail:
     next_action: 运行 task verify 由控制器独立审计
+- at: '2026-09-02T09:12:10.867667Z'
+  action: verify
+  from_status: verification_pending
+  to_status: verified
+  allowed: true
+  reason: 完成门通过：全部必需规则 [CTRL-001, SELF-001, SELF-002] 判定 pass（E4 实测：本轮执行 .venv/bin/python
+    -m pytest -q 通过（60.036s）+ E3 独立审计）
+  detail:
+    next_action: task deliver 交付
+- at: '2026-09-02T09:12:11.271079Z'
+  action: deliver
+  from_status: verified
+  to_status: delivered
+  allowed: true
+  reason: 完成门已独立验证，允许交付
+  detail:
+    next_action: 无
+resolution_of: []
+superseded_by_task: ''
+blocked_reason_code: ''

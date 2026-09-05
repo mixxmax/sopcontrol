@@ -1,40 +1,31 @@
-task_id: TASK-0046
+task_id: TASK-0061
 contract:
-  objective: 第七批 7C：新增 suspend、reinstate、narrow CLI 和统一 Registry+AGENTS+CLAUDE 投影事务，预览影响与失败回滚如实可见
+  objective: 同步中文 README 与英文 README 的产品定位、低开销执行模型、动态控制面和快速开始说明；保留中文 README 头图不变
   allowed_writes:
-  - sopcontrol/cli.py
-  - sopcontrol/cli_rules.py
-  - sopcontrol/project.py
-  - tests/constitution/test_rule_lifecycle.py
+  - README_ZH-CN.md
   required_rules:
   - CTRL-001
   - SELF-001
   - SELF-002
   required_fields:
-  - cli_contract
-  - impact_preview
-  - projection_transaction
-  - rollback_truth
-  - compatibility
+  - readme_scope
+  - header_unchanged
   max_repairs: 1
   repairs_fingerprint: null
   write_granularity: file
   strict_schema: true
-  capability_note: 当前模型未声明（已有画像 fixture-weak 不适用） tier=unknown：模型能力未知：按保守边界执行，文件级写入
+  capability_note: 当前模型未声明（已有画像 vertical-backbone 不适用） tier=unknown：模型能力未知：按保守边界执行，文件级写入
     + 强制 MUST 字段清单；行为事件建议 tier=strong（仅建议，不自动授权）
   model_identity: ''
 status: delivered
 repair_count: 0
 changed_paths:
-- sopcontrol/cli.py
-- sopcontrol/cli_rules.py
-- sopcontrol/project.py
-- tests/constitution/test_rule_lifecycle.py
+- README_ZH-CN.md
 revision: 5
-created_at: '2026-08-31T13:39:01.986746Z'
-updated_at: '2026-09-05T16:32:34.842797Z'
+created_at: '2026-09-02T14:32:19.791938Z'
+updated_at: '2026-09-02T14:37:51.197946Z'
 history:
-- at: '2026-08-31T13:40:29.848995Z'
+- at: '2026-09-02T14:32:24.136184Z'
   action: accept
   from_status: contract_proposed
   to_status: executing
@@ -42,25 +33,24 @@ history:
   reason: 契约完整：目标、写入范围与可验证完成定义齐备
   detail:
     next_action: 执行变更后 task submit 提交改动路径
-- at: '2026-08-31T16:08:01.396697Z'
+- at: '2026-09-02T14:33:53.777436Z'
   action: submit
   from_status: executing
   to_status: verification_pending
   allowed: true
-  reason: 改动 4 个路径，全部在写入范围内；MUST 字段齐备 [cli_contract, impact_preview, projection_transaction,
-    rollback_truth, compatibility]
+  reason: 改动 1 个路径，全部在写入范围内；MUST 字段齐备 [readme_scope, header_unchanged]
   detail:
     next_action: 运行 task verify 由控制器独立审计
-- at: '2026-08-31T16:16:13.222304Z'
+- at: '2026-09-02T14:37:40.283459Z'
   action: verify
   from_status: verification_pending
   to_status: verified
   allowed: true
   reason: 完成门通过：全部必需规则 [CTRL-001, SELF-001, SELF-002] 判定 pass（E4 实测：本轮执行 .venv/bin/python
-    -m pytest -q 通过（73.278s）+ E3 独立审计）
+    -m pytest -q 通过（209.07s）+ E3 独立审计）
   detail:
     next_action: task deliver 交付
-- at: '2026-09-05T16:32:34.838569Z'
+- at: '2026-09-02T14:37:51.190954Z'
   action: deliver
   from_status: verified
   to_status: delivered

@@ -8,11 +8,24 @@
 1. 权威在项目 `.sopcontrol/`；模型上下文不是记忆本体。
 2. 只推进「当前链头」里的合法动作；不要重做已交付副作用。
 3. 全量历史与接手包：`sopctl task list` / `task show <id>` / `task takeover <id>`。
-4. 本切片摘要: `72d693faffea62aa`（漂移时 `sopctl project check` 会报 stale）。
+4. 本切片摘要: `cdfe4df892c6bce7`（漂移时 `sopctl project check` 会报 stale）。
 5. 项目何以至此：见下节；全量编年 `sopctl chronicle`。
 
 ## 何以至此（换模型/换会话）
-- 尚无项目编年事件；权威仍在 `.sopcontrol/`。之后的规则生命周期与任务迁移会写入 `project-events.jsonl`。
+- 编年 59 条（完整性 OK）；下列为最近 5 条治理动作：
+- [2026-09-05T16:32] TASK-0048 verified→delivered（deliver）
+- [2026-09-05T16:32] TASK-0049 verified→delivered（deliver）
+- [2026-09-05T16:32] TASK-0050 verified→delivered（deliver）
+- [2026-09-05T16:32] TASK-0051 verified→delivered（deliver）
+- [2026-09-05T16:32] TASK-0052 verified→delivered（deliver）
+- 全量：`sopctl chronicle`；核对：`sopctl chronicle check`。
+
+## 空间生长（无感观察；定型需人）
+- 空间生长（无感）：观察 0；待人定型候选 0（删入口 0 / 改善入口 0 / 登记规则 0）
+- 发现已自动；写入权威或删代码仍需人确认——不是要你「推进发现」。
+- 最近空间快照：ambiguity_index=0 （旁路开 0 / 平行状态 0）
+- 相对上一帧：歧义指数未变：ambiguity_index=0（`sopctl growth diff`）
+- 明细：`sopctl growth status|measure|diff`；全量候选：`sopctl candidate list`；中途接入看 `sopctl doctor`（默认轻量，全量加 `--full`）。
 
 ## 控制成熟度：L4 Govern：规则变更、发布和高影响操作需双阶段确认
 - 五项基本秩序全部有机制。
@@ -24,24 +37,18 @@
 - [CTRL-001][MUST] 控制器状态目录 .sopcontrol/ 内任何文件不得直接读写或修改，一切写入必须经 sopctl 子命令 （生产消费者标记: touches_protected_path, check_tool_call）
 
 ## 当前链头（可执行切片）
-- 上限 5 条明细；verified 折叠；摘要 `72d693faffea62aa`
-- TASK-0054 [verification_pending] 第七批第二轮审查修复：保护 retirement facts，拒绝 attestation 路径任意 symlink，原
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: verify
-  为何在切片: 待完成门：task verify
-- TASK-0053 [verification_pending] 第七批审查兼容迁移：将退休测试从已封闭的普通 save 旁路迁移到 transition 与 record_attest
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: verify
-  为何在切片: 待完成门：task verify
-- TASK-0052 [verification_pending] 第七批审查加固：静态保证生产传感器路径 Evidence kind 与 PATH_SCOPED_EVIDENCE_KIN
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: verify
-  为何在切片: 待完成门：task verify
-- TASK-0051 [verification_pending] 第七批审查修复：封闭 Registry 普通写旁路、attestation 伪造与越界、自签提级、trace 交叉续命、
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: verify
-  为何在切片: 待完成门：task verify
-- TASK-0050 [verification_pending] 第七批 7D 测试补充：验证 task open/accept 与 repair open/apply 对 effect
-  完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: verify
-  为何在切片: 待完成门：task verify
-- （另有 5 条 verified 待 deliver；勿重复执行；`sopctl task list`）
-- （另有 2 条活跃/阻断未展开；超出链头上限 5；`sopctl task list`）
+- 上限 5 条明细；verified 折叠；摘要 `cdfe4df892c6bce7`
+- TASK-0059 [contract_proposed] 重写 README 首屏与说明文字，突出低开销的 SOP 遵循控制面、减少模型漂移与重复劳动；保留现有头图不变
+  执行者: （未绑定）；完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: accept（契约完整时）
+  为何在切片: 契约待接受：task accept
+- TASK-0058 [executing] 质量9.0第二步：关键失败路径行为测试将分支覆盖率提到≥85%；fail_under=85
+  执行者: quality-9；完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: submit --changed <paths>
+  为何在切片: 执行中：改完后 task submit
+  中途换模型: `sopctl task rebind TASK-0058 --model <NEW>`（只收紧，不继承旧放宽）
+- TASK-0002 [blocked] 骨架收口两件：1) 判定输出带证据强度自曝（structural/lexical/mixed）——跨语言 pass 必须
+  执行者: （未绑定）；完成定义: SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）人工裁决后另开任务
+  为何在切片: 未接替阻断（other）；需 --resolves 另开决议
+  ⚠ 已阻断（other）；另开决议任务：`sopctl task open --resolves TASK-0002 ...`
 
 ## 硬约束
 - 不得直接读写或修改 `.sopcontrol/` 内任何文件；一切经 `sopctl` 子命令。

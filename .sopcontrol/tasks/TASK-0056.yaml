@@ -1,40 +1,44 @@
-task_id: TASK-0046
+task_id: TASK-0056
 contract:
-  objective: 第七批 7C：新增 suspend、reinstate、narrow CLI 和统一 Registry+AGENTS+CLAUDE 投影事务，预览影响与失败回滚如实可见
+  objective: 接替 TASK-0055：从提交 69d9b74 的干净控制器基线独立验证审计完整性、原子任务写入与 CI 质量门
   allowed_writes:
-  - sopcontrol/cli.py
-  - sopcontrol/cli_rules.py
-  - sopcontrol/project.py
-  - tests/constitution/test_rule_lifecycle.py
+  - sopcontrol/context.py
+  - tests/gate/test_gate.py
+  - sopcontrol/task.py
+  - tests/constitution/test_concurrency.py
+  - pyproject.toml
+  - .github/workflows/ci.yml
+  - .github/workflows/gate.yml
   required_rules:
   - CTRL-001
   - SELF-001
   - SELF-002
   required_fields:
-  - cli_contract
-  - impact_preview
-  - projection_transaction
-  - rollback_truth
-  - compatibility
+  - scan_integrity
+  - concurrent_writes
+  - ci_quality
   max_repairs: 1
   repairs_fingerprint: null
   write_granularity: file
   strict_schema: true
-  capability_note: 当前模型未声明（已有画像 fixture-weak 不适用） tier=unknown：模型能力未知：按保守边界执行，文件级写入
+  capability_note: 当前模型未声明（已有画像 vertical-backbone 不适用） tier=unknown：模型能力未知：按保守边界执行，文件级写入
     + 强制 MUST 字段清单；行为事件建议 tier=strong（仅建议，不自动授权）
   model_identity: ''
 status: delivered
 repair_count: 0
 changed_paths:
-- sopcontrol/cli.py
-- sopcontrol/cli_rules.py
-- sopcontrol/project.py
-- tests/constitution/test_rule_lifecycle.py
+- sopcontrol/context.py
+- tests/gate/test_gate.py
+- sopcontrol/task.py
+- tests/constitution/test_concurrency.py
+- pyproject.toml
+- .github/workflows/ci.yml
+- .github/workflows/gate.yml
 revision: 5
-created_at: '2026-08-31T13:39:01.986746Z'
-updated_at: '2026-09-05T16:32:34.842797Z'
+created_at: '2026-09-02T09:03:15.099187Z'
+updated_at: '2026-09-02T09:04:55.197964Z'
 history:
-- at: '2026-08-31T13:40:29.848995Z'
+- at: '2026-09-02T09:03:30.500620Z'
   action: accept
   from_status: contract_proposed
   to_status: executing
@@ -42,25 +46,24 @@ history:
   reason: 契约完整：目标、写入范围与可验证完成定义齐备
   detail:
     next_action: 执行变更后 task submit 提交改动路径
-- at: '2026-08-31T16:08:01.396697Z'
+- at: '2026-09-02T09:03:30.728677Z'
   action: submit
   from_status: executing
   to_status: verification_pending
   allowed: true
-  reason: 改动 4 个路径，全部在写入范围内；MUST 字段齐备 [cli_contract, impact_preview, projection_transaction,
-    rollback_truth, compatibility]
+  reason: 改动 7 个路径，全部在写入范围内；MUST 字段齐备 [scan_integrity, concurrent_writes, ci_quality]
   detail:
     next_action: 运行 task verify 由控制器独立审计
-- at: '2026-08-31T16:16:13.222304Z'
+- at: '2026-09-02T09:04:47.462639Z'
   action: verify
   from_status: verification_pending
   to_status: verified
   allowed: true
   reason: 完成门通过：全部必需规则 [CTRL-001, SELF-001, SELF-002] 判定 pass（E4 实测：本轮执行 .venv/bin/python
-    -m pytest -q 通过（73.278s）+ E3 独立审计）
+    -m pytest -q 通过（53.185s）+ E3 独立审计）
   detail:
     next_action: task deliver 交付
-- at: '2026-09-05T16:32:34.838569Z'
+- at: '2026-09-02T09:04:55.190935Z'
   action: deliver
   from_status: verified
   to_status: delivered
@@ -68,6 +71,7 @@ history:
   reason: 完成门已独立验证，允许交付
   detail:
     next_action: 无
-resolution_of: []
+resolution_of:
+- TASK-0055
 superseded_by_task: ''
 blocked_reason_code: ''

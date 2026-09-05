@@ -1,0 +1,10 @@
+updated_at: '2026-09-05T16:34:26.520471Z'
+last_round_id: f6ecbc5fc6e3e30f
+observation_count: 0
+candidates_observed: 0
+candidates_delete_entry: 0
+candidates_improve_entry: 0
+candidates_register_rule: 0
+last_materialized: 0
+pending_human: []
+note: 发现与聚合无感自动；写入权威规则/删代码仍需人确认（candidate triage / rule add / repair）

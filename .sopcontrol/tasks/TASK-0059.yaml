@@ -1,0 +1,36 @@
+task_id: TASK-0059
+contract:
+  objective: 重写 README 首屏与说明文字，突出低开销的 SOP 遵循控制面、减少模型漂移与重复劳动；保留现有头图不变
+  allowed_writes:
+  - README.md
+  required_rules:
+  - CTRL-001
+  - SELF-001
+  - SELF-002
+  required_fields: []
+  max_repairs: 1
+  repairs_fingerprint: null
+  write_granularity: file
+  strict_schema: true
+  capability_note: 当前模型未声明（已有画像 vertical-backbone 不适用） tier=unknown：模型能力未知：按保守边界执行，文件级写入
+    + 强制 MUST 字段清单；行为事件建议 tier=strong（仅建议，不自动授权）
+  model_identity: ''
+status: contract_proposed
+repair_count: 0
+changed_paths: []
+revision: 2
+created_at: '2026-09-02T14:21:59.039399Z'
+updated_at: '2026-09-05T16:32:02.120635Z'
+history:
+- at: '2026-09-05T16:32:02.114046Z'
+  action: accept
+  from_status: contract_proposed
+  to_status: null
+  allowed: false
+  reason: '契约不完整: strict_schema=true（fragile/weak/unknown/无画像）：必须声明 required_fields（MUST
+    输出字段清单），防漏字段假完成（14.1 场景8）。请重新 task open 创建完整契约'
+  detail:
+    next_action: sopctl task show 查看当前状态与契约
+resolution_of: []
+superseded_by_task: ''
+blocked_reason_code: ''
