@@ -114,7 +114,7 @@
 - [x] **候选/修复导向删除**：`redundant_entry_point` 与 `legacy_entry_alive` → `delete_entry`；repair 目标偏删旁路
 - [x] **薄清单**：`sopctl inventory` + doctor 一行摘要（受控 / 冗余 / 平行状态 / 应删旁路）
 - [x] **结构信号**：`metrics.structure_signals` 计入 redundant / parallel_state / bypass
-- [ ] 后置：legacy 清零后**建议** deprecate 纯禁止型重复规则（仍两阶段人工；不自动）
+- [x] 后置（2026-09-06）：legacy 清零后自动物化 `retire_rule` 候选（6 轮阈值；人确认两阶段 deprecate，不自动退场）
 - 验收：相关语料+变异+inventory 测试绿；出口「入口是否变少」可被 inventory/metrics 回答
 
 ### LP2 余量（不阻塞 LP3）
@@ -133,7 +133,7 @@
 - [x] 与 ledger.`replace_snapshot` 分离；压缩保留区间哈希（view.snapshot）
 - [x] `sopctl chronicle show|check|snapshot`；check 重放规则状态 vs registry
 - [x] 投影「何以至此」小节 + doctor 一行；`view-snapshot.yaml` 物化摘要
-- [ ] 后置：撤销 dry-run 影响分析扩展（lifecycle preview 已有基础，不阻塞本批）
+- [x] 后置（2026-09-06）：lifecycle/retirement 预览带 dry-run 影响（将退出有效集合的规则、失去最后治理记录的 guard）
 - 验收：编年往返完整；ledger compact 不抹编年；投影含旅程切片
 
 出口判据：换模型只读投影/chronicle 能说出项目怎么走到现在；核对可发现 registry 与编年漂移。
@@ -145,6 +145,12 @@
 - 把 `deprecate` 降到与 `add` 同成本（永久退出保持两阶段；对称性靠 suspend↔reinstate 与删除入口）
 
 ## 状态（每次运行后更新）
+
+- 2026-09-06（三笔收尾）：① TASK-0058 delivered——分支覆盖率 85.24%（fail_under=85），
+  质量线落地；② LP 余量 TASK-0062 delivered——legacy 清零候选 + 撤销 dry-run 影响；
+  ③ TASK-0063 delivered——`task withdraw`：未接受契约合法退出为 withdrawn 终态
+  （投影排除、修复任务拒用、reason 留痕），并真实 withdraw 悬空的 TASK-0059 收账。
+  教训：实现会话漏 accept 即 submit/verify 被拒——悬空契约的成因与出口在同一批现身。
 
 - 2026-09-05（第七批收口补账）：补跑 TASK-0049–0052 完成门（E4 实测全量 608 passed），
   交付 0044–0052 共九任务，第七批全部 delivered。治理顺序欠账如实记录：质量/LP 批

@@ -23,17 +23,17 @@ contract:
   capability_note: 当前模型未声明（已有画像 vertical-backbone 不适用） tier=unknown：模型能力未知：按保守边界执行，文件级写入
     + 强制 MUST 字段清单；行为事件触发 weak 上限（近期任务迁移被拒）
   model_identity: ''
-status: verification_pending
-repair_count: 0
+status: delivered
+repair_count: 1
 changed_paths:
 - sopcontrol/growth.py
 - sopcontrol/candidate.py
 - sopcontrol/registry.py
 - sopcontrol/cli_rules.py
 - tests/constitution/test_rule_lifecycle.py
-revision: 3
+revision: 7
 created_at: '2026-09-05T16:57:31.148659Z'
-updated_at: '2026-09-05T17:19:05.865807Z'
+updated_at: '2026-09-05T17:42:48.677442Z'
 history:
 - at: '2026-09-05T16:58:01.425790Z'
   action: accept
@@ -51,6 +51,40 @@ history:
   reason: 改动 5 个路径，全部在写入范围内；MUST 字段齐备 [legacy_cleared_candidate, dryrun_impact, compatibility]
   detail:
     next_action: 运行 task verify 由控制器独立审计
+- at: '2026-09-05T17:24:04.380369Z'
+  action: verify
+  from_status: verification_pending
+  to_status: repair_required
+  allowed: true
+  reason: '第 1 轮修复：测试未通过（E4 实测）：.venv/bin/python -m pytest -q 退出码 1；末行: 2 failed,
+    612 passed, 1 skipped in 260.32s (0:04:20)'
+  detail:
+    next_action: 修复测试失败后 task submit 重新提交（完成门不接受红着的测试）
+- at: '2026-09-05T17:37:16.001446Z'
+  action: submit
+  from_status: repair_required
+  to_status: verification_pending
+  allowed: true
+  reason: 改动 5 个路径，全部在写入范围内；MUST 字段齐备 [legacy_cleared_candidate, dryrun_impact, compatibility]
+  detail:
+    next_action: 运行 task verify 由控制器独立审计
+- at: '2026-09-05T17:42:32.586520Z'
+  action: verify
+  from_status: verification_pending
+  to_status: verified
+  allowed: true
+  reason: 完成门通过：全部必需规则 [CTRL-001, SELF-001, SELF-002] 判定 pass（E4 实测：本轮执行 .venv/bin/python
+    -m pytest -q 通过（289.961s）+ E3 独立审计）
+  detail:
+    next_action: task deliver 交付
+- at: '2026-09-05T17:42:48.673132Z'
+  action: deliver
+  from_status: verified
+  to_status: delivered
+  allowed: true
+  reason: 完成门已独立验证，允许交付
+  detail:
+    next_action: 无
 resolution_of: []
 superseded_by_task: ''
 blocked_reason_code: ''

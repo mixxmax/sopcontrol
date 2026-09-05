@@ -1247,8 +1247,21 @@ def test_cli_lifecycle_preview_prints_dry_run_impact(tmp_path, capsys):
     assert "失去最后治理记录的 guard: 无" in output
 
 
+def _fresh_ambient(work):
+    """fixture 磁盘态可能带历史 ambient 产物；副本内重置，保证阈值语义确定性。"""
+    for rel in (
+        ".sopcontrol/evidence/growth-observations.jsonl",
+        ".sopcontrol/evidence/growth-state.yaml",
+        ".sopcontrol/evidence/space-snapshots.jsonl",
+        ".sopcontrol/evidence/project-events.jsonl",
+        ".sopcontrol/rules/candidates.yaml",
+    ):
+        (work / rel).unlink(missing_ok=True)
+
+
 def test_legacy_cleared_materializes_retire_rule_candidate(tmp_path):
     work = _cli_work(tmp_path)
+    _fresh_ambient(work)
     registry = Registry(work / ".sopcontrol/rules/registry.yaml")
     target = registry.get("RELEASE-001")
     assert target.legacy_markers
@@ -1276,6 +1289,7 @@ def test_legacy_cleared_materializes_retire_rule_candidate(tmp_path):
 
 def test_legacy_cleared_candidate_requires_threshold_rounds(tmp_path):
     work = _cli_work(tmp_path)
+    _fresh_ambient(work)
     registry = Registry(work / ".sopcontrol/rules/registry.yaml")
     for index in range(5):
         record_structural_observations(
@@ -1296,6 +1310,7 @@ def test_legacy_cleared_candidate_requires_threshold_rounds(tmp_path):
 
 def test_legacy_cleared_observation_skips_round_with_live_legacy(tmp_path):
     work = _cli_work(tmp_path)
+    _fresh_ambient(work)
     registry = Registry(work / ".sopcontrol/rules/registry.yaml")
     live = Finding(
         pattern_id="legacy_entry_alive",
@@ -1322,6 +1337,7 @@ def test_legacy_cleared_observation_skips_round_with_live_legacy(tmp_path):
 
 def test_ambient_grow_records_legacy_cleared_structural_observations(tmp_path):
     work = _cli_work(tmp_path)
+    _fresh_ambient(work)
     registry = Registry(work / ".sopcontrol/rules/registry.yaml")
     ambient_grow(work, findings=[], round_id="ambient-1")
     patterns = {

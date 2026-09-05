@@ -8,16 +8,16 @@
 1. 权威在项目 `.sopcontrol/`；模型上下文不是记忆本体。
 2. 只推进「当前链头」里的合法动作；不要重做已交付副作用。
 3. 全量历史与接手包：`sopctl task list` / `task show <id>` / `task takeover <id>`。
-4. 本切片摘要: `cdfe4df892c6bce7`（漂移时 `sopctl project check` 会报 stale）。
+4. 本切片摘要: `87f11d81de1deaba`（漂移时 `sopctl project check` 会报 stale）。
 5. 项目何以至此：见下节；全量编年 `sopctl chronicle`。
 
 ## 何以至此（换模型/换会话）
-- 编年 59 条（完整性 OK）；下列为最近 5 条治理动作：
-- [2026-09-05T16:32] TASK-0048 verified→delivered（deliver）
-- [2026-09-05T16:32] TASK-0049 verified→delivered（deliver）
-- [2026-09-05T16:32] TASK-0050 verified→delivered（deliver）
-- [2026-09-05T16:32] TASK-0051 verified→delivered（deliver）
-- [2026-09-05T16:32] TASK-0052 verified→delivered（deliver）
+- 编年 78 条（完整性 OK）；下列为最近 5 条治理动作：
+- [2026-09-05T17:58] TASK-0063 contract_proposed→executing（accept）
+- [2026-09-05T17:58] TASK-0063 executing→verification_pending（submit）
+- [2026-09-05T18:02] TASK-0063 verification_pending→verified（verify）
+- [2026-09-05T18:02] TASK-0063 verified→delivered（deliver）
+- [2026-09-05T18:03] TASK-0059 contract_proposed→withdrawn（withdraw）
 - 全量：`sopctl chronicle`；核对：`sopctl chronicle check`。
 
 ## 空间生长（无感观察；定型需人）
@@ -37,14 +37,7 @@
 - [CTRL-001][MUST] 控制器状态目录 .sopcontrol/ 内任何文件不得直接读写或修改，一切写入必须经 sopctl 子命令 （生产消费者标记: touches_protected_path, check_tool_call）
 
 ## 当前链头（可执行切片）
-- 上限 5 条明细；verified 折叠；摘要 `cdfe4df892c6bce7`
-- TASK-0059 [contract_proposed] 重写 README 首屏与说明文字，突出低开销的 SOP 遵循控制面、减少模型漂移与重复劳动；保留现有头图不变
-  执行者: （未绑定）；完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: accept（契约完整时）
-  为何在切片: 契约待接受：task accept
-- TASK-0058 [executing] 质量9.0第二步：关键失败路径行为测试将分支覆盖率提到≥85%；fail_under=85
-  执行者: quality-9；完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: submit --changed <paths>
-  为何在切片: 执行中：改完后 task submit
-  中途换模型: `sopctl task rebind TASK-0058 --model <NEW>`（只收紧，不继承旧放宽）
+- 上限 5 条明细；verified 折叠；摘要 `87f11d81de1deaba`
 - TASK-0002 [blocked] 骨架收口两件：1) 判定输出带证据强度自曝（structural/lexical/mixed）——跨语言 pass 必须
   执行者: （未绑定）；完成定义: SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）人工裁决后另开任务
   为何在切片: 未接替阻断（other）；需 --resolves 另开决议

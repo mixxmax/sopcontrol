@@ -20,7 +20,7 @@ contract:
   capability_note: 当前模型 quality-9 与画像 vertical-backbone 不匹配 tier=unknown：模型能力未知：按保守边界执行，文件级写入
     + 强制 MUST 字段清单
   model_identity: quality-9
-status: verification_pending
+status: delivered
 repair_count: 0
 changed_paths:
 - tests/constitution/test_quality_coverage_paths.py
@@ -28,9 +28,9 @@ changed_paths:
 - tests/repair/test_repair_fail_paths.py
 - tests/harness/test_capability_fail_paths.py
 - pyproject.toml
-revision: 4
+revision: 6
 created_at: '2026-09-02T09:24:53.864569Z'
-updated_at: '2026-09-05T16:52:50.850276Z'
+updated_at: '2026-09-05T16:57:29.714330Z'
 history:
 - at: '2026-09-02T09:25:10.174954Z'
   action: accept
@@ -56,6 +56,23 @@ history:
   reason: 改动 5 个路径，全部在写入范围内；MUST 字段齐备 [coverage_branch_ge_85]
   detail:
     next_action: 运行 task verify 由控制器独立审计
+- at: '2026-09-05T16:57:13.636883Z'
+  action: verify
+  from_status: verification_pending
+  to_status: verified
+  allowed: true
+  reason: 完成门通过：全部必需规则 [CTRL-001, SELF-001, SELF-002] 判定 pass（E4 实测：本轮执行 .venv/bin/python
+    -m pytest -q 通过（231.279s）+ E3 独立审计）
+  detail:
+    next_action: task deliver 交付
+- at: '2026-09-05T16:57:29.709356Z'
+  action: deliver
+  from_status: verified
+  to_status: delivered
+  allowed: true
+  reason: 完成门已独立验证，允许交付
+  detail:
+    next_action: 无
 resolution_of: []
 superseded_by_task: ''
 blocked_reason_code: ''

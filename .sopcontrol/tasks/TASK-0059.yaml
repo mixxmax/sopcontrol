@@ -15,12 +15,12 @@ contract:
   capability_note: 当前模型未声明（已有画像 vertical-backbone 不适用） tier=unknown：模型能力未知：按保守边界执行，文件级写入
     + 强制 MUST 字段清单；行为事件建议 tier=strong（仅建议，不自动授权）
   model_identity: ''
-status: contract_proposed
+status: withdrawn
 repair_count: 0
 changed_paths: []
-revision: 2
+revision: 3
 created_at: '2026-09-02T14:21:59.039399Z'
-updated_at: '2026-09-05T16:32:02.120635Z'
+updated_at: '2026-09-05T18:03:05.778163Z'
 history:
 - at: '2026-09-05T16:32:02.114046Z'
   action: accept
@@ -31,6 +31,15 @@ history:
     输出字段清单），防漏字段假完成（14.1 场景8）。请重新 task open 创建完整契约'
   detail:
     next_action: sopctl task show 查看当前状态与契约
+- at: '2026-09-05T18:03:05.775576Z'
+  action: withdraw
+  from_status: contract_proposed
+  to_status: withdrawn
+  allowed: true
+  reason: 契约提案已放弃：目标已由 TASK-0060/0061 交付；本任务 accept 受 strict_schema 门拒绝而悬空——以 withdraw
+    终态收账（该功能的首个真实用例）
+  detail:
+    next_action: 无（withdrawn 为终态；如需继续请重新 task open）
 resolution_of: []
 superseded_by_task: ''
 blocked_reason_code: ''
