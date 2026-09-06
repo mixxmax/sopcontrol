@@ -12,12 +12,12 @@
 5. 项目何以至此：见下节；全量编年 `sopctl chronicle`。
 
 ## 何以至此（换模型/换会话）
-- 编年 78 条（完整性 OK）；下列为最近 5 条治理动作：
-- [2026-09-05T17:58] TASK-0063 contract_proposed→executing（accept）
-- [2026-09-05T17:58] TASK-0063 executing→verification_pending（submit）
-- [2026-09-05T18:02] TASK-0063 verification_pending→verified（verify）
-- [2026-09-05T18:02] TASK-0063 verified→delivered（deliver）
-- [2026-09-05T18:03] TASK-0059 contract_proposed→withdrawn（withdraw）
+- 编年 84 条（完整性 OK）；下列为最近 5 条治理动作：
+- [2026-09-06T08:43] TASK-0064 开任务
+- [2026-09-06T08:44] TASK-0064 contract_proposed→executing（accept）
+- [2026-09-06T09:00] TASK-0064 executing→verification_pending（submit）
+- [2026-09-06T09:06] TASK-0064 verification_pending→verified（verify）
+- [2026-09-06T09:06] TASK-0064 verified→delivered（deliver）
 - 全量：`sopctl chronicle`；核对：`sopctl chronicle check`。
 
 ## 空间生长（无感观察；定型需人）

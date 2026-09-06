@@ -146,6 +146,13 @@
 
 ## 状态（每次运行后更新）
 
+- 2026-09-06（合并验收后加固，TASK-0064 delivered）：修合并验收两项新缺陷——
+  ① 投影 cap 警告改用真 SECTION_END 并插在标记前、截断预留警告行（超预算后
+  project check 不再永久 stale）；② retire 候选语句轮数无关化（指纹稳定，
+  阈值后聚合而非按轮增殖）。M12 修正：变异复验证明 test_rule_lifecycle 既有
+  测试实际已捕获该变异，审查「真盲区」判定系探针锚定 test_growth 之误；
+  已在该文件补直接接缝测试。三项变异均被捕获；620 passed。
+
 - 2026-09-06（三笔收尾）：① TASK-0058 delivered——分支覆盖率 85.24%（fail_under=85），
   质量线落地；② LP 余量 TASK-0062 delivered——legacy 清零候选 + 撤销 dry-run 影响；
   ③ TASK-0063 delivered——`task withdraw`：未接受契约合法退出为 withdrawn 终态
