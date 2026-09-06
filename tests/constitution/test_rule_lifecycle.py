@@ -1345,3 +1345,37 @@ def test_ambient_grow_records_legacy_cleared_structural_observations(tmp_path):
     }
     assert "legacy_cleared" in patterns
     assert registry.get("RELEASE-001").status == RuleStatus.accepted
+
+
+def test_retire_candidate_fingerprint_is_stable_across_rounds(tmp_path):
+    """轮数写进 statement 会进入指纹：阈值后每轮物化新候选而非聚合
+    （合并验收非阻断 2）。指纹必须轮数无关。"""
+    work = _cli_work(tmp_path)
+    _fresh_ambient(work)
+    registry = Registry(work / ".sopcontrol/rules/registry.yaml")
+
+    for index in range(6):
+        record_structural_observations(
+            work, rules=registry.load(), findings=[], round_id=f"stable-{index}"
+        )
+    refresh_candidates(work)
+    store = CandidateStore(work)
+    first = [
+        record for record in store.load()
+        if record.suggested_action == "retire_rule"
+        and "RELEASE-001" in record.statement
+    ]
+    assert len(first) == 1
+
+    for index in range(3):
+        record_structural_observations(
+            work, rules=registry.load(), findings=[], round_id=f"stable-more-{index}"
+        )
+    refresh_candidates(work)
+    again = [
+        record for record in store.load()
+        if record.suggested_action == "retire_rule"
+        and "RELEASE-001" in record.statement
+    ]
+    assert len(again) == 1
+    assert again[0].candidate_id == first[0].candidate_id

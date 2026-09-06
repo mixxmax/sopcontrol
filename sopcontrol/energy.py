@@ -79,10 +79,22 @@ def fit_projection_text(
             f"- 节能：投影已截断以符合 ≤{max_tokens} tokens / ≤{max_lines} 行；"
             f"全量见 `sopctl growth status` / `chronicle` / `task list`。\n"
         )
-        # 插在 SECTION_END 前
-        end = "<!-- sopcontrol:end -->"
-        if end in body:
-            body = body.replace(end, warn + end, 1)
+        # 为警告行预留空间：插入后仍不超行预算
+        while len(lines) + 1 > max_lines:
+            cut = _find_soft_cut_index(lines)
+            if cut is None:
+                break
+            del lines[cut]
+        body = "\n".join(lines)
+        if not body.endswith("\n"):
+            body += "\n"
+        # 警告必须落在托管区之内（真 SECTION_END 之前）：落到标记后会让
+        # 写路径与 check 的磁盘切片对警告可见性不一致 → project check 永久 STALE
+        # （合并验收非阻断 1 的修复）。
+        from .project import SECTION_END
+
+        if SECTION_END in body:
+            body = body.replace(SECTION_END, warn + SECTION_END, 1)
         else:
             body = body.rstrip() + "\n" + warn
     return body, trimmed

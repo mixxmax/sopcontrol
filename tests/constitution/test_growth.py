@@ -8,7 +8,15 @@ from plugins import DETECTORS, SENSORS
 from sopcontrol.audit import run_audit
 from sopcontrol.candidate import CandidateStore
 from sopcontrol.cli import main
-from sopcontrol.growth import ambient_grow, growth_lines, load_growth_state
+from sopcontrol.growth import (
+    ambient_grow,
+    growth_lines,
+    load_growth_observations,
+    load_growth_state,
+    record_structural_observations,
+)
+from sopcontrol.model import Finding
+from sopcontrol.registry import Registry
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -119,3 +127,32 @@ def test_candidate_enact_opens_bounded_delete_task(tmp_path):
     assert any(
         e.kind == "growth.enact_delete" for e in load_project_events(work).events
     )
+
+
+def test_structural_observation_skips_round_with_live_legacy(tmp_path):
+    """M12 直接接缝：带存活 legacy finding 的轮次不得产生清零观察。"""
+    work = tmp_path / "w"
+    shutil.copytree(ROOT / "corpus" / "fixtures" / "ci-deploy", work)
+    # fixture 磁盘态可能带历史 ambient 产物；重置以保证断言只针对本轮
+    for rel in (
+        ".sopcontrol/evidence/growth-observations.jsonl",
+        ".sopcontrol/rules/candidates.yaml",
+    ):
+        (work / rel).unlink(missing_ok=True)
+    registry = Registry(work / ".sopcontrol" / "rules" / "registry.yaml")
+    live = Finding(
+        pattern_id="legacy_entry_alive",
+        rule_id="RELEASE-001",
+        summary="旧入口仍存活",
+        detector="no_consumer",
+    )
+
+    written = record_structural_observations(
+        work, rules=registry.load(), findings=[live], round_id="live-round"
+    )
+
+    assert written == 0
+    assert not [
+        obs for obs in load_growth_observations(work)
+        if obs.pattern_id == "legacy_cleared"
+    ]

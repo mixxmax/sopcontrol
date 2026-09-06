@@ -90,3 +90,25 @@ def test_inventory_from_snapshot_shape():
     assert inv is not None
     assert inv["delete_first_actions"] == 2
     assert inv["light"] is True
+
+
+def test_fit_warning_stays_inside_managed_section():
+    """截断警告必须落在真 SECTION_END 之前；落到标记后 = 写/查两条路径不一致，
+    投影超预算后 project check 将永久 STALE（合并验收非阻断 1）。"""
+    from sopcontrol.project import SECTION_END
+
+    lines = [
+        "<!-- sopcontrol:v1 -->",
+        "# SOP Control 规则投影（自动生成，勿手改）",
+        "## 空间生长（无感观察；定型需人）",
+    ]
+    lines += [f"- 观察明细 {i}" for i in range(60)]
+    lines += ["## 何以至此"] + [f"- 编年明细 {i}" for i in range(60)]
+    lines += ["## 硬约束", "- 不得直接读写或修改 `.sopcontrol/`", SECTION_END]
+    text = "\n".join(lines) + "\n"
+
+    fitted, trimmed = fit_projection_text(text)
+    assert trimmed
+    assert "节能：投影已截断" in fitted
+    assert fitted.rstrip().endswith(SECTION_END)
+    assert fitted.index("节能：投影已截断") < fitted.index(SECTION_END)

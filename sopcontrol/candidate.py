@@ -432,7 +432,7 @@ def refresh_candidates(root: Path) -> dict[str, int]:
         retire_spec = {
             "kind": "deprecation",
             "statement": (
-                f"规则 {rule_id} 久悬 gap（{len(meta['rounds'])} 轮仍缺消费者）："
+                f"规则 {rule_id} 久悬 gap（持续多轮仍缺消费者）："
                 f"{summary}；应接线吸收，或人确认后 "
                 f"`sopctl rule suspend` / `rule deprecate` 退出硬门——"
                 f"本候选不自动退场"
@@ -461,7 +461,7 @@ def refresh_candidates(root: Path) -> dict[str, int]:
         retire_spec = {
             "kind": "deprecation",
             "statement": (
-                f"规则 {rule_id} 声明的旧入口已清零（{len(meta['rounds'])} 轮无存活旁路）："
+                f"规则 {rule_id} 声明的旧入口已清零（持续多轮无存活旁路）："
                 f"结构保证已接管，建议人确认 `sopctl rule deprecate {rule_id}` 退出硬门"
                 f"（两阶段、历史保留）——本候选不自动退场"
             ),
