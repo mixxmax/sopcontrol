@@ -16,3 +16,6 @@ corpus/fixtures/**/.sopcontrol/rules/candidates.yaml
 # 运行时 trace 是本机噪音（每次工具调用都追加），证据由判定器每轮重算
 .sopcontrol/evidence/trace.jsonl
 corpus/fixtures/**/.sopcontrol/evidence/trace.jsonl
+
+# coverage 运行产物
+.coverage
