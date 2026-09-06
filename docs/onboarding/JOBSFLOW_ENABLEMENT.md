@@ -20,16 +20,21 @@
 
 ## 第 0 步：环境（一次性）
 
-`sopctl` 不在全局 PATH。两种用法任选：
+**首选：零安装，直接用绝对路径**（sopcontrol 的 venv 里已经有能跑的 sopctl）：
 
 ```bash
-# 用 sopcontrol 开发环境的解释器（本包所有 sopctl 命令同此替换）
 SOPCTL=/Users/xiezhijie/sopcontrol/.venv/bin/sopctl
-
-# 或者装进 JobsFlow 自己的 venv（一劳永逸）
-cd /Users/xiezhijie/ai-job-search && source .venv/bin/activate
-pip install -e /Users/xiezhijie/sopcontrol
 ```
+
+本包后续命令均写作 `$SOPCTL`。注意两点：
+
+- `git push` 时的 pre-push 钩子也会调 `sopctl`：若 sopctl 不在 PATH，push 会被
+  钩子报错拦下。这不是故障——先 `export PATH="/Users/xiezhijie/sopcontrol/.venv/bin:$PATH"`
+  让钩子真跑门，再 push。不要用 `--no-verify` 绕过。
+- 若希望日常直接敲 `sopctl`（免绝对路径），可选持久化安装：
+  在 JobsFlow 的 venv 里 `pip install -e /Users/xiezhijie/sopcontrol`。
+  安装后 `which sopctl` 应指向 `.venv/bin/sopctl`；若指向 `~/.local/bin` 等不在
+  PATH 的目录，说明装进了错误的解释器，删掉后改用绝对路径方案。
 
 ## 第 1 步：体检基线（约 5 分钟，写操作发生在 JobsFlow，由你执行）
 
