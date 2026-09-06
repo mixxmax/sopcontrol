@@ -199,8 +199,8 @@ sopctl gate .
 | `sopctl doctor .` | **自诊与下一步建议**（轻量模式，快速给出下一步推荐动作） |
 | `sopctl audit .` | **规则吸收审计**（静态扫描 MUST 规则是否被代码消费与测试） |
 | `sopctl gate .` | **终点门禁**（本地 Git Hook 与 CI 统一阻断入口） |
-| `sopctl rule ...` | 规则生命周期管理（`add` / `accept` / `suspend` / `narrow` / `deprecate`） |
-| `sopctl task ...` | 任务契约流转（`open` / `submit` / `verify` / `deliver` / `rebind`） |
+| `sopctl rule ...` | 规则生命周期管理（`add` / `accept` / `suspend` / `reinstate` / `narrow` / `supersede` / `deprecate`——永久退出均需人工两阶段确认） |
+| `sopctl task ...` | 任务契约流转（`open` / `accept` / `submit` / `verify` / `deliver` / `rebind` / `withdraw`） |
 | `sopctl growth measure / diff` | 空间快照记录与歧义度对比（验证空间是否变窄） |
 | `sopctl candidate enact ...` | 一键生成物理删除遗留旁路代码的有界重构任务 |
 | `sopctl chronicle` | 查看架构与规则演进编年史 |
@@ -225,7 +225,7 @@ git clone https://github.com/mixxmax/sopcontrol.git && cd sopcontrol
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-# 运行全量测试与自检
+# 运行全量测试与自检（620+ 项测试；分支覆盖率强制 >=85%）
 pytest -q
 ./scripts/vertical-check.sh
 ```

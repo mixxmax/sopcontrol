@@ -199,8 +199,8 @@ All harness adapters consume the same repository control plane. They are executi
 | `sopctl doctor .` | **Health check & next moves** (lightweight recommendations) |
 | `sopctl audit .` | **Absorption audit** (checks if MUST rules are wired and tested) |
 | `sopctl gate .` | **Final gate** (unified blocker for local pre-push and CI) |
-| `sopctl rule ...` | Rule lifecycle (`add` / `accept` / `suspend` / `narrow` / `deprecate`) |
-| `sopctl task ...` | Task contracts (`open` / `submit` / `verify` / `deliver` / `rebind`) |
+| `sopctl rule ...` | Rule lifecycle (`add` / `accept` / `suspend` / `reinstate` / `narrow` / `supersede` / `deprecate` — permanent exits are two-phase human-confirmed) |
+| `sopctl task ...` | Task contracts (`open` / `accept` / `submit` / `verify` / `deliver` / `rebind` / `withdraw`) |
 | `sopctl growth measure / diff` | Space snapshot & ambiguity reduction diffs |
 | `sopctl candidate enact ...` | One-command task creation to physically delete legacy bypasses |
 | `sopctl chronicle` | Inspect architectural decision history & evolution |
@@ -225,7 +225,7 @@ git clone https://github.com/mixxmax/sopcontrol.git && cd sopcontrol
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-# Run full test suite & self-checks
+# Run full test suite & self-checks (620+ tests; branch coverage enforced at >=85%)
 pytest -q
 ./scripts/vertical-check.sh
 ```
