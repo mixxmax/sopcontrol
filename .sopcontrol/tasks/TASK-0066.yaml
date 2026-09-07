@@ -1,0 +1,61 @@
+task_id: TASK-0066
+contract:
+  objective: 修复当前质量审查确认的全部 P1-P2 问题：legacy 清零误判、withdrawn 终态可变、覆盖率口径、生命周期 dry-run
+    判定、受保护状态文档绕过、版本不一致与设计文档漂移
+  allowed_writes:
+  - sopcontrol/growth.py
+  - tests/constitution/test_rule_lifecycle.py
+  - sopcontrol/task.py
+  - tests/constitution/test_task_gate.py
+  - tests/constitution/test_task_rebind.py
+  - sopcontrol/registry.py
+  - sopcontrol/cli_rules.py
+  - sopcontrol/__init__.py
+  - tests/constitution/test_version.py
+  - pyproject.toml
+  - README.md
+  - README_ZH-CN.md
+  - CHANGELOG.md
+  - ROADMAP.md
+  - DESIGN.md
+  - docs/onboarding/JOBSFLOW_ENABLEMENT.md
+  - .github/workflows/ci.yml
+  - .github/workflows/gate.yml
+  required_rules: []
+  required_fields:
+  - tests
+  - coverage
+  - behavior
+  max_repairs: 1
+  repairs_fingerprint: null
+  write_granularity: file
+  strict_schema: true
+  capability_note: 当前模型未声明（已有画像 vertical-backbone 不适用） tier=unknown：模型能力未知：按保守边界执行，文件级写入
+    + 强制 MUST 字段清单；行为事件触发 weak 上限（近期任务迁移被拒）
+  model_identity: ''
+status: withdrawn
+repair_count: 0
+changed_paths: []
+revision: 3
+created_at: '2026-09-07T04:19:41.761053Z'
+updated_at: '2026-09-07T04:19:58.258876Z'
+history:
+- at: '2026-09-07T04:19:47.388998Z'
+  action: accept
+  from_status: contract_proposed
+  to_status: null
+  allowed: false
+  reason: '契约不完整: required_rules 为空（无可验证完成定义的任务不得接受——防假完成）。请重新 task open 创建完整契约'
+  detail:
+    next_action: sopctl task show 查看当前状态与契约
+- at: '2026-09-07T04:19:58.256084Z'
+  action: withdraw
+  from_status: contract_proposed
+  to_status: withdrawn
+  allowed: true
+  reason: 契约提案已放弃：补充现有规则 CTRL-001 作为可验证完成定义后重开
+  detail:
+    next_action: 无（withdrawn 为终态；如需继续请重新 task open）
+resolution_of: []
+superseded_by_task: ''
+blocked_reason_code: ''

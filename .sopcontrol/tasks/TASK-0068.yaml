@@ -1,0 +1,97 @@
+task_id: TASK-0068
+contract:
+  objective: 在已提交基线上复核并交付 TASK-0067 的全部 P1-P2 修复
+  allowed_writes:
+  - sopcontrol/growth.py
+  - tests/constitution/test_rule_lifecycle.py
+  - sopcontrol/task.py
+  - tests/constitution/test_task_gate.py
+  - tests/constitution/test_task_rebind.py
+  - sopcontrol/registry.py
+  - sopcontrol/cli_rules.py
+  - sopcontrol/__init__.py
+  - tests/constitution/test_version.py
+  - pyproject.toml
+  - README.md
+  - README_ZH-CN.md
+  - CHANGELOG.md
+  - ROADMAP.md
+  - DESIGN.md
+  - docs/onboarding/JOBSFLOW_ENABLEMENT.md
+  - .github/workflows/ci.yml
+  - .github/workflows/gate.yml
+  required_rules:
+  - CTRL-001
+  required_fields:
+  - tests
+  - coverage
+  - behavior
+  max_repairs: 1
+  repairs_fingerprint: null
+  write_granularity: file
+  strict_schema: true
+  capability_note: 当前模型未声明（已有画像 vertical-backbone 不适用） tier=unknown：模型能力未知：按保守边界执行，文件级写入
+    + 强制 MUST 字段清单；行为事件触发 weak 上限（近期任务迁移被拒）
+  model_identity: ''
+status: delivered
+repair_count: 0
+changed_paths:
+- sopcontrol/growth.py
+- tests/constitution/test_rule_lifecycle.py
+- sopcontrol/task.py
+- tests/constitution/test_task_gate.py
+- tests/constitution/test_task_rebind.py
+- sopcontrol/registry.py
+- sopcontrol/cli_rules.py
+- sopcontrol/__init__.py
+- tests/constitution/test_version.py
+- pyproject.toml
+- README.md
+- README_ZH-CN.md
+- CHANGELOG.md
+- ROADMAP.md
+- DESIGN.md
+- docs/onboarding/JOBSFLOW_ENABLEMENT.md
+- .github/workflows/ci.yml
+- .github/workflows/gate.yml
+revision: 5
+created_at: '2026-09-07T04:42:00.320158Z'
+updated_at: '2026-09-07T04:47:34.398037Z'
+history:
+- at: '2026-09-07T04:42:06.298713Z'
+  action: accept
+  from_status: contract_proposed
+  to_status: executing
+  allowed: true
+  reason: 契约完整：目标、写入范围与可验证完成定义齐备
+  detail:
+    next_action: 执行变更后 task submit 提交改动路径
+- at: '2026-09-07T04:42:22.835906Z'
+  action: submit
+  from_status: executing
+  to_status: verification_pending
+  allowed: true
+  reason: 改动 18 个路径，全部在写入范围内；MUST 字段齐备 [tests, coverage, behavior]
+  detail:
+    next_action: 运行 task verify 由控制器独立审计
+- at: '2026-09-07T04:47:29.041085Z'
+  action: verify
+  from_status: verification_pending
+  to_status: verified
+  allowed: true
+  reason: 完成门通过：全部必需规则 [CTRL-001] 判定 pass（E4 实测：本轮执行 .venv/bin/python -m pytest -q
+    通过（273.893s）+ E3 独立审计）
+  detail:
+    next_action: task deliver 交付
+- at: '2026-09-07T04:47:34.393208Z'
+  action: deliver
+  from_status: verified
+  to_status: delivered
+  allowed: true
+  reason: 完成门已独立验证，允许交付
+  detail:
+    next_action: 无
+resolution_of:
+- TASK-0067
+superseded_by_task: ''
+blocked_reason_code: ''
