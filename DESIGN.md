@@ -97,9 +97,9 @@ Evidence/Finding 的 id 由内容 hash 生成，排除时间字段。效果：�
 
 **状态机刻意收窄**（相对手册 5.7）：`contract_proposed → executing →
 verification_pending → verified | repair_required | blocked | failed_unverified；
-verified → delivered`。INTAKE 并入 open（创建即带完整契约字段），PLAN_VALIDATED
-与 DELIVERY_PREVIEW 留到有真实 plan/副作用时再加——先闭环后带宽。`blocked` 与
-`failed_unverified` 为终态：前者需人工，后者是任务契约中的修复预算耗尽（预算由能力等级决定，手册 10.5）。
+contract_proposed → withdrawn；verified → delivered`。INTAKE 并入 open（创建即带完整契约字段），PLAN_VALIDATED
+与 DELIVERY_PREVIEW 留到有真实 plan/副作用时再加——先闭环后带宽。`blocked`、
+`failed_unverified` 与 `withdrawn` 为终态：`blocked` 需人工，`failed_unverified` 是任务契约中的修复预算耗尽（预算由能力等级决定，手册 10.5），`withdrawn` 是未接受契约的人工撤回并保留原因。
 
 **完成判定复用吸收等级**：任务的 required_rules 全部 `pass` 才可 verified——
 "声称接线了规则 X"由审计器独立证实（E3），不信自报。有 `fail`（绕过存活）→

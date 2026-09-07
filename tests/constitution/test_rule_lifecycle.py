@@ -28,6 +28,7 @@ from sopcontrol.growth import (
     load_growth_observations,
     record_structural_observations,
 )
+from sopcontrol.ledger import Ledger
 from sopcontrol.registry import Registry, RegistryError
 from sopcontrol.verdict import evaluate_rule
 from sopcontrol.scope import (
@@ -1239,12 +1240,61 @@ def test_lifecycle_and_retirement_previews_report_dry_run_impact(tmp_path):
     assert supersede["impact"]["guards_losing_last_rule"] == []
 
 
+def test_lifecycle_preview_reports_verdicts_lost_after_scope_narrowing(tmp_path):
+    work = tmp_path / "proj"
+    registry_path = work / ".sopcontrol" / "rules" / "registry.yaml"
+    registry_path.parent.mkdir(parents=True)
+    registry = Registry(registry_path)
+    rule = _rule(
+        rule_id="IMPACT-VERDICT-001",
+        consumer_markers=["controlled_entry"],
+    )
+    registry.save([rule])
+
+    ledger = Ledger(work / ".sopcontrol" / "evidence" / "ledger.jsonl")
+    ledger.append_evidence(
+        Evidence(
+            kind="ast_scan.references",
+            subject="src/controlled.py",
+            observed=["controlled_entry"],
+            observer="test",
+            input_hash="src-controlled",
+        )
+    )
+    ledger.append_evidence(
+        Evidence(
+            kind="ast_scan.references",
+            subject="tests/test_controlled.py",
+            observed=["controlled_entry"],
+            observer="test",
+            input_hash="tests-controlled",
+        )
+    )
+
+    preview = registry.lifecycle_preview(
+        "IMPACT-VERDICT-001",
+        action="narrow",
+        scope_paths=["docs"],
+        reason="只保留文档路径",
+        actor="human-reviewer",
+    )
+
+    assert preview["impact"]["verdicts_lost"] == [
+        {
+            "rule_id": "IMPACT-VERDICT-001",
+            "before_status": "pass",
+            "after_status": "gap",
+        }
+    ]
+
+
 def test_cli_lifecycle_preview_prints_dry_run_impact(tmp_path, capsys):
     work = _cli_work(tmp_path)
     assert main(_lifecycle_command(work)) == 0
     output = capsys.readouterr().out
     assert "将退出当前有效集合: DEPLOY-001" in output
     assert "失去最后治理记录的 guard: 无" in output
+    assert "当前判定将消失或退化" in output
 
 
 def _fresh_ambient(work):
@@ -1308,12 +1358,13 @@ def test_legacy_cleared_candidate_requires_threshold_rounds(tmp_path):
     ]
 
 
-def test_legacy_cleared_observation_skips_round_with_live_legacy(tmp_path):
+@pytest.mark.parametrize("pattern_id", ["legacy_entry_alive", "redundant_entry_point"])
+def test_legacy_cleared_observation_skips_round_with_live_legacy(tmp_path, pattern_id):
     work = _cli_work(tmp_path)
     _fresh_ambient(work)
     registry = Registry(work / ".sopcontrol/rules/registry.yaml")
     live = Finding(
-        pattern_id="legacy_entry_alive",
+        pattern_id=pattern_id,
         rule_id="RELEASE-001",
         summary="旧入口仍存活",
         detector="no_consumer",

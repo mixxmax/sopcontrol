@@ -153,7 +153,7 @@
   测试实际已捕获该变异，审查「真盲区」判定系探针锚定 test_growth 之误；
   已在该文件补直接接缝测试。三项变异均被捕获；620 passed。
 
-- 2026-09-06（三笔收尾）：① TASK-0058 delivered——分支覆盖率 85.24%（fail_under=85），
+- 2026-09-06（三笔收尾）：① TASK-0058 delivered——语句+分支综合覆盖率 85.24%（fail_under=85；分支覆盖率单独测量），
   质量线落地；② LP 余量 TASK-0062 delivered——legacy 清零候选 + 撤销 dry-run 影响；
   ③ TASK-0063 delivered——`task withdraw`：未接受契约合法退出为 withdrawn 终态
   （投影排除、修复任务拒用、reason 留痕），并真实 withdraw 悬空的 TASK-0059 收账。
@@ -164,7 +164,7 @@
   （0056–0061 及 LP1–LP4）曾在第七批外部复核节点未正式关闭时开工。TASK-0059 悬空契约
   处置完毕：accept 被 strict_schema 门合法拒绝（开任务未声明 MUST 字段），无删除通道，
   连同拒绝信封永久留档——「悬空 contract_proposed 无出口」边界再次实例化，候选改进：
-  为 contract_proposed 增设人工 withdraw 出口。在途：TASK-0058（覆盖率 ≥85%，
+  为 contract_proposed 增设人工 withdraw 出口。在途：TASK-0058（综合覆盖率 ≥85%，
   pyproject fail_under 改动未提交）。
 - 2026-09-02（节能）：doctor 默认轻量（不重跑 audit）；投影 ≤~1500 tokens/80 行；
   候选展示消歧优先并在 >32 条时告警。

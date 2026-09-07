@@ -137,11 +137,12 @@ def test_rebind_rejects_file_granularity_with_directory_allows(tmp_path):
         )
 
 
-def test_rebind_rejects_terminal(tmp_path):
+@pytest.mark.parametrize("terminal_status", [TaskStatus.delivered, TaskStatus.withdrawn])
+def test_rebind_rejects_terminal(tmp_path, terminal_status):
     root = _init(tmp_path)
     store = TaskStore(root)
     task = _strong_task(root)
-    task.status = TaskStatus.delivered
+    task.status = terminal_status
     task.revision += 1
     store.save(task)
     with pytest.raises(RebindError, match="终态"):

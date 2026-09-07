@@ -23,7 +23,7 @@ jobs:
           pip install -e ".[dev]"
       - name: Ruff blocking checks
         run: ruff check sopcontrol plugins tests
-      - name: Pytest and branch coverage
+      - name: Pytest and combined coverage
         run: pytest -q --cov --cov-report=term-missing
       - name: Arm identity and pre-push
         run: |

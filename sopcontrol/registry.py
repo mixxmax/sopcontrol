@@ -454,6 +454,8 @@ class Registry:
                 action=action,
                 replacement_id="",
                 at=check_at,
+                until=normalized_until,
+                after_scope=normalized_scope,
             ),
         }
 
@@ -605,23 +607,38 @@ class Registry:
             )
             return rule
 
-    @staticmethod
+    def _current_verdict_inputs(self):
+        """读取当前账本的判定输入；没有账本时不制造空证据状态。"""
+        from .ledger import Ledger
+
+        ledger_path = self._project_root() / ".sopcontrol" / "evidence" / "ledger.jsonl"
+        if not ledger_path.is_file():
+            return None
+        ledger = Ledger(ledger_path)
+        return ledger.load_evidence(current_only=True), ledger.load_findings()
+
     def _dry_run_impact(
+        self,
         rules: list[Rule],
         target: Rule,
         *,
         action: str,
         replacement_id: str,
         at: datetime,
+        until: datetime | None = None,
+        after_scope: list[str] | None = None,
     ) -> dict:
         """撤销 dry-run：本动作后哪些有效规则消失、哪些 guard 失去最后治理记录。
 
-        只读 registry 推导，不跑审计；运行时 guard 本身是静态信任边界，
-        这里回答的是「治理记录是否还在」。
+        只读 registry 与当前账本推导；运行时 guard 本身是静态信任边界，
+        这里同时回答「治理记录是否还在」与「当前 verdict 是否会消失/退化」。
         """
         effective = [rule for rule in rules if rule_is_effective(rule, at=at)]
+        simulated_target = target.model_copy(deep=True)
         if action in {"suspend", "deprecate"}:
             prospective = [rule for rule in effective if rule.rule_id != target.rule_id]
+            if action == "suspend":
+                simulated_target.suspended_until = until
         elif action == "supersede":
             replacement = next(
                 (rule for rule in rules if rule.rule_id == replacement_id), None,
@@ -635,8 +652,16 @@ class Registry:
                 and not rule_is_effective(replacement, at=at)
             ):
                 prospective.append(replacement)
-        else:  # narrow / reinstate：规则仍留在有效集合
-            prospective = list(effective)
+        elif action == "narrow":
+            simulated_target.scope_paths = list(after_scope or [])
+            prospective = [
+                simulated_target if rule.rule_id == target.rule_id else rule
+                for rule in effective
+            ]
+        else:  # reinstate：规则重新进入有效集合
+            simulated_target.suspended_until = None
+            prospective = [rule for rule in effective if rule.rule_id != target.rule_id]
+            prospective.append(simulated_target)
         lost = sorted(
             {rule.rule_id for rule in effective} - {rule.rule_id for rule in prospective}
         )
@@ -644,9 +669,27 @@ class Registry:
             guard for guard in target.guard_ids
             if not any(guard in rule.guard_ids for rule in prospective)
         })
+        verdicts_lost: list[dict[str, str]] = []
+        verdict_inputs = self._current_verdict_inputs()
+        if verdict_inputs is not None:
+            from .verdict import evaluate_rule
+
+            evidence, findings = verdict_inputs
+            before_status = evaluate_rule(target, evidence, findings, at=at).status
+            if action in {"suspend", "deprecate", "supersede"}:
+                after_status = "unknown"
+            else:
+                after_status = evaluate_rule(simulated_target, evidence, findings, at=at).status
+            if before_status != after_status and after_status in {"gap", "fail", "unknown"}:
+                verdicts_lost.append({
+                    "rule_id": target.rule_id,
+                    "before_status": before_status,
+                    "after_status": after_status,
+                })
         return {
             "effective_rules_lost": lost,
             "guards_losing_last_rule": losing,
+            "verdicts_lost": verdicts_lost,
         }
 
     def _retirement_preview(

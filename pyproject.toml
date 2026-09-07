@@ -67,6 +67,8 @@ branch = true
 source = ["sopcontrol", "plugins"]
 
 [tool.coverage.report]
+# fail_under applies to the combined statement+branch metric; branch execution
+# is measured and shown separately in the report.
 fail_under = 85
 precision = 1
 show_missing = true

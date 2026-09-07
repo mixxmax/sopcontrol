@@ -13,7 +13,7 @@ First public-facing packaging of the living-project control plane.
 - Evidence lifecycle binding: attestations bind to the current lifecycle revision (agent self-signature refused; sources must be in-repo regular files), trace freshness checked per guard (stale / future / naive rejected)
 - Mid-conversation model switch: `task rebind` (permissions only tighten), harness executor identity guard
 - Disambiguation: `redundant_entry_point`, `candidate enact` → bounded delete-entry tasks; retire-rule candidates materialize after sustained multi-round evidence (human two-phase exit only — never automatic)
-- Dual-language README lifecycle/withdraw parity; branch coverage enforced at >=85% (`fail_under`)
+- Dual-language README lifecycle/withdraw parity; combined statement+branch coverage enforced at >=85% (`fail_under`), with branch coverage reported separately
 - Verification artifacts: product red-team checklist + first report; product verification simulation (`docs/verification/`)
 
 ### Fixed

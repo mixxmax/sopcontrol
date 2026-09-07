@@ -152,7 +152,8 @@ def record_structural_observations(
     live_legacy = {
         finding.rule_id
         for finding in findings
-        if finding.pattern_id == "legacy_entry_alive" and finding.rule_id
+        if finding.pattern_id in {"legacy_entry_alive", "redundant_entry_point"}
+        and finding.rule_id
     }
     cleared = [
         rule for rule in rules

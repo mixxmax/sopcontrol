@@ -110,7 +110,12 @@ def cmd_rule_accept(args) -> int:
 def _affected_tasks(root: Path, rule_id: str) -> list[str]:
     from .task import TaskStatus, TaskStore
 
-    terminal = {TaskStatus.blocked, TaskStatus.failed_unverified, TaskStatus.delivered}
+    terminal = {
+        TaskStatus.blocked,
+        TaskStatus.failed_unverified,
+        TaskStatus.delivered,
+        TaskStatus.withdrawn,
+    }
     return [
         f"{task.task_id}[{task.status.value}]"
         for task in TaskStore(root).list_all()
@@ -172,11 +177,16 @@ def _print_impact(root: Path, rule: Rule, impact: dict | None = None) -> None:
     if impact is not None:
         lost = ", ".join(impact.get("effective_rules_lost") or []) or "无"
         losing = ", ".join(impact.get("guards_losing_last_rule") or []) or "无"
+        verdicts = ", ".join(
+            f"{item['rule_id']} {item['before_status']}→{item['after_status']}"
+            for item in impact.get("verdicts_lost") or []
+        ) or "无"
         print(f"  dry-run 将退出当前有效集合: {lost}")
         print(
             f"  dry-run 失去最后治理记录的 guard: {losing}"
             "（运行时 guard 本身是静态信任边界，不受影响）"
         )
+        print(f"  dry-run 当前判定将消失或退化: {verdicts}")
     print("  静态 invariant guard 保留；仅规则的动态有效集合/路径作用域变化")
     print("  投影目标: AGENTS.md, CLAUDE.md")
 

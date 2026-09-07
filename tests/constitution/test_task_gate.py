@@ -10,6 +10,7 @@ from sopcontrol.registry import Registry
 from sopcontrol.task import (
     TASK_TRANSITIONS,
     Contract,
+    TERMINAL,
     TaskRecord,
     TaskStatus,
     evaluate_transition,
@@ -313,5 +314,6 @@ def test_withdraw_allows_only_unaccepted_contract_with_reason():
 
 def test_withdrawn_is_terminal_and_out_of_projection():
     assert TASK_TRANSITIONS[TaskStatus.withdrawn] == frozenset()
+    assert TaskStatus.withdrawn in TERMINAL
     withdrawn = make_task(status=TaskStatus.withdrawn)
     assert tasks_for_projection([withdrawn]) == []

@@ -34,7 +34,7 @@ class TaskStatus(str, Enum):
 
 # 终态：不可复活；裁决后另开任务并用 resolution 链衔接（不重开旧契约）
 TERMINAL_FAILED = frozenset({TaskStatus.blocked, TaskStatus.failed_unverified})
-TERMINAL_DONE = frozenset({TaskStatus.delivered})
+TERMINAL_DONE = frozenset({TaskStatus.delivered, TaskStatus.withdrawn})
 TERMINAL = TERMINAL_FAILED | TERMINAL_DONE
 
 BlockedReasonCode = Literal[

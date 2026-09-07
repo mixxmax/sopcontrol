@@ -25,7 +25,7 @@ jobs:
       - run: pip install -e ".[dev]"
       - name: Ruff blocking checks
         run: ruff check sopcontrol plugins tests
-      - name: Tests and branch coverage
+      - name: Tests and combined coverage
         run: pytest -q --cov --cov-report=term-missing
       - run: sopctl self-test
       - name: strict gate exits 1 on gap fixture

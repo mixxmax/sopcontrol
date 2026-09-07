@@ -225,7 +225,7 @@ git clone https://github.com/mixxmax/sopcontrol.git && cd sopcontrol
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-# Run full test suite & self-checks (620+ tests; branch coverage enforced at >=85%)
+# Run full test suite & self-checks (620+ tests; combined coverage enforced at >=85%, with branches measured)
 pytest -q
 ./scripts/vertical-check.sh
 ```

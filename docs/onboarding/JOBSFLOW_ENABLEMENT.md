@@ -1,7 +1,7 @@
 # JobsFlow 启用包 — 把 SOP Control 从"已铺一半"推进到"日常在跑"
 
 对象仓库：`/Users/xiezhijie/ai-job-search`（下称 JobsFlow）。
-预计耗时：第 0–2 步约 15 分钟（一次性）；第 3 步以后零额外成本，随日常开发顺带发生。
+预计耗时：第 0–2 步约 15 分钟（一次性）；第 3 步以后无额外人工配置成本，随日常开发顺带发生；每次 verify 仍会按声明运行测试。
 
 ## 现状盘点（2026-09-06 实测，不是从零开始）
 
@@ -49,13 +49,14 @@ $SOPCTL project all .   # 把控制面切片装进 AGENTS.md / CLAUDE.md
 
 ## 第 2 步：补 test_command（1 分钟，补上 E4 来源）
 
-编辑 `.sopcontrol/manifest.yaml`，追加：
+用控制器命令声明测试命令：
 
-```yaml
-test_command: "pytest -q"
+```bash
+$SOPCTL test-command --set "pytest -q"
+$SOPCTL test-command
 ```
 
-验收：`cat .sopcontrol/manifest.yaml` 出现该行。此后每次完成门 verify 都会真跑
+验收：第二条命令显示 `test_command: pytest -q`。此后每次完成门 verify 都会真跑
 JobsFlow 的测试并铸 E4 证据——没有这一行，任务永远只能停在 E3。
 
 ## 第 3 步：首批规则 — 修到哪，登记到哪（需要你判断）
@@ -79,7 +80,7 @@ JobsFlow 的测试并铸 E4 证据——没有这一行，任务永远只能停�
 `setup.py:352-369` 会把候选人姓名/求职意向写入 tracked 的 `tools/fresh_24h/queries.json`，
 与"真实 PII 只在 gitignored 区域"的隐私目标冲突——发布阻断级，不宜等规则治理。
 
-## 第 4 步：日常回路（零额外成本，下次干活时顺带）
+## 第 4 步：日常回路（无额外人工配置，下次干活时顺带）
 
 下次在 JobsFlow 做真实改动时：
 
