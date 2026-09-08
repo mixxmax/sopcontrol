@@ -101,8 +101,12 @@ def _suggest_modality(statement: str) -> str:
 
 def run_gate(root: Path) -> int:
     """终点门核心逻辑（cmd_gate 与 sopctl wrap 共用）。"""
+    import time
+
     from plugins import DETECTORS, SENSORS
 
+    t0 = time.monotonic()
+    print("gate: enforcement 开始（只检查正式规则；非 discovery）", flush=True)
     try:
         # Enforcement only: discovery incompleteness must not own the push gate.
         report = run_audit(
@@ -110,6 +114,7 @@ def run_gate(root: Path) -> int:
         )
     except Exception as exc:  # 门自身故障必须阻断，不允许静默放行
         from .capability_events import CapabilityEvent, append_capability_event
+        from .ledger import LedgerError
 
         append_capability_event(
             root,
@@ -135,10 +140,23 @@ def run_gate(root: Path) -> int:
             )
         except Exception:
             pass
-        print(f"gate: 审计失败，fail-closed 阻断（{exc}）", file=sys.stderr)
+        if isinstance(exc, LedgerError):
+            print(
+                f"gate: 账本损坏 fail-closed（{exc.path}:{exc.line}）{exc}",
+                file=sys.stderr,
+            )
+            print("修复: sopctl ledger diagnose . 然后 sopctl audit --compact .", file=sys.stderr)
+        else:
+            print(f"gate: 审计失败，fail-closed 阻断（{exc}）", file=sys.stderr)
         return 1
 
+    print(
+        f"gate: 审计完成 {round(time.monotonic() - t0, 1)}s；"
+        f"verdicts={len(report.verdicts)} evidence={len(report.evidence)}",
+        flush=True,
+    )
     ledger = Ledger(root / ".sopcontrol" / "evidence" / "ledger.jsonl")
+    print("gate: 校验账本完整性…", flush=True)
     tampered = ledger.path.exists() and not ledger.verify()
     fails = [v for v in report.verdicts if v.status == "fail"]
     gaps = [v for v in report.verdicts if v.status == "gap"]

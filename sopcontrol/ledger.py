@@ -4,6 +4,9 @@
 日常路径只追加；役用清理用 replace_snapshot 整轮替换（非逐条篡改）。
 
 并发：同一路径进程内 RLock + 跨进程 flock；append 与 compact 共享锁域。
+
+性能：进程内缓存 ID 集合，禁止每次 append 整文件重读（大仓 O(n²) 根因）。
+损坏：diagnose() 报告行号与原因；verify() fail-closed。
 """
 from __future__ import annotations
 
@@ -14,19 +17,33 @@ import os
 from pathlib import Path
 import tempfile
 import threading
-from typing import Iterator
+import time
+from typing import Callable, Iterator, Optional
 
 from .model import Evidence, Finding, content_hash
+
+
+class LedgerError(Exception):
+    """账本结构/损坏错误；附带可诊断信息。"""
+
+    def __init__(self, message: str, *, path: Path | None = None, line: int | None = None):
+        super().__init__(message)
+        self.path = path
+        self.line = line
 
 
 class _LedgerPathLock:
     def __init__(self) -> None:
         self.thread_lock = threading.RLock()
         self.local = threading.local()
+        self.id_cache: set[str] | None = None
+        self.id_cache_mtime_ns: int | None = None
 
 
 _PATH_LOCKS: dict[str, _LedgerPathLock] = {}
 _PATH_LOCKS_GUARD = threading.Lock()
+
+ProgressFn = Callable[[str, dict], None]
 
 
 class Ledger:
@@ -34,9 +51,13 @@ class Ledger:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
+    def _lock_state(self) -> _LedgerPathLock:
+        key = str(self.path.resolve())
+        with _PATH_LOCKS_GUARD:
+            return _PATH_LOCKS.setdefault(key, _LedgerPathLock())
+
     def _lock_path(self) -> Path:
         resolved = self.path.resolve()
-        # Prefer project-local lock dir when under .sopcontrol/evidence/
         if (
             resolved.parent.name == "evidence"
             and resolved.parent.parent.name == ".sopcontrol"
@@ -49,9 +70,7 @@ class Ledger:
     @contextmanager
     def exclusive(self):
         """同一账本路径的进程内与跨进程可重入写锁。"""
-        key = str(self.path.resolve())
-        with _PATH_LOCKS_GUARD:
-            state = _PATH_LOCKS.setdefault(key, _LedgerPathLock())
+        state = self._lock_state()
         with state.thread_lock:
             depth = getattr(state.local, "depth", 0)
             if depth == 0:
@@ -71,35 +90,127 @@ class Ledger:
                     descriptor.close()
                     del state.local.descriptor
 
-    def _existing_ids(self) -> set[str]:
+    def _mtime_ns(self) -> int | None:
+        try:
+            return self.path.stat().st_mtime_ns
+        except OSError:
+            return None
+
+    def _load_id_cache(self, *, progress: ProgressFn | None = None) -> set[str]:
+        """Load or refresh in-memory id set. Call under exclusive()."""
+        state = self._lock_state()
+        mtime = self._mtime_ns()
+        if (
+            state.id_cache is not None
+            and state.id_cache_mtime_ns == mtime
+        ):
+            return state.id_cache
+
         ids: set[str] = set()
-        if self.path.exists():
-            for line in self.path.read_text(encoding="utf-8").splitlines():
-                line = line.strip()
+        if not self.path.exists():
+            state.id_cache = ids
+            state.id_cache_mtime_ns = mtime
+            return ids
+
+        t0 = time.monotonic()
+        line_no = 0
+        with self.path.open("r", encoding="utf-8") as fh:
+            for raw in fh:
+                line_no += 1
+                if progress and line_no % 2000 == 0:
+                    progress(
+                        "ledger.scan_ids",
+                        {"line": line_no, "elapsed_s": round(time.monotonic() - t0, 2)},
+                    )
+                line = raw.strip()
                 if not line:
                     continue
                 try:
                     rec = json.loads(line)
-                    ids.add(rec.get("evidence_id") or rec.get("finding_id"))
-                except json.JSONDecodeError:
-                    continue
-        return {item for item in ids if item}
+                except json.JSONDecodeError as exc:
+                    raise LedgerError(
+                        f"ledger 损坏：无法解析 JSON（{exc.msg}）",
+                        path=self.path,
+                        line=line_no,
+                    ) from exc
+                rid = rec.get("evidence_id") or rec.get("finding_id")
+                if rid:
+                    ids.add(str(rid))
+        state.id_cache = ids
+        state.id_cache_mtime_ns = self._mtime_ns()
+        if progress:
+            progress(
+                "ledger.scan_ids_done",
+                {"lines": line_no, "ids": len(ids), "elapsed_s": round(time.monotonic() - t0, 2)},
+            )
+        return ids
 
-    def _append(self, record: Evidence | Finding, id_field: str) -> str:
+    def _invalidate_id_cache(self) -> None:
+        state = self._lock_state()
+        state.id_cache = None
+        state.id_cache_mtime_ns = None
+
+    def _append(
+        self,
+        record: Evidence | Finding,
+        id_field: str,
+        *,
+        progress: ProgressFn | None = None,
+    ) -> str:
         rid = getattr(record, id_field)
         with self.exclusive():
-            if rid not in self._existing_ids():
+            ids = self._load_id_cache(progress=progress)
+            if rid not in ids:
                 with self.path.open("a", encoding="utf-8") as fh:
                     fh.write(record.model_dump_json() + "\n")
                     fh.flush()
                     os.fsync(fh.fileno())
+                ids.add(rid)
+                state = self._lock_state()
+                state.id_cache_mtime_ns = self._mtime_ns()
         return rid
 
-    def append_evidence(self, evidence: Evidence) -> str:
-        return self._append(evidence, "evidence_id")
+    def append_evidence(
+        self, evidence: Evidence, *, progress: ProgressFn | None = None
+    ) -> str:
+        return self._append(evidence, "evidence_id", progress=progress)
 
-    def append_finding(self, finding: Finding) -> str:
-        return self._append(finding, "finding_id")
+    def append_finding(
+        self, finding: Finding, *, progress: ProgressFn | None = None
+    ) -> str:
+        return self._append(finding, "finding_id", progress=progress)
+
+    def append_many(
+        self,
+        evidence: list[Evidence],
+        findings: list[Finding],
+        *,
+        progress: ProgressFn | None = None,
+    ) -> None:
+        """Batch append under one lock / one id-cache load (O(n) not O(n²))."""
+        with self.exclusive():
+            ids = self._load_id_cache(progress=progress)
+            written = 0
+            with self.path.open("a", encoding="utf-8") as fh:
+                for ev in evidence:
+                    if ev.evidence_id in ids:
+                        continue
+                    fh.write(ev.model_dump_json() + "\n")
+                    ids.add(ev.evidence_id)
+                    written += 1
+                for finding in findings:
+                    if finding.finding_id in ids:
+                        continue
+                    fh.write(finding.model_dump_json() + "\n")
+                    ids.add(finding.finding_id)
+                    written += 1
+                if written:
+                    fh.flush()
+                    os.fsync(fh.fileno())
+            state = self._lock_state()
+            state.id_cache_mtime_ns = self._mtime_ns()
+            if progress:
+                progress("ledger.append_many", {"written": written, "ids": len(ids)})
 
     def replace_snapshot(self, evidence: list[Evidence], findings: list[Finding]) -> None:
         """用本轮审计结果整体替换账本，去掉因文件变更累积的 stale 噪音。"""
@@ -131,14 +242,34 @@ class Ledger:
                 except OSError:
                     pass
                 raise
+            # rebuild cache from snapshot
+            state = self._lock_state()
+            state.id_cache = {
+                *(e.evidence_id for e in evidence),
+                *(f.finding_id for f in findings),
+            }
+            state.id_cache_mtime_ns = self._mtime_ns()
 
-    def _records(self) -> Iterator[dict]:
+    def _iter_raw_lines(self) -> Iterator[tuple[int, str]]:
         if not self.path.exists():
             return
-        for line in self.path.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if line:
-                yield json.loads(line)
+        with self.path.open("r", encoding="utf-8") as fh:
+            for line_no, raw in enumerate(fh, start=1):
+                yield line_no, raw.rstrip("\n")
+
+    def _records(self) -> Iterator[dict]:
+        for line_no, line in self._iter_raw_lines():
+            text = line.strip()
+            if not text:
+                continue
+            try:
+                yield json.loads(text)
+            except json.JSONDecodeError as exc:
+                raise LedgerError(
+                    f"ledger 损坏：无法解析 JSON（{exc.msg}）",
+                    path=self.path,
+                    line=line_no,
+                ) from exc
 
     def load_evidence(self, current_only: bool = True) -> list[Evidence]:
         out = []
@@ -158,18 +289,71 @@ class Ledger:
             if "finding_id" in rec
         ]
 
-    def verify(self) -> bool:
-        """内容寻址校验：任何一行的 id 与内容不符（被篡改/损坏）即返回 False。"""
-        try:
-            for rec in self._records():
+    def diagnose(self) -> dict:
+        """只读诊断：行数、损坏行、重复 id。不修复。"""
+        issues: list[dict] = []
+        seen: dict[str, int] = {}
+        lines = 0
+        ok = 0
+        for line_no, line in self._iter_raw_lines():
+            lines += 1
+            text = line.strip()
+            if not text:
+                continue
+            try:
+                rec = json.loads(text)
+            except json.JSONDecodeError as exc:
+                issues.append({
+                    "line": line_no,
+                    "kind": "json_error",
+                    "detail": exc.msg,
+                })
+                continue
+            rid = rec.get("evidence_id") or rec.get("finding_id")
+            if not rid:
+                issues.append({"line": line_no, "kind": "missing_id", "detail": "no evidence_id/finding_id"})
+                continue
+            if rid in seen:
+                issues.append({
+                    "line": line_no,
+                    "kind": "duplicate_id",
+                    "detail": f"{rid} also at line {seen[rid]}",
+                })
+            else:
+                seen[rid] = line_no
+            try:
                 if "evidence_id" in rec:
                     if Evidence.model_validate(rec).compute_id() != rec["evidence_id"]:
-                        return False
+                        issues.append({"line": line_no, "kind": "id_mismatch", "detail": rid})
+                    else:
+                        ok += 1
                 elif "finding_id" in rec:
                     if Finding.model_validate(rec).compute_id() != rec["finding_id"]:
-                        return False
+                        issues.append({"line": line_no, "kind": "id_mismatch", "detail": rid})
+                    else:
+                        ok += 1
                 else:
-                    return False
+                    issues.append({"line": line_no, "kind": "unknown_record", "detail": ""})
+            except Exception as exc:
+                issues.append({"line": line_no, "kind": "validate_error", "detail": str(exc)[:120]})
+        return {
+            "path": str(self.path),
+            "lines": lines,
+            "valid_records": ok,
+            "unique_ids": len(seen),
+            "issues": issues,
+            "ok": not issues,
+            "repair_hint": (
+                "sopctl ledger diagnose . 查看损坏行；"
+                "sopctl audit --compact . 用本轮快照显式替换（会丢损坏历史行）"
+                if issues else ""
+            ),
+        }
+
+    def verify(self) -> bool:
+        """内容寻址校验：任何一行损坏/不符即 False（fail-closed）。"""
+        try:
+            report = self.diagnose()
+            return bool(report["ok"])
         except Exception:
             return False
-        return True

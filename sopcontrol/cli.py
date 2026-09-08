@@ -521,6 +521,37 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--jobsflow", help="外部真实代码库数据点（只读 audit，不写对方任何文件）")
     p.set_defaults(func=cmd_metrics)
 
+    p = sub.add_parser("ledger", help="账本诊断（只读）：损坏行/重复 id，不静默跳过")
+    ledger_sub = p.add_subparsers(dest="sub")
+    p = ledger_sub.add_parser("diagnose", help="诊断 ledger.jsonl")
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_ledger, sub="diagnose")
+
+    ticket = sub.add_parser(
+        "ticket",
+        help="一次性 capability ticket（绑定 project/worktree/action/fingerprint；不可伪造）",
+    )
+    ticket_sub = ticket.add_subparsers(dest="sub")
+    p = ticket_sub.add_parser("issue", help="签发票据（secret 仅打印一次）")
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--action", required=True)
+    p.add_argument("--input-fingerprint", required=True)
+    p.add_argument("--side-effect", action="append", default=[])
+    p.add_argument("--task-id", default="")
+    p.add_argument("--run-id", default="")
+    p.add_argument("--ttl", type=int, default=900)
+    p.set_defaults(func=cmd_ticket, sub="issue")
+    p = ticket_sub.add_parser("redeem", help="核销票据")
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--ticket-id", required=True)
+    p.add_argument("--secret", required=True)
+    p.add_argument("--action", required=True)
+    p.add_argument("--input-fingerprint", required=True)
+    p.add_argument("--effect", default="")
+    p.add_argument("--task-id", default="")
+    p.set_defaults(func=cmd_ticket, sub="redeem")
+
     event = sub.add_parser(
         "event",
         help="通用控制事件/回执（worktree-local；业务项目适配用，不复制业务状态机）",

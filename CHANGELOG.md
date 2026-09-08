@@ -5,6 +5,7 @@
 ### Added
 
 - Universal control plane: `ProjectScope` + discovery/enforcement split; worktree-local evidence cache & events; hook CLI resolver; `sopctl audit --enforce` / `--no-persist`; `sopctl event` (see `docs/verification/UNIVERSAL_PLANE_20260908.md`)
+- P0/P1 hardening: ledger id-cache + `append_many` (kill O(n²) persist); `sopctl ledger diagnose`; gate stage progress; one-shot `sopctl ticket issue|redeem` (see `docs/verification/P0P1_HARDENING_20260908.md`)
 
 ## 0.2.0 — 2026-09-06
 

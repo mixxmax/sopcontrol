@@ -112,14 +112,9 @@ def run_discovery(
         coverage.update(cache.stats())
 
     if persist:
-        ledger = Ledger(root / ".sopcontrol" / "evidence" / "ledger.jsonl")
-        if compact:
-            ledger.replace_snapshot(evidence, findings)
-        else:
-            for ev in evidence:
-                ledger.append_evidence(ev)
-            for f in findings:
-                ledger.append_finding(f)
+        _persist_ledger(
+            root, evidence, findings, compact=compact, label="discovery",
+        )
         try:
             from .growth import ambient_grow
 
@@ -216,14 +211,9 @@ def run_enforcement(
             ]
 
     if persist:
-        ledger = Ledger(root / ".sopcontrol" / "evidence" / "ledger.jsonl")
-        if compact:
-            ledger.replace_snapshot(evidence, findings)
-        else:
-            for ev in evidence:
-                ledger.append_evidence(ev)
-            for f in findings:
-                ledger.append_finding(f)
+        _persist_ledger(
+            root, evidence, findings, compact=compact, label="enforcement",
+        )
         try:
             from .growth import ambient_grow
 
@@ -250,6 +240,28 @@ def run_enforcement(
         mode="enforcement",
         coverage=coverage,
     )
+
+
+def _persist_ledger(
+    root: Path,
+    evidence: list[Evidence],
+    findings: list[Finding],
+    *,
+    compact: bool,
+    label: str,
+) -> None:
+    import sys
+
+    def progress(stage: str, detail: dict) -> None:
+        print(f"ledger[{label}]: {stage} {detail}", file=sys.stderr, flush=True)
+
+    ledger = Ledger(root / ".sopcontrol" / "evidence" / "ledger.jsonl")
+    if compact:
+        progress("replace_snapshot", {"evidence": len(evidence), "findings": len(findings)})
+        ledger.replace_snapshot(evidence, findings)
+    else:
+        progress("append_many_start", {"evidence": len(evidence), "findings": len(findings)})
+        ledger.append_many(evidence, findings, progress=progress)
 
 
 def load_controller_paths(root: Path) -> list[str]:

@@ -1,9 +1,11 @@
 """宪法测试：账本追加式、内容寻址幂等、可校验篡改、过期即失效。"""
 import json
+from datetime import datetime, timedelta, timezone
+
+import pytest
 
 from sopcontrol.ledger import Ledger
 from sopcontrol.model import Evidence, Finding
-from datetime import datetime, timedelta, timezone
 
 
 def make_evidence(subject="src/a.py", **overrides) -> Evidence:
@@ -195,3 +197,37 @@ def test_corrupt_line_fails_verify_closed(tmp_path):
     with ledger.path.open("a", encoding="utf-8") as fh:
         fh.write("{not-json\n")
     assert ledger.verify() is False
+    report = ledger.diagnose()
+    assert report["ok"] is False
+    assert any(i["kind"] == "json_error" for i in report["issues"])
+
+
+def test_append_many_is_linear_not_quadratic(tmp_path):
+    """Batch append must not re-read the whole file per record."""
+    import time
+
+    ledger = Ledger(tmp_path / "ledger.jsonl")
+    # seed a moderately large ledger
+    seed = [make_evidence(subject=f"src/seed{i}.py") for i in range(400)]
+    ledger.append_many(seed, [])
+    batch = [make_evidence(subject=f"src/batch{i}.py") for i in range(400)]
+    t0 = time.perf_counter()
+    ledger.append_many(batch, [])
+    elapsed = time.perf_counter() - t0
+    assert ledger.verify() is True
+    lines = [ln for ln in ledger.path.read_text().splitlines() if ln.strip()]
+    assert len(lines) == 800
+    # Generous bound: quadratic on 800 would be far slower on CI; keep < 2s
+    assert elapsed < 2.0, f"append_many too slow: {elapsed:.3f}s"
+
+
+def test_append_after_corruption_reports_line(tmp_path):
+    from sopcontrol.ledger import LedgerError
+
+    ledger = Ledger(tmp_path / "ledger.jsonl")
+    ledger.append_evidence(make_evidence(subject="src/ok.py"))
+    with ledger.path.open("a", encoding="utf-8") as fh:
+        fh.write("NOT_JSON\n")
+    with pytest.raises(LedgerError) as exc:
+        ledger.append_evidence(make_evidence(subject="src/new.py"))
+    assert exc.value.line == 2

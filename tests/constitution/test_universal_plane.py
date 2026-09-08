@@ -240,3 +240,77 @@ def test_two_scopes_isolate_event_logs(tmp_path):
     actions_b = {e.action for e in load_events(b)}
     assert "in-a" in actions_a and "in-a" not in actions_b
     assert "in-b" in actions_b
+
+
+def test_capability_ticket_expire_reuse_and_mismatch(tmp_path):
+    from datetime import timedelta
+
+    from sopcontrol.model import utcnow
+    from sopcontrol.tickets import TicketError, issue_ticket, redeem_ticket
+
+    work = tmp_path / "w"
+    work.mkdir()
+    assert main(["init", str(work)]) == 0
+    ticket = issue_ticket(
+        work,
+        action="push",
+        input_fingerprint="fp1",
+        allowed_side_effects=["write_tracker"],
+        ttl_seconds=60,
+    )
+    redeem_ticket(
+        work,
+        ticket_id=ticket.ticket_id,
+        secret=ticket.secret,
+        action="push",
+        input_fingerprint="fp1",
+        side_effect="write_tracker",
+    )
+    with pytest.raises(TicketError, match="already consumed"):
+        redeem_ticket(
+            work,
+            ticket_id=ticket.ticket_id,
+            secret=ticket.secret,
+            action="push",
+            input_fingerprint="fp1",
+            side_effect="write_tracker",
+        )
+    ticket2 = issue_ticket(
+        work,
+        action="push",
+        input_fingerprint="fp2",
+        allowed_side_effects=["write_tracker"],
+        ttl_seconds=1,
+    )
+    with pytest.raises(TicketError, match="expired"):
+        redeem_ticket(
+            work,
+            ticket_id=ticket2.ticket_id,
+            secret=ticket2.secret,
+            action="push",
+            input_fingerprint="fp2",
+            side_effect="write_tracker",
+            now=utcnow() + timedelta(seconds=5),
+        )
+    ticket3 = issue_ticket(
+        work,
+        action="push",
+        input_fingerprint="fp3",
+        allowed_side_effects=["write_tracker"],
+    )
+    with pytest.raises(TicketError, match="action mismatch"):
+        redeem_ticket(
+            work,
+            ticket_id=ticket3.ticket_id,
+            secret=ticket3.secret,
+            action="other",
+            input_fingerprint="fp3",
+        )
+    with pytest.raises(TicketError, match="secret mismatch"):
+        redeem_ticket(
+            work,
+            ticket_id=ticket3.ticket_id,
+            secret="wrong-secret-value-xxxxxxxxxxxxxxxx",
+            action="push",
+            input_fingerprint="fp3",
+        )

@@ -515,6 +515,75 @@ def cmd_gate(args) -> int:
     return run_gate(_project(args.path))
 
 
+def cmd_ledger(args) -> int:
+    """Ledger diagnose (read-only) — never silently skip corrupt lines."""
+    from .ledger import Ledger
+
+    root = _project(args.path)
+    ledger = Ledger(root / ".sopcontrol" / "evidence" / "ledger.jsonl")
+    report = ledger.diagnose()
+    if getattr(args, "json", False):
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+    else:
+        print(f"ledger: {report['path']}")
+        print(
+            f"  lines={report['lines']} valid={report['valid_records']} "
+            f"unique_ids={report['unique_ids']} ok={report['ok']}"
+        )
+        for issue in report["issues"][:20]:
+            print(f"  ! line {issue['line']}: {issue['kind']} {issue.get('detail')}")
+        if report.get("repair_hint"):
+            print(f"  hint: {report['repair_hint']}")
+    return 0 if report["ok"] else 1
+
+
+def cmd_ticket(args) -> int:
+    """Capability tickets: issue / redeem (one-shot, worktree-local)."""
+    from .tickets import (
+        TicketError,
+        issue_ticket,
+        redeem_ticket,
+        ticket_public_view,
+    )
+
+    root = _project(args.path)
+    sub = getattr(args, "sub", None)
+    if sub == "issue":
+        ticket = issue_ticket(
+            root,
+            action=args.action,
+            input_fingerprint=args.input_fingerprint,
+            allowed_side_effects=list(args.side_effect or []),
+            task_id=getattr(args, "task_id", "") or "",
+            run_id=getattr(args, "run_id", "") or "",
+            ttl_seconds=int(getattr(args, "ttl", 900) or 900),
+        )
+        # Print secret once for the adapter; public view without secret in json mode optional
+        print(json.dumps({
+            **ticket_public_view(ticket),
+            "secret": ticket.secret,
+        }, ensure_ascii=False, indent=2))
+        return 0
+    if sub == "redeem":
+        try:
+            ticket = redeem_ticket(
+                root,
+                ticket_id=args.ticket_id,
+                secret=args.secret,
+                action=args.action,
+                input_fingerprint=args.input_fingerprint,
+                side_effect=getattr(args, "effect", "") or "",
+                task_id=getattr(args, "task_id", "") or "",
+            )
+        except TicketError as exc:
+            print(f"ticket blocked: {exc}", file=sys.stderr)
+            return 1
+        print(json.dumps(ticket_public_view(ticket), ensure_ascii=False, indent=2))
+        return 0
+    print("用法: sopctl ticket issue|redeem …", file=sys.stderr)
+    return 2
+
+
 def cmd_event(args) -> int:
     """Portable control events: append / validate / list (worktree-local)."""
     from .events import (
