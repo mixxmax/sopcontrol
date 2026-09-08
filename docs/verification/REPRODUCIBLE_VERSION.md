@@ -6,7 +6,7 @@ Do not put developer-personal absolute paths in install recipes or CI.
 
 | Field | Value |
 | --- | --- |
-| Git commit | `a8f176d3c2be1430f0c782b57e5854762afedc11` |
+| Git commit | `5bf6a6ec94cc167324c68cf01c43d47f59a7ce8d` |
 | Suggested tag | `v0.2.0` (matches package version) |
 | Package version | `0.2.0` (`sopcontrol.__version__` / `pyproject.toml`) |
 | Public API surface | CLI `sopctl` + importable `sopcontrol.*` (0.2 series) |

@@ -51,6 +51,6 @@ test under the outer suite (`test_growth_refresh_status_inventory_explain`).
 
 ## Pin
 
-- Commit: `a8f176d3c2be1430f0c782b57e5854762afedc11`
+- Commit: `5bf6a6ec94cc167324c68cf01c43d47f59a7ce8d`
 - Package / suggested tag: `0.2.0` / `v0.2.0`
 - Not pushed (local branch only).
