@@ -122,6 +122,13 @@ def _ensure(records: dict[str, SurfaceRecord], surface: str, worktree_id: str) -
 
 def _from_adapters(root: Path, records: dict[str, SurfaceRecord], worktree_id: str) -> None:
     status = attachment_status(root)
+    # Phase D runtime: process events available; file/network enforce still gaps
+    rt = _ensure(records, "runtime_supervised", worktree_id)
+    _upgrade(
+        rt, "observable", "adapter",
+        adapter="supervised",
+        gap_reason="file_and_network_enforce_unsupported_not_unbypassable",
+    )
     # git hooks
     rec = _ensure(records, "git_hooks", worktree_id)
     if status.git_hook == "unavailable":

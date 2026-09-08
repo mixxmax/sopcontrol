@@ -35,6 +35,7 @@ CORE_SURFACES = (
     "harness_claude",
     "harness_opencode",
     "harness_codex",
+    "runtime_supervised",
 )
 
 

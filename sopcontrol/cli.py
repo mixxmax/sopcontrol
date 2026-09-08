@@ -18,6 +18,7 @@ from .cli_rules import *
 from .cli_candidate import *
 from .cli_attach import *
 from .cli_coverage import *
+from .cli_enter import *
 from .registry import RegistryError
 from .repair import RepairError
 
@@ -69,6 +70,33 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_coverage)
+
+    p = sub.add_parser(
+        "enter",
+        help="受控运行环境（Phase D）：supervised/cooperative 会话；不假装沙箱",
+    )
+    p.add_argument(
+        "--mode",
+        choices=["supervised", "cooperative", "testing"],
+        default="supervised",
+        help="supervised=进程树事件；cooperative=仅身份环境；testing=单测假会话",
+    )
+    p.add_argument("--timeout", type=int, default=900, help="会话超时秒数")
+    p.add_argument(
+        "--request-file-enforce",
+        action="store_true",
+        help="请求文件强制（当前 unsupported，会记入 gaps）",
+    )
+    p.add_argument(
+        "--request-network-enforce",
+        action="store_true",
+        help="请求网络强制（当前 unsupported，会记入 gaps）",
+    )
+    p.add_argument("--json", action="store_true")
+    # path before REMAINDER is unreliable with optional positionals; use --path.
+    p.add_argument("--path", dest="path", default=".", help="项目根（默认 .）")
+    p.add_argument("rest", nargs=argparse.REMAINDER, help="-- 之后为要运行的命令")
+    p.set_defaults(func=cmd_enter)
 
     p = sub.add_parser("graph", help="Python 文件级 import 邻接图（项目认知薄卡）")
     p.add_argument("path", nargs="?", default=".")
