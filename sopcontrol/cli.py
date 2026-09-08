@@ -17,6 +17,7 @@ from .cli_harness import *
 from .cli_rules import *
 from .cli_candidate import *
 from .cli_attach import *
+from .cli_coverage import *
 from .registry import RegistryError
 from .repair import RepairError
 
@@ -56,6 +57,18 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--plan", action="store_true", help="只预览可移除的 sopctl 安装项")
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_detach)
+
+    p = sub.add_parser(
+        "coverage",
+        help="控制覆盖账本（Phase C）：scan vs connection vs control；--probe 穿透证明",
+    )
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument(
+        "--probe",
+        help="对指定 surface 跑无害穿透探针（如 filesystem_write / shell / harness_opencode）",
+    )
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_coverage)
 
     p = sub.add_parser("graph", help="Python 文件级 import 邻接图（项目认知薄卡）")
     p.add_argument("path", nargs="?", default=".")
