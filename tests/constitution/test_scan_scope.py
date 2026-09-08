@@ -112,6 +112,9 @@ def _git_repo(tmp_path):
             check=True, capture_output=True,
         )
     git("init", "-q")
+    # 身份写进仓库本地 config：对环境变量与全局 gitconfig 污染免疫
+    git("config", "user.email", "t@t")
+    git("config", "user.name", "t")
     git("commit", "-q", "--allow-empty", "-m", "base")
     return root, git
 
@@ -125,7 +128,7 @@ def test_git_mode_enumerates_tracked_untracked_and_respects_gitignore(tmp_path):
     _make(root, "untracked.md", "未跟踪但未忽略")
     (root / ".gitignore").write_text("ignored/\n", encoding="utf-8")
     git("add", "-A")
-    git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "c1")
+    git("commit", "-qm", "c1")
 
     found = _md_paths(root)
 
@@ -141,7 +144,7 @@ def test_git_mode_prunes_dot_dirs_even_when_tracked(tmp_path):
     _make(root, ".agents/skills/skill.md", "工具状态")
     (root / ".gitignore").write_text("", encoding="utf-8")
     git("add", "-A")
-    git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "c1")
+    git("commit", "-qm", "c1")
 
     found = _md_paths(root)
 
@@ -154,7 +157,7 @@ def test_git_mode_over_limit_still_fails_loud(tmp_path):
     for i in range(6):
         _make(root, f"docs/d{i}/a.md")
     git("add", "-A")
-    git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "c1")
+    git("commit", "-qm", "c1")
 
     ctx = ProjectContext(root)
     with pytest.raises(FileScanLimitExceeded):
@@ -170,7 +173,7 @@ def test_git_mode_manifest_excludes_still_apply(tmp_path):
         "scan_excludes:\n- JobSearch_2026\n", encoding="utf-8"
     )
     git("add", "-A")
-    git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "c1")
+    git("commit", "-qm", "c1")
 
     found = _md_paths(root)
 
@@ -187,7 +190,7 @@ def test_scan_coverage_classifies_and_reports_complete(tmp_path):
         "scan_excludes:\n- JobSearch_2026\n", encoding="utf-8"
     )
     git("add", "-A")
-    git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "c1")
+    git("commit", "-qm", "c1")
 
     ctx = ProjectContext(root)
     report = ctx.scan_coverage({".md"})
