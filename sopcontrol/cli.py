@@ -16,6 +16,7 @@ from .cli_identity import *
 from .cli_harness import *
 from .cli_rules import *
 from .cli_candidate import *
+from .cli_attach import *
 from .registry import RegistryError
 from .repair import RepairError
 
@@ -29,6 +30,32 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("init", help="在目标项目初始化 .sopcontrol/")
     p.add_argument("path", nargs="?", default=".", help="目标项目路径，默认当前目录")
     p.set_defaults(func=cmd_init)
+
+    p = sub.add_parser(
+        "attach",
+        help="无阻塞接入编排（Phase A）：plan/apply 现有 init·identity·project·hook，不自动升规则",
+    )
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--plan", action="store_true", help="只读预览，不修改项目")
+    p.add_argument(
+        "--mode",
+        choices=["auto", "observe"],
+        default="auto",
+        help="auto=安全项应用；observe=同样安装通路但不暗示新强制规则",
+    )
+    p.add_argument("--json", action="store_true", help="结构化 JSON 输出")
+    p.set_defaults(func=cmd_attach)
+
+    p = sub.add_parser("attach-status", help="查看接入状态（身份/钩子/harness/gap）")
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_attach_status)
+
+    p = sub.add_parser("detach", help="解除接入预览（Phase A 仅 --plan）")
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--plan", action="store_true", help="只预览可移除的 sopctl 安装项")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_detach)
 
     p = sub.add_parser("graph", help="Python 文件级 import 邻接图（项目认知薄卡）")
     p.add_argument("path", nargs="?", default=".")
