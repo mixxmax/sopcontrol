@@ -10,6 +10,7 @@
 """
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -82,23 +83,75 @@ def run_corpus_cases(cases: list[dict], fixtures_root: Path, sensors: list, dete
     return results
 
 
-def mutation_enforcement(test_path: Path) -> dict:
-    """真实执行变异执法测试，记录快照时刻的通过状态。失败不掩盖——原样上报。"""
-    proc = subprocess.run(
-        [sys.executable, "-m", "pytest", str(test_path), "-q", "--no-header"],
-        capture_output=True, text=True, timeout=300,
+def mutation_enforcement(test_path: Path, *, timeout: int = 300) -> dict:
+    """真实执行变异执法测试，记录快照时刻的通过状态。失败不掩盖——原样上报。
+
+    嵌套在本仓 pytest 内时（SOPCONTROL_TEST_RUN_ACTIVE）不得再 spawn 子 pytest：
+    会静默占用数分钟且与外层套件争抢，表现为全量测试「卡住」。此时返回结构化
+    deferred，而不是无限等待或假绿。
+    """
+    declared = len(
+        yaml.safe_load((CORPUS_DIR / "mutations.yaml").read_text(encoding="utf-8"))["mutations"]
     )
-    return {
-        "declared_mutations": len(
-            yaml.safe_load((CORPUS_DIR / "mutations.yaml").read_text(encoding="utf-8"))["mutations"]
-        ),
-        "enforcement_command": f"{Path(sys.executable).name} -m pytest tests/corpus/test_mutations.py -q",
-        "exit_code": proc.returncode,
-        "passed": proc.returncode == 0,
-        # 执法语义：任一变异退回后负向对照不再报警，套件即红——杀伤率由测试套件
-        # 硬保证为「全灭或套件不绿」，不存在中间态。这里不重复报一个百分比。
-        "kill_semantics": "全灭或套件不绿（tests/corpus/test_mutations.py 硬保证）",
-    }
+    cmd = f"{Path(sys.executable).name} -m pytest tests/corpus/test_mutations.py -q"
+    if os.environ.get("SOPCONTROL_TEST_RUN_ACTIVE"):
+        print(
+            "metrics: mutation_enforcement deferred（SOPCONTROL_TEST_RUN_ACTIVE；"
+            "避免嵌套 pytest 静默挂起）",
+            file=sys.stderr,
+            flush=True,
+        )
+        return {
+            "declared_mutations": declared,
+            "enforcement_command": cmd,
+            "exit_code": None,
+            "passed": None,
+            "deferred": True,
+            "note": "deferred under SOPCONTROL_TEST_RUN_ACTIVE",
+            "kill_semantics": "全灭或套件不绿（tests/corpus/test_mutations.py 硬保证）",
+        }
+
+    print(
+        f"metrics: mutation_enforcement 开始 timeout={timeout}s → {test_path}",
+        file=sys.stderr,
+        flush=True,
+    )
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-m", "pytest", str(test_path), "-q", "--no-header"],
+            capture_output=True, text=True, timeout=timeout,
+        )
+        print(
+            f"metrics: mutation_enforcement 结束 exit={proc.returncode}",
+            file=sys.stderr,
+            flush=True,
+        )
+        return {
+            "declared_mutations": declared,
+            "enforcement_command": cmd,
+            "exit_code": proc.returncode,
+            "passed": proc.returncode == 0,
+            # 执法语义：任一变异退回后负向对照不再报警，套件即红——杀伤率由测试套件
+            # 硬保证为「全灭或套件不绿」，不存在中间态。这里不重复报一个百分比。
+            "kill_semantics": "全灭或套件不绿（tests/corpus/test_mutations.py 硬保证）",
+        }
+    except subprocess.TimeoutExpired as exc:
+        print(
+            f"metrics: mutation_enforcement TIMEOUT after {timeout}s",
+            file=sys.stderr,
+            flush=True,
+        )
+        return {
+            "declared_mutations": declared,
+            "enforcement_command": cmd,
+            "exit_code": -1,
+            "passed": False,
+            "timed_out": True,
+            "timeout_seconds": timeout,
+            "stage": "mutation_enforcement",
+            "detail": f"pytest exceeded {timeout}s; stdout_tail={(exc.stdout or b'')[-200:]!r}",
+            "kill_semantics": "全灭或套件不绿（tests/corpus/test_mutations.py 硬保证）",
+        }
 
 
 def external_datapoint(root: Path, sensors: list, detectors: list) -> dict:

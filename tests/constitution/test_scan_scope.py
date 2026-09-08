@@ -109,7 +109,7 @@ def _git_repo(tmp_path):
     def git(*args):
         subprocess.run(
             ["git", "-C", str(root), *args],
-            check=True, capture_output=True,
+            check=True, capture_output=True, timeout=60,
         )
     git("init", "-q")
     # 身份写进仓库本地 config：对环境变量与全局 gitconfig 污染免疫

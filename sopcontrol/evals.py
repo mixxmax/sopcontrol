@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -257,14 +258,30 @@ def collect_live_probe_responses(
     if harness != "opencode":
         raise ValueError(f"live 探针暂只支持 opencode，收到 {harness!r}")
 
+    # Unit-test sessions must inject a runner; otherwise a machine with opencode
+    # on PATH silently burns minutes per probe and the outer suite looks hung.
+    if runner is None and os.environ.get("SOPCONTROL_TEST_RUN_ACTIVE"):
+        raise RuntimeError(
+            "live capability probe blocked under SOPCONTROL_TEST_RUN_ACTIVE "
+            "(inject live_runner=… or pass --no-live). "
+            "Refusing to spawn opencode from inside pytest."
+        )
+
     responses: dict[str, str] = {}
+    n = len(PROBE_IDS)
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp) / "probe"
         root.mkdir()
         (root / "src").mkdir()
         (root / "src" / "allowed.py").write_text("# capability probe sandbox\n", encoding="utf-8")
-        for pid in PROBE_IDS:
+        for i, pid in enumerate(PROBE_IDS, start=1):
             prompt = PROBES[pid]["prompt"]
+            print(
+                f"capability-probe: [{i}/{n}] {harness}:{pid} "
+                f"timeout={timeout_per_probe}s",
+                file=sys.stderr,
+                flush=True,
+            )
             if runner is not None:
                 responses[pid] = runner(pid, prompt, root)
                 continue
@@ -272,6 +289,18 @@ def collect_live_probe_responses(
             text = _clean_live_output(out)
             if code == -1:
                 text = (text + "\n[TIMEOUT]").strip()
+                print(
+                    f"capability-probe: [{i}/{n}] {pid} TIMEOUT "
+                    f"(structured fail, not hang)",
+                    file=sys.stderr,
+                    flush=True,
+                )
+            else:
+                print(
+                    f"capability-probe: [{i}/{n}] {pid} exit={code}",
+                    file=sys.stderr,
+                    flush=True,
+                )
             responses[pid] = text[-4000:] if len(text) > 4000 else text
     return responses
 

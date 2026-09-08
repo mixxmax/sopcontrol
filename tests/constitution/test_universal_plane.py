@@ -22,9 +22,16 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def _git_init(path: Path) -> None:
-    subprocess.run(["git", "init"], cwd=path, check=True, capture_output=True)
-    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=path, check=True)
-    subprocess.run(["git", "config", "user.name", "t"], cwd=path, check=True)
+    subprocess.run(
+        ["git", "init"], cwd=path, check=True, capture_output=True, timeout=30,
+    )
+    subprocess.run(
+        ["git", "config", "user.email", "t@example.com"],
+        cwd=path, check=True, timeout=30,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "t"], cwd=path, check=True, timeout=30,
+    )
 
 
 def test_discovery_defers_over_1000_md_without_raising(tmp_path):
@@ -35,8 +42,13 @@ def test_discovery_defers_over_1000_md_without_raising(tmp_path):
     docs.mkdir()
     for i in range(1100):
         (docs / f"n{i:04d}.md").write_text(f"must do {i}\n", encoding="utf-8")
-    subprocess.run(["git", "add", "."], cwd=work, check=True, capture_output=True)
-    subprocess.run(["git", "commit", "-m", "init"], cwd=work, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "add", "."], cwd=work, check=True, capture_output=True, timeout=60,
+    )
+    subprocess.run(
+        ["git", "commit", "-m", "init"],
+        cwd=work, check=True, capture_output=True, timeout=60,
+    )
 
     scope = ProjectScope(work, mode="discovery")
     paths = list(scope.iter_files({".md"}, limit=500, on_budget="defer"))
@@ -59,8 +71,13 @@ def test_gitignore_files_not_eligible(tmp_path):
     secret = work / "secret"
     secret.mkdir()
     (secret / "x.md").write_text("must secret\n", encoding="utf-8")
-    subprocess.run(["git", "add", "."], cwd=work, check=True, capture_output=True)
-    subprocess.run(["git", "commit", "-m", "i"], cwd=work, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "add", "."], cwd=work, check=True, capture_output=True, timeout=60,
+    )
+    subprocess.run(
+        ["git", "commit", "-m", "i"],
+        cwd=work, check=True, capture_output=True, timeout=60,
+    )
 
     scope = ProjectScope(work)
     found = [p.name for p in scope.iter_files({".md"})]
@@ -314,3 +331,62 @@ def test_capability_ticket_expire_reuse_and_mismatch(tmp_path):
             action="push",
             input_fingerprint="fp3",
         )
+
+
+def test_multi_worktree_shares_rules_isolates_local_evidence(tmp_path):
+    """Linked git worktrees share project rules; local events stay per-worktree."""
+    from sopcontrol.events import ControlEvent, append_event, load_events
+    from sopcontrol.identity import compute_project_id, ensure_identity
+
+    main_repo = tmp_path / "main"
+    main_repo.mkdir()
+    _git_init(main_repo)
+    (main_repo / "README.md").write_text("x\n", encoding="utf-8")
+    subprocess.run(
+        ["git", "add", "."], cwd=main_repo, check=True, capture_output=True, timeout=30,
+    )
+    subprocess.run(
+        ["git", "commit", "-m", "i"],
+        cwd=main_repo, check=True, capture_output=True, timeout=30,
+    )
+    assert main(["init", str(main_repo)]) == 0
+    ensure_identity(main_repo)
+
+    linked = tmp_path / "linked"
+    subprocess.run(
+        ["git", "worktree", "add", str(linked), "HEAD"],
+        cwd=main_repo, check=True, capture_output=True, timeout=60,
+    )
+    assert main(["init", str(linked)]) == 0
+
+    assert compute_project_id(main_repo) == compute_project_id(linked)
+    # Shared controller rules live under the linked worktree checkout of .sopcontrol
+    assert (linked / ".sopcontrol").exists() or (main_repo / ".sopcontrol").exists()
+
+    append_event(
+        main_repo,
+        ControlEvent(event_type="action_started", action="from-main", worktree_id="main"),
+    )
+    append_event(
+        linked,
+        ControlEvent(event_type="action_started", action="from-linked", worktree_id="linked"),
+    )
+    main_actions = {e.action for e in load_events(main_repo, worktree_id="main")}
+    linked_actions = {e.action for e in load_events(linked, worktree_id="linked")}
+    assert "from-main" in main_actions
+    assert "from-linked" in linked_actions
+    assert "from-linked" not in main_actions
+    assert "from-main" not in linked_actions
+
+
+def test_resolve_sopctl_when_cli_not_on_path(tmp_path, monkeypatch):
+    """Without PATH/venv, resolver must still return python -m fallback or clear fail."""
+    work = tmp_path / "bare"
+    work.mkdir()
+    monkeypatch.delenv("SOPCTL_BIN", raising=False)
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")  # no sopctl
+    # Hide worktree venv
+    argv, reason = resolve_sopctl(work, env={"PATH": "/nonexistent"})
+    assert argv is not None, reason
+    assert argv[-1] == "sopcontrol.cli" or "sopctl" in argv[0]
+    assert "--no-verify" not in " ".join(argv)

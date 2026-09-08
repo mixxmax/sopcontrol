@@ -67,16 +67,27 @@ def test_capability_events_cli_on_empty_project(tmp_path):
 
 
 def test_capability_compare_offline(tmp_path):
+    """Offline-only: must not spawn live harness (opencode) during unit tests.
+
+    A prior version passed --live opencode. When opencode is on PATH that ran
+    three real probes (up to ~180s each) with captured output, so the full
+    suite appeared hung near ~85% / after ~558 passed with no pytest progress.
+    """
     work = tmp_path / "w"
     work.mkdir()
     assert main(["init", str(work)]) == 0
     rc = main([
         "capability-compare", str(work),
-        "--live", "opencode",
+        "--no-live",
+        "--baselines-all",
         "--baseline", "strong",
     ])
-    # live may fail without binary; accept fail-closed codes
     assert rc in (0, 1, 2)
+    compare = work / ".sopcontrol" / "capability-compare.yaml"
+    assert compare.exists()
+    text = compare.read_text(encoding="utf-8")
+    assert "multi-baseline" in text or "baselines" in text
+    assert "live:opencode" not in text
 
 
 def test_harness_check_payload_allow_and_deny(tmp_path):

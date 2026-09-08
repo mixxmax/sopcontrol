@@ -20,11 +20,11 @@ def test_apply_repair_merges_allowed_paths_only(tmp_path):
     shutil.copytree("corpus/fixtures/shop-checkout", work)
     # need git for worktree
     import subprocess
-    subprocess.run(["git", "init", "-q"], cwd=work, check=True)
-    subprocess.run(["git", "config", "user.email", "t@t"], cwd=work, check=True)
-    subprocess.run(["git", "config", "user.name", "t"], cwd=work, check=True)
-    subprocess.run(["git", "add", "-A"], cwd=work, check=True)
-    subprocess.run(["git", "commit", "-qm", "base"], cwd=work, check=True)
+    subprocess.run(["git", "init", "-q"], cwd=work, check=True, timeout=60)
+    subprocess.run(["git", "config", "user.email", "t@t"], cwd=work, check=True, timeout=60)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=work, check=True, timeout=60)
+    subprocess.run(["git", "add", "-A"], cwd=work, check=True, timeout=60)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=work, check=True, timeout=60)
 
     run_audit(work, SENSORS, DETECTORS, persist=True, compact=True)
     from sopcontrol.ledger import Ledger
@@ -70,11 +70,11 @@ def test_apply_repair_rejects_symlink_escaping_worktree(tmp_path):
 
     work = tmp_path / "work"
     shutil.copytree("corpus/fixtures/shop-checkout", work)
-    subprocess.run(["git", "init", "-q"], cwd=work, check=True)
-    subprocess.run(["git", "config", "user.email", "t@t"], cwd=work, check=True)
-    subprocess.run(["git", "config", "user.name", "t"], cwd=work, check=True)
-    subprocess.run(["git", "add", "-A"], cwd=work, check=True)
-    subprocess.run(["git", "commit", "-qm", "base"], cwd=work, check=True)
+    subprocess.run(["git", "init", "-q"], cwd=work, check=True, timeout=60)
+    subprocess.run(["git", "config", "user.email", "t@t"], cwd=work, check=True, timeout=60)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=work, check=True, timeout=60)
+    subprocess.run(["git", "add", "-A"], cwd=work, check=True, timeout=60)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=work, check=True, timeout=60)
 
     outside = tmp_path / "outside.txt"
     outside.write_text("SECRET\n", encoding="utf-8")
@@ -167,11 +167,11 @@ def _repair_work(tmp_path):
 
     work = tmp_path / "work"
     shutil.copytree("corpus/fixtures/shop-checkout", work)
-    subprocess.run(["git", "init", "-q"], cwd=work, check=True)
-    subprocess.run(["git", "config", "user.email", "t@t"], cwd=work, check=True)
-    subprocess.run(["git", "config", "user.name", "t"], cwd=work, check=True)
-    subprocess.run(["git", "add", "-A"], cwd=work, check=True)
-    subprocess.run(["git", "commit", "-qm", "base"], cwd=work, check=True)
+    subprocess.run(["git", "init", "-q"], cwd=work, check=True, timeout=60)
+    subprocess.run(["git", "config", "user.email", "t@t"], cwd=work, check=True, timeout=60)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=work, check=True, timeout=60)
+    subprocess.run(["git", "add", "-A"], cwd=work, check=True, timeout=60)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=work, check=True, timeout=60)
     run_audit(work, SENSORS, DETECTORS, persist=True, compact=True)
     from sopcontrol.ledger import Ledger
 

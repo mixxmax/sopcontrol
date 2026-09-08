@@ -66,7 +66,13 @@ def test_task_case(case, tmp_path):
             )
 
         elif do == "shell":
-            subprocess.run(step["cmd"], shell=True, cwd=str(work), check=True)
+            subprocess.run(
+                step["cmd"],
+                shell=True,
+                cwd=str(work),
+                check=True,
+                timeout=60,
+            )
 
         else:  # accept / submit / verify / deliver
             if do == "verify":

@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -405,8 +407,6 @@ def cmd_project(args) -> int:
 
 def cmd_wrap(args) -> int:
     """事后门 wrapper：运行 harness 命令，结束后跑终点门；门失败则退出码非零。"""
-    import subprocess
-
     root = _project(args.path)
     rest = list(args.rest or [])
     if rest and rest[0] == "--":
@@ -417,10 +417,29 @@ def cmd_wrap(args) -> int:
     if args.harness != "codex":
         print(f"wrap 暂只支持 codex（{args.harness} 有实时拦截，无需 wrap）", file=sys.stderr)
         return 2
-    proc = subprocess.call(["codex"] + rest, cwd=str(root))
-    print(f"\n[sopctl wrap] codex 退出码 {proc}；运行事后终点门…")
+    wrap_timeout = int(os.environ.get("SOPCTL_WRAP_TIMEOUT", "900"))
+    print(
+        f"[sopctl wrap] 启动 codex timeout={wrap_timeout}s；结束后跑事后门",
+        flush=True,
+    )
+    try:
+        proc = subprocess.run(
+            ["codex"] + rest,
+            cwd=str(root),
+            timeout=wrap_timeout,
+        )
+        code = proc.returncode
+    except subprocess.TimeoutExpired:
+        print(
+            f"[sopctl wrap] TIMEOUT after {wrap_timeout}s "
+            f"(structured fail; stage=wrap.codex)",
+            file=sys.stderr,
+            flush=True,
+        )
+        return 1
+    print(f"\n[sopctl wrap] codex 退出码 {code}；运行事后终点门…", flush=True)
     gate_code = run_gate(root)
     if gate_code != 0:
         print("[sopctl wrap] 事后门未过：变更未获信任，git 推送将被 pre-push 钩子与 CI 阻断", file=sys.stderr)
-    return proc if proc != 0 else gate_code
+    return code if code != 0 else gate_code
 
