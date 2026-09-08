@@ -231,3 +231,27 @@ def test_append_after_corruption_reports_line(tmp_path):
     with pytest.raises(LedgerError) as exc:
         ledger.append_evidence(make_evidence(subject="src/new.py"))
     assert exc.value.line == 2
+
+
+def test_replace_snapshot_dedupes_duplicate_evidence_ids(tmp_path):
+    """Compact must write unique ids so gate.verify can pass after repair.
+
+    Sensors may emit the same content-addressed evidence more than once in a
+    round; without dedupe, audit --compact leaves a ledger that diagnose()
+    still marks as duplicate_id and gate stays blocked.
+    """
+    ledger = Ledger(tmp_path / "ledger.jsonl")
+    one = make_evidence(subject="docs/a.md")
+    twin = make_evidence(subject="docs/a.md")  # same inputs → same evidence_id
+    other = make_evidence(subject="docs/b.md")
+    assert one.evidence_id == twin.evidence_id
+    assert one.evidence_id != other.evidence_id
+
+    ledger.replace_snapshot([one, twin, other, twin], [])
+    lines = [ln for ln in ledger.path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    assert len(lines) == 2
+    assert ledger.verify() is True
+    report = ledger.diagnose()
+    assert report["ok"] is True
+    assert report["unique_ids"] == 2
+    assert report["lines"] == 2

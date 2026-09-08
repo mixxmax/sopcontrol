@@ -213,9 +213,27 @@ class Ledger:
                 progress("ledger.append_many", {"written": written, "ids": len(ids)})
 
     def replace_snapshot(self, evidence: list[Evidence], findings: list[Finding]) -> None:
-        """用本轮审计结果整体替换账本，去掉因文件变更累积的 stale 噪音。"""
-        lines = [e.model_dump_json() for e in evidence]
-        lines.extend(f.model_dump_json() for f in findings)
+        """用本轮审计结果整体替换账本，去掉因文件变更累积的 stale 噪音。
+
+        同轮传感器可能对同一内容寻址 id 产出多条等价证据（例如同一 must 语句被
+        重复观察）。compact 是宣称的修复路径，必须写入唯一 id，否则 gate.verify
+        会对刚 compact 过的账本继续 fail-closed——等于修不好。
+        """
+        seen: set[str] = set()
+        unique_evidence: list[Evidence] = []
+        for ev in evidence:
+            if ev.evidence_id in seen:
+                continue
+            seen.add(ev.evidence_id)
+            unique_evidence.append(ev)
+        unique_findings: list[Finding] = []
+        for finding in findings:
+            if finding.finding_id in seen:
+                continue
+            seen.add(finding.finding_id)
+            unique_findings.append(finding)
+        lines = [e.model_dump_json() for e in unique_evidence]
+        lines.extend(f.model_dump_json() for f in unique_findings)
         payload = ("\n".join(lines) + "\n") if lines else ""
         with self.exclusive():
             parent = self.path.parent
@@ -244,10 +262,7 @@ class Ledger:
                 raise
             # rebuild cache from snapshot
             state = self._lock_state()
-            state.id_cache = {
-                *(e.evidence_id for e in evidence),
-                *(f.finding_id for f in findings),
-            }
+            state.id_cache = set(seen)
             state.id_cache_mtime_ns = self._mtime_ns()
 
     def _iter_raw_lines(self) -> Iterator[tuple[int, str]]:

@@ -265,7 +265,10 @@ def cmd_doctor(args) -> int:
         ok = ledger.verify()
         print(f"账本完整性: {'OK' if ok else '被篡改或损坏'}")
         if not ok:
-            problems.append("账本校验失败：存在 id 与内容不符的记录")
+            report = ledger.diagnose()
+            kinds = sorted({str(i.get("kind") or "unknown") for i in report.get("issues") or []})
+            detail = ", ".join(kinds) if kinds else "unknown"
+            problems.append(f"账本校验失败：{detail}（sopctl ledger diagnose）")
         from .stale import partition_evidence
 
         _, stale = partition_evidence(root, ledger.load_evidence(current_only=False))
