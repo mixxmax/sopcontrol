@@ -40,20 +40,23 @@ def run_audit(
     extra_evidence: list[Evidence] | None = None,
     *,
     at: datetime | None = None,
-    mode: str = "enforcement",
+    mode: str = "discovery",
 ) -> AuditReport:
     """Unified audit entry.
+
+    Default mode=discovery (matches `sopctl audit`). Gate must pass
+    mode=\"enforcement\" explicitly.
 
     mode=discovery: sensors may partial/defer; grows candidates; must not auto-promote.
     mode=enforcement: full evidence for effective rules; fail-closed on necessary gaps.
     """
-    if mode == "discovery":
-        return run_discovery(
+    if mode == "enforcement":
+        return run_enforcement(
             root, sensors, detectors,
             persist=persist, compact=compact,
             extra_evidence=extra_evidence, at=at,
         )
-    return run_enforcement(
+    return run_discovery(
         root, sensors, detectors,
         persist=persist, compact=compact,
         extra_evidence=extra_evidence, at=at,
@@ -181,12 +184,15 @@ def run_enforcement(
 
     verdicts = evaluate_all(current_rules, evidence, findings, at=audit_at)
 
-    # Fail-closed enrichment: accepted rule whose declared source is unreadable
+    # Fail-closed: document/file sources that should resolve to an in-repo file.
+    # manual_seed / conversation refs are not filesystem sources — skip.
     from .attest import source_file
 
+    _FILEISH = {"document", "file"}
     for rule in current_rules:
         ref = (rule.source.ref or "").strip()
-        if not ref:
+        source_type = str(getattr(rule.source, "type", "") or "")
+        if not ref or source_type not in _FILEISH:
             continue
         if source_file(root, rule) is None:
             findings.append(

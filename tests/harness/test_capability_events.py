@@ -211,12 +211,22 @@ def test_harness_decision_emits_event_without_new_decision_work(tmp_path):
 
 
 def test_gate_result_emits_event(tmp_path, monkeypatch):
+    """Gate stub must match AuditReport contract (verdicts + evidence + mode)."""
+    from datetime import datetime, timezone
+
     from sopcontrol import cli_common
+    from sopcontrol.audit import AuditReport
 
-    class Report:
-        verdicts = []
-
-    monkeypatch.setattr(cli_common, "run_audit", lambda *args, **kwargs: Report())
+    report = AuditReport(
+        rules=[],
+        evidence=[],
+        findings=[],
+        verdicts=[],
+        at=datetime.now(timezone.utc),
+        mode="enforcement",
+        coverage={"coverage_complete": True},
+    )
+    monkeypatch.setattr(cli_common, "run_audit", lambda *args, **kwargs: report)
     monkeypatch.setattr(cli_common.Ledger, "verify", lambda self: True)
     assert cli_common.run_gate(tmp_path) == 0
     events = load_capability_events(tmp_path)
@@ -224,6 +234,16 @@ def test_gate_result_emits_event(tmp_path, monkeypatch):
     assert len(gate) == 1
     assert gate[0].outcome == "pass"
     assert gate[0].detail == {"fails": 0, "gaps": 0, "ledger_tampered": False}
+
+
+def test_gate_report_contract_requires_evidence_attr():
+    """Regression: fake gate reports without evidence must not be considered valid."""
+    from sopcontrol.audit import AuditReport
+
+    assert hasattr(AuditReport, "__dataclass_fields__")
+    assert "evidence" in AuditReport.__dataclass_fields__
+    assert "verdicts" in AuditReport.__dataclass_fields__
+    assert "mode" in AuditReport.__dataclass_fields__
 
 
 def test_gate_audit_exception_emits_event_and_stays_blocking(tmp_path, monkeypatch):
