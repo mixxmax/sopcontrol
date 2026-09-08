@@ -47,6 +47,17 @@ $SOPCTL project all .   # 把控制面切片装进 AGENTS.md / CLAUDE.md
 
 验收：audit 表格里 JF-PREVIEW-001 判定 pass；`AGENTS.md` 出现带标记的控制面小节。
 
+> **大仓前置**：本仓库有 1.4 万+ Markdown（JobSearch_2026 数据目录占 3,712）。扫描器
+> 对超限是"大声失败"而非静默截断，所以 audit 前先在 `.sopcontrol/manifest.yaml` 声明
+> 数据目录（点目录已默认剪枝，无需声明）：
+>
+> ```yaml
+> scan_excludes:
+> - JobSearch_2026
+> ```
+>
+> 不声明的话 audit/gate 会以 FileScanLimitExceeded 拒绝出报告——这是特性不是故障。
+
 ## 第 2 步：补 test_command（1 分钟，补上 E4 来源）
 
 用控制器命令声明测试命令：
