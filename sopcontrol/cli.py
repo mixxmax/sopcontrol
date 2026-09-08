@@ -105,13 +105,24 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--by", default="user", help="确认人（默认 user；agent 自签不算人工确认）")
     p.set_defaults(func=cmd_rule_attest)
 
-    p = sub.add_parser("audit", help="运行传感器→检测器→判定，产出吸收矩阵")
+    p = sub.add_parser(
+        "audit",
+        help="运行传感器→检测器→判定（默认 discovery；gate 用 enforcement）",
+    )
     p.add_argument("path", nargs="?", default=".")
     p.add_argument("--strict", action="store_true", help="存在 gap/fail 时退出码 1（CI 门）")
     p.add_argument("--json", action="store_true", help="输出 JSON 报告")
     p.add_argument(
         "--compact", action="store_true",
         help="用本轮证据整轮替换账本，清除 stale 噪音（役用清理）",
+    )
+    p.add_argument(
+        "--enforce", action="store_true",
+        help="强制 enforcement 模式（与 gate 相同语义；默认 discovery）",
+    )
+    p.add_argument(
+        "--no-persist", action="store_true",
+        help="只读审计：不写账本/生长（用于外仓验收）",
     )
     p.set_defaults(func=cmd_audit)
 
@@ -509,6 +520,23 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--out", help="快照输出路径（JSON）；不写则只打印")
     p.add_argument("--jobsflow", help="外部真实代码库数据点（只读 audit，不写对方任何文件）")
     p.set_defaults(func=cmd_metrics)
+
+    event = sub.add_parser(
+        "event",
+        help="通用控制事件/回执（worktree-local；业务项目适配用，不复制业务状态机）",
+    )
+    event_sub = event.add_subparsers(dest="sub")
+    p = event_sub.add_parser("list", help="列出本 worktree 最近事件")
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--limit", type=int, default=20)
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_event, sub="list")
+    p = event_sub.add_parser("append", help="从 stdin JSON 追加一条事件")
+    p.add_argument("path", nargs="?", default=".")
+    p.set_defaults(func=cmd_event, sub="append")
+    p = event_sub.add_parser("validate", help="校验 stdin JSON 事件 schema")
+    p.add_argument("path", nargs="?", default=".")
+    p.set_defaults(func=cmd_event, sub="validate")
 
     return parser
 

@@ -42,11 +42,15 @@ __all__ = [
 ]
 
 HOOK_MARKER = "# sopcontrol-hook v1"
-HOOK_TEMPLATE = f"""#!/bin/sh
-{HOOK_MARKER}
-# 终态门：fail 判定或账本篡改则阻断 push（gap 仅警告）
-exec sopctl gate "$(git rev-parse --show-toplevel)"
-"""
+
+
+def _hook_template() -> str:
+    from .resolve_cli import hook_script_body
+
+    return hook_script_body()
+
+
+HOOK_TEMPLATE = _hook_template()
 NEGATIVE_KEYWORDS = ("不得", "禁止", "must not", "mustn't", "never ")
 OPENCODE_PLUGIN_TEMPLATE = '''// sopcontrol-hook v1 (marker) — sopctl hook opencode 生成；决策权在本地控制器，插件只是执行器
 import {{ execFileSync }} from "node:child_process";
@@ -100,7 +104,10 @@ def run_gate(root: Path) -> int:
     from plugins import DETECTORS, SENSORS
 
     try:
-        report = run_audit(root, SENSORS, DETECTORS, persist=True)
+        # Enforcement only: discovery incompleteness must not own the push gate.
+        report = run_audit(
+            root, SENSORS, DETECTORS, persist=True, mode="enforcement",
+        )
     except Exception as exc:  # 门自身故障必须阻断，不允许静默放行
         from .capability_events import CapabilityEvent, append_capability_event
 

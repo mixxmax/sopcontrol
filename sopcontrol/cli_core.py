@@ -25,10 +25,18 @@ def cmd_audit(args) -> int:
 
     root = _project(args.path)
     compact = bool(getattr(args, "compact", False))
-    report = run_audit(root, SENSORS, DETECTORS, persist=True, compact=compact)
+    # Default discovery: large-doc incompleteness must not own the daily loop.
+    # Gate uses enforcement exclusively.
+    mode = "enforcement" if getattr(args, "enforce", False) else "discovery"
+    persist = not bool(getattr(args, "no_persist", False))
+    report = run_audit(
+        root, SENSORS, DETECTORS, persist=persist, compact=compact, mode=mode,
+    )
 
     if args.json:
         print(json.dumps({
+            "mode": report.mode,
+            "coverage": report.coverage,
             "rules": [r.model_dump(mode="json") for r in report.rules],
             "evidence_count": len(report.evidence),
             "findings": [f.model_dump(mode="json") for f in report.findings],
@@ -36,6 +44,23 @@ def cmd_audit(args) -> int:
         }, ensure_ascii=False, indent=2))
         return 0
 
+    print(f"模式: {report.mode}")
+    if report.coverage:
+        cov = report.coverage
+        print(
+            "覆盖: eligible={eligible_files} scanned={scanned_files} "
+            "cached={cached_files} deferred={deferred_files} "
+            "ignored={ignored_files} complete={coverage_complete} "
+            "({coverage_reason})".format(
+                eligible_files=cov.get("eligible_files", cov.get("eligible", "?")),
+                scanned_files=cov.get("scanned_files", "?"),
+                cached_files=cov.get("cached_files", cov.get("cache_hits", 0)),
+                deferred_files=cov.get("deferred_files", 0),
+                ignored_files=cov.get("ignored_files", 0),
+                coverage_complete=cov.get("coverage_complete", cov.get("complete", "?")),
+                coverage_reason=cov.get("coverage_reason", cov.get("reason", "")),
+            )
+        )
     print(f"{'RULE':16} {'判定':8} {'吸收':18} 理由")
     for v in report.verdicts:
         absorption = v.absorption.value if v.absorption else "-"
@@ -44,8 +69,8 @@ def cmd_audit(args) -> int:
     n_findings = len(report.findings)
     print(f"\n证据 {len(report.evidence)} 条，finding {n_findings} 条，判定 gap/fail {gaps} 项。")
     ledger = root / ".sopcontrol" / "evidence" / "ledger.jsonl"
-    mode = "compact 快照已替换账本" if compact else "观察模式追加账本"
-    print(f"账本: {ledger}（{mode}；--strict 可作为 CI 门）")
+    mode_note = "compact 快照已替换账本" if compact else "观察模式追加账本"
+    print(f"账本: {ledger}（{mode_note}；--strict 可作为 CI 门）")
     if args.strict and gaps:
         return 1
     return 0
@@ -488,6 +513,54 @@ def cmd_metrics(args) -> int:
 
 def cmd_gate(args) -> int:
     return run_gate(_project(args.path))
+
+
+def cmd_event(args) -> int:
+    """Portable control events: append / validate / list (worktree-local)."""
+    from .events import (
+        ControlEvent,
+        append_event,
+        load_events,
+        validate_event_payload,
+    )
+
+    root = _project(args.path)
+    sub = getattr(args, "sub", None) or "list"
+    if sub == "validate":
+        raw = sys.stdin.read()
+        try:
+            payload = json.loads(raw)
+            event = validate_event_payload(payload)
+        except Exception as exc:
+            print(f"invalid event: {exc}", file=sys.stderr)
+            return 2
+        print(event.model_dump_json(indent=2))
+        return 0
+    if sub == "append":
+        raw = sys.stdin.read()
+        try:
+            payload = json.loads(raw)
+            event = validate_event_payload(payload)
+        except Exception as exc:
+            print(f"invalid event: {exc}", file=sys.stderr)
+            return 2
+        path = append_event(root, event)
+        print(f"appended → {path}")
+        return 0
+    # list
+    rows = load_events(root, limit=int(getattr(args, "limit", 20) or 20))
+    if getattr(args, "json", False):
+        print(json.dumps([r.model_dump(mode="json") for r in rows], ensure_ascii=False, indent=2))
+        return 0
+    if not rows:
+        print("无事件")
+        return 0
+    for row in rows:
+        print(
+            f"{row.observed_at[:19]} {row.event_type} action={row.action} "
+            f"outcome={row.outcome or '-'} blocker={row.blocker or '-'}"
+        )
+    return 0
 
 
 

@@ -27,6 +27,8 @@ class AuditReport:
     findings: list[Finding]
     verdicts: list[Verdict]
     at: datetime
+    mode: str = "enforcement"
+    coverage: dict | None = None
 
 
 def run_audit(
@@ -38,31 +40,140 @@ def run_audit(
     extra_evidence: list[Evidence] | None = None,
     *,
     at: datetime | None = None,
+    mode: str = "enforcement",
 ) -> AuditReport:
-    """extra_evidence：不由传感器产生、由调用方铸好送进来的证据（如完成门的 E4 测试运行）。"""
+    """Unified audit entry.
+
+    mode=discovery: sensors may partial/defer; grows candidates; must not auto-promote.
+    mode=enforcement: full evidence for effective rules; fail-closed on necessary gaps.
+    """
+    if mode == "discovery":
+        return run_discovery(
+            root, sensors, detectors,
+            persist=persist, compact=compact,
+            extra_evidence=extra_evidence, at=at,
+        )
+    return run_enforcement(
+        root, sensors, detectors,
+        persist=persist, compact=compact,
+        extra_evidence=extra_evidence, at=at,
+    )
+
+
+def run_discovery(
+    root: Path,
+    sensors: list,
+    detectors: list,
+    persist: bool = False,
+    compact: bool = False,
+    extra_evidence: list[Evidence] | None = None,
+    *,
+    at: datetime | None = None,
+) -> AuditReport:
+    """Discovery: observe + candidate growth; partial coverage is allowed."""
+    from .context import ProjectScope
+    from .evidence_cache import EvidenceCache
+    from .identity import load_identity
+
     root = Path(root)
-    ctx = ProjectContext(root)
+    ctx = ProjectScope(root, mode="discovery")
+    audit_at = at or utcnow()
+    rules = Registry(root / ".sopcontrol" / "rules" / "registry.yaml").load()
+    current_rules = effective_rules(rules, at=audit_at)
+    ident = load_identity(root)
+    cache = EvidenceCache(ctx, project_id=(ident.project_id if ident else ""))
+
+    evidence: list[Evidence] = list(extra_evidence or [])
+    decl = declaration_evidence(root)
+    if decl is not None:
+        evidence.append(decl)
+    evidence.extend(attestation_evidence(root, current_rules))
+    evidence.append(maturity_evidence(root, rules, at=audit_at))
+    for sensor in sensors:
+        # Prefer cache for file-oriented sensors when possible (best-effort)
+        evidence.extend(sensor.observe(ctx))
+    evidence = [e for e in evidence if not e.is_expired(audit_at)]
+
+    findings: list[Finding] = []
+    for detector in detectors:
+        parameters = inspect.signature(detector.detect).parameters
+        if "at" in parameters:
+            findings.extend(detector.detect(current_rules, evidence, at=audit_at))
+        else:
+            findings.extend(detector.detect(current_rules, evidence))
+
+    verdicts = evaluate_all(current_rules, evidence, findings, at=audit_at)
+    coverage = None
+    if ctx.last_coverage is not None:
+        coverage = ctx.last_coverage.as_dict()
+        coverage.update(cache.stats())
+    else:
+        coverage = ctx.scan_coverage({".md", ".py"})
+        coverage.update(cache.stats())
+
+    if persist:
+        ledger = Ledger(root / ".sopcontrol" / "evidence" / "ledger.jsonl")
+        if compact:
+            ledger.replace_snapshot(evidence, findings)
+        else:
+            for ev in evidence:
+                ledger.append_evidence(ev)
+            for f in findings:
+                ledger.append_finding(f)
+        try:
+            from .growth import ambient_grow
+
+            ambient_grow(
+                root,
+                findings=findings,
+                round_id=content_hash({
+                    "at": audit_at.isoformat(),
+                    "findings": len(findings),
+                    "mode": "discovery",
+                }),
+                at=audit_at,
+            )
+        except Exception:
+            pass
+
+    return AuditReport(
+        rules=rules,
+        evidence=evidence,
+        findings=findings,
+        verdicts=verdicts,
+        at=audit_at,
+        mode="discovery",
+        coverage=coverage,
+    )
+
+
+def run_enforcement(
+    root: Path,
+    sensors: list,
+    detectors: list,
+    persist: bool = False,
+    compact: bool = False,
+    extra_evidence: list[Evidence] | None = None,
+    *,
+    at: datetime | None = None,
+) -> AuditReport:
+    """Enforcement: evidence for accepted/effective rules; necessary gaps fail-closed."""
+    from .context import ProjectScope
+
+    root = Path(root)
+    ctx = ProjectScope(root, mode="enforcement")
     audit_at = at or utcnow()
     rules = Registry(root / ".sopcontrol" / "rules" / "registry.yaml").load()
     current_rules = effective_rules(rules, at=audit_at)
 
     evidence: list[Evidence] = list(extra_evidence or [])
-    # 「项目声明了测试命令」这一事实每轮都送进判定器（零成本，不跑命令）：
-    # 没有它，判定器分不清「没声明」和「本轮没跑」，就会对已声明的项目给出
-    # 「去声明 test_command」这种错误建议。
     decl = declaration_evidence(root)
     if decl is not None:
         evidence.append(decl)
-    # 确认书的版本比对每轮重算（手册 6.5 条件5/7）：源文档改一个字节，上一轮的
-    # 「文档-实现一致」就不再算数。放在这里而不是传感器里，因为它要读注册表，
-    # 而传感器只看项目文件。
     evidence.extend(attestation_evidence(root, current_rules))
-    # 成熟度（手册 7.3）与确认书同处一层：都要读 .sopcontrol 自身状态，传感器看不见。
-    # 每轮重算而不是缓存——装了钩子、声明了验收命令，下一轮就该反映出来。
     evidence.append(maturity_evidence(root, rules, at=audit_at))
     for sensor in sensors:
         evidence.extend(sensor.observe(ctx))
-    # 过期证据不参与当轮判定（Haft 式衰减；v0 尚无传感器设置 valid_until，机制就位）
     evidence = [e for e in evidence if not e.is_expired(audit_at)]
 
     findings: list[Finding] = []
@@ -75,17 +186,44 @@ def run_audit(
 
     verdicts = evaluate_all(current_rules, evidence, findings, at=audit_at)
 
+    # Fail-closed enrichment: accepted rule whose declared source is unreadable
+    from .attest import source_file
+
+    for rule in current_rules:
+        ref = (rule.source.ref or "").strip()
+        if not ref:
+            continue
+        if source_file(root, rule) is None:
+            findings.append(
+                Finding(
+                    pattern_id="accepted_source_unreadable",
+                    rule_id=rule.rule_id,
+                    summary=f"正式规则 {rule.rule_id} 的 source 不可读或越界: {ref}",
+                    severity="block",
+                    detector="enforcement",
+                )
+            )
+            verdicts = [
+                v for v in verdicts if v.rule_id != rule.rule_id
+            ] + [
+                Verdict(
+                    rule_id=rule.rule_id,
+                    status="fail",
+                    absorption=None,
+                    reason=f"正式规则 source 不可读（fail-closed）: {ref}",
+                    next_action="修复 source 路径或重新 attest / 调整规则出处",
+                )
+            ]
+
     if persist:
         ledger = Ledger(root / ".sopcontrol" / "evidence" / "ledger.jsonl")
         if compact:
-            # 役用清理：整轮快照替换，去掉文件变更后的 stale 噪音
             ledger.replace_snapshot(evidence, findings)
         else:
             for ev in evidence:
                 ledger.append_evidence(ev)
             for f in findings:
                 ledger.append_finding(f)
-        # 无感生长：记本轮观察并聚合候选（不写 registry）
         try:
             from .growth import ambient_grow
 
@@ -95,14 +233,22 @@ def run_audit(
                 round_id=content_hash({
                     "at": audit_at.isoformat(),
                     "findings": len(findings),
+                    "mode": "enforcement",
                 }),
                 at=audit_at,
             )
         except Exception:
             pass
 
+    coverage = ctx.scan_coverage({".py", ".md"})
     return AuditReport(
-        rules=rules, evidence=evidence, findings=findings, verdicts=verdicts, at=audit_at
+        rules=rules,
+        evidence=evidence,
+        findings=findings,
+        verdicts=verdicts,
+        at=audit_at,
+        mode="enforcement",
+        coverage=coverage,
     )
 
 

@@ -27,8 +27,31 @@ def identity_path(root: Path) -> Path:
 
 
 def compute_project_id(root: Path) -> str:
-    canonical = str(Path(root).resolve())
-    return "proj-" + content_hash({"root": canonical})
+    """Stable id: prefer git common-dir so worktrees of one clone share identity.
+
+    Different clones still differ (common-dir path differs). Locked identities
+    are never recomputed here.
+    """
+    root = Path(root).resolve()
+    try:
+        import subprocess
+
+        proc = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "--git-common-dir"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if proc.returncode == 0:
+            common = Path(proc.stdout.strip())
+            if not common.is_absolute():
+                common = (root / common).resolve()
+            else:
+                common = common.resolve()
+            return "proj-" + content_hash({"git_common_dir": str(common)})
+    except Exception:
+        pass
+    return "proj-" + content_hash({"root": str(root)})
 
 
 def load_identity(root: Path) -> Optional[ProjectIdentity]:

@@ -278,3 +278,224 @@ class ProjectContext:
 
     def rel(self, path: Path) -> str:
         return path.relative_to(self.root).as_posix()
+
+
+# --- ProjectScope: universal scan facade (extends ProjectContext) ---
+
+from dataclasses import dataclass as _dataclass
+from typing import Literal as _Literal
+
+
+@_dataclass
+class ScanCoverage:
+    eligible_files: int = 0
+    scanned_files: int = 0
+    cached_files: int = 0
+    ignored_files: int = 0
+    deferred_files: int = 0
+    unreadable_files: int = 0
+    coverage_complete: bool = True
+    coverage_reason: str = ""
+
+    def as_dict(self) -> dict:
+        return {
+            "eligible_files": self.eligible_files,
+            "scanned_files": self.scanned_files,
+            "cached_files": self.cached_files,
+            "ignored_files": self.ignored_files,
+            "deferred_files": self.deferred_files,
+            "unreadable_files": self.unreadable_files,
+            "coverage_complete": self.coverage_complete,
+            "coverage_reason": self.coverage_reason,
+        }
+
+
+def _git_rev_parse(root: Path, *args: str) -> str | None:
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", *args],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if proc.returncode != 0:
+        return None
+    return (proc.stdout or "").strip() or None
+
+
+@_dataclass
+class ProjectScope(ProjectContext):
+    """统一文件访问入口：Git/worktree 元数据 + discovery/enforcement 扫描语义。
+
+    传感器必须通过本对象访问文件，禁止私自 os.walk。
+    与 sopcontrol.scope（规则路径作用域）无关。
+    """
+
+    mode: _Literal["discovery", "enforcement"] = "enforcement"
+    last_coverage: ScanCoverage | None = field(default=None, init=False, repr=False)
+    git_root: str | None = field(default=None, init=False)
+    common_dir: str | None = field(default=None, init=False)
+    worktree_id: str = field(default="", init=False)
+    head: str | None = field(default=None, init=False)
+    branch: str | None = field(default=None, init=False)
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self._refresh_git_meta()
+
+    def _refresh_git_meta(self) -> None:
+        toplevel = _git_rev_parse(self.root, "--show-toplevel")
+        common = _git_rev_parse(self.root, "--git-common-dir")
+        head = _git_rev_parse(self.root, "HEAD")
+        branch = _git_rev_parse(self.root, "--abbrev-ref", "HEAD")
+        self.git_root = toplevel
+        if common:
+            common_path = Path(common)
+            if not common_path.is_absolute():
+                common_path = (self.root / common_path).resolve()
+            self.common_dir = str(common_path)
+        else:
+            self.common_dir = None
+        self.head = head
+        self.branch = None if branch in (None, "HEAD") else branch
+        # worktree identity: relative path from common git dir when possible
+        if toplevel:
+            self.worktree_id = content_hash_safe(toplevel)
+        else:
+            self.worktree_id = content_hash_safe(str(self.root.resolve()))
+
+    def iter_files(
+        self,
+        suffixes: set[str],
+        limit: int | None = None,
+        *,
+        on_budget: _Literal["raise", "defer"] | None = None,
+    ):
+        """Enumerate files.
+
+        on_budget:
+          - raise (default for enforcement): FileScanLimitExceeded
+          - defer (discovery): stop yielding and record deferred in last_coverage
+        """
+        policy = on_budget or ("defer" if self.mode == "discovery" else "raise")
+        cov = ScanCoverage()
+        scanned = 0
+        deferred = 0
+        # eligible estimate from scan_coverage base
+        base = super().scan_coverage(suffixes)
+        cov.eligible_files = int(base.get("eligible") or 0)
+        cov.ignored_files = int(base.get("pruned_tool_state") or 0) + int(
+            base.get("pruned_manifest") or 0
+        )
+
+        def _emit():
+            nonlocal scanned, deferred
+            if self._git_files() is not None:
+                iterator = self._iter_git_budget(suffixes, limit, policy)
+            else:
+                iterator = self._iter_walk_budget(suffixes, limit, policy)
+            for item in iterator:
+                if item is None:
+                    # sentinel: deferred remainder
+                    if limit is not None and cov.eligible_files > scanned:
+                        deferred = cov.eligible_files - scanned
+                    break
+                scanned += 1
+                yield item
+
+        try:
+            yield from _emit()
+        finally:
+            cov.scanned_files = scanned
+            cov.deferred_files = deferred
+            if policy == "defer" and deferred > 0:
+                cov.coverage_complete = False
+                cov.coverage_reason = (
+                    f"discovery budget {limit}: scanned {scanned}, deferred {deferred}"
+                )
+            elif policy == "raise":
+                cov.coverage_complete = True
+                cov.coverage_reason = base.get("reason") or ""
+            else:
+                cov.coverage_complete = deferred == 0
+                cov.coverage_reason = base.get("reason") or ""
+            self.last_coverage = cov
+
+    def _iter_git_budget(self, suffixes, limit, policy):
+        count = 0
+        files = self._git_files() or frozenset()
+        for rel in sorted(files):
+            parts = PurePosixPath(rel).parts
+            if any(part.startswith(".") for part in parts):
+                continue
+            if self._excluded(parts):
+                continue
+            if PurePosixPath(rel).suffix not in suffixes:
+                continue
+            count += 1
+            if limit is not None and count > limit:
+                if policy == "raise":
+                    raise FileScanLimitExceeded(limit=limit, suffixes=suffixes)
+                yield None
+                return
+            yield self.root / rel
+
+    def _iter_walk_budget(self, suffixes, limit, policy):
+        root = str(self.root)
+        count = 0
+        for dirpath, dirnames, filenames in os.walk(root):
+            rel_dir = os.path.relpath(dirpath, root)
+            rel_parts = (
+                ()
+                if rel_dir == "."
+                else tuple(PurePosixPath(rel_dir.replace(os.sep, "/")).parts)
+            )
+            dirnames[:] = sorted(
+                d
+                for d in dirnames
+                if not self._is_tool_state(d)
+                and not self._excluded(rel_parts + (d,))
+            )
+            if self._excluded(rel_parts):
+                continue
+            for name in sorted(filenames):
+                if Path(name).suffix not in suffixes:
+                    continue
+                count += 1
+                if limit is not None and count > limit:
+                    if policy == "raise":
+                        raise FileScanLimitExceeded(limit=limit, suffixes=suffixes)
+                    yield None
+                    return
+                yield Path(dirpath) / name
+
+    def scan_coverage(self, suffixes: set[str], *, limit: int | None = None) -> dict:
+        """Rich coverage report required by the universal plane."""
+        # Force a pass to populate last_coverage when limit given
+        if limit is not None:
+            list(self.iter_files(suffixes, limit=limit))
+            cov = self.last_coverage or ScanCoverage()
+            out = cov.as_dict()
+            out["mode"] = "git" if self._git_files() is not None else "walk"
+            return out
+        base = super().scan_coverage(suffixes)
+        return {
+            "eligible_files": base["eligible"],
+            "scanned_files": base["eligible"],
+            "cached_files": 0,
+            "ignored_files": base["pruned_tool_state"] + base["pruned_manifest"],
+            "deferred_files": 0,
+            "unreadable_files": 0,
+            "coverage_complete": base["complete"],
+            "coverage_reason": base["reason"],
+            "mode": base["mode"],
+        }
+
+
+def content_hash_safe(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
+
+
+# Back-compat: existing code may construct ProjectContext; sensors can use either.
