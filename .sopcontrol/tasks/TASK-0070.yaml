@@ -1,0 +1,55 @@
+task_id: TASK-0070
+contract:
+  objective: E1 嵌入层 ProjectScope：git-aware 文件枚举（tracked+untracked-not-ignored，点目录与
+    manifest scan_excludes 继续生效）、coverage report（eligible/scanned/excluded/complete+reason）、scan-config
+    CLI（配置经 sopctl 而非手改账本）、非 git 目录安全回退；传感器经现有 iter_files 接缝零改动获益
+  allowed_writes:
+  - sopcontrol/context.py
+  - sopcontrol/cli_core.py
+  - tests/constitution/test_scan_scope.py
+  required_rules:
+  - CTRL-001
+  - SELF-001
+  - SELF-002
+  required_fields:
+  - git_aware_enumeration
+  - coverage_report
+  - scan_config_cli
+  - nongit_fallback
+  - compatibility
+  max_repairs: 1
+  repairs_fingerprint: null
+  write_granularity: file
+  strict_schema: true
+  capability_note: 当前模型未声明（已有画像 vertical-backbone 不适用） tier=unknown：模型能力未知：按保守边界执行，文件级写入
+    + 强制 MUST 字段清单；行为事件触发 weak 上限（近期任务迁移被拒）
+  model_identity: ''
+status: verification_pending
+repair_count: 0
+changed_paths:
+- sopcontrol/context.py
+- tests/constitution/test_scan_scope.py
+revision: 3
+created_at: '2026-09-08T06:47:08.765775Z'
+updated_at: '2026-09-08T07:19:56.695031Z'
+history:
+- at: '2026-09-08T06:47:09.015409Z'
+  action: accept
+  from_status: contract_proposed
+  to_status: executing
+  allowed: true
+  reason: 契约完整：目标、写入范围与可验证完成定义齐备
+  detail:
+    next_action: 执行变更后 task submit 提交改动路径
+- at: '2026-09-08T07:19:56.692777Z'
+  action: submit
+  from_status: executing
+  to_status: verification_pending
+  allowed: true
+  reason: 改动 2 个路径，全部在写入范围内；MUST 字段齐备 [git_aware_enumeration, coverage_report, scan_config_cli,
+    nongit_fallback, compatibility]
+  detail:
+    next_action: 运行 task verify 由控制器独立审计
+resolution_of: []
+superseded_by_task: ''
+blocked_reason_code: ''

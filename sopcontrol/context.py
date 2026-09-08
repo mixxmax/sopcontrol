@@ -3,10 +3,19 @@ from __future__ import annotations
 
 import hashlib
 import os
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
 import yaml
+
+
+class _Unset:
+    pass
+
+
+_UNSET = _Unset()
+
 
 EXCLUDED_DIRS = {
     ".git", ".sopcontrol", ".sopcontrol-local", "node_modules",
@@ -111,6 +120,7 @@ class ProjectContext:
     def __post_init__(self) -> None:
         self.root = Path(self.root)
         self.scan_excludes = _load_scan_excludes(self.root)
+        self._git_listing: frozenset[str] | None | _Unset = _UNSET
 
     @staticmethod
     def _is_tool_state(name: str) -> bool:
@@ -126,14 +136,49 @@ class ProjectContext:
             for excl in self.scan_excludes
         )
 
-    def iter_files(self, suffixes: set[str], limit: int | None = None):
-        """按稳定顺序遍历匹配文件。
+    def _git_files(self) -> frozenset[str] | None:
+        """tracked + untracked-not-ignored 的相对路径集合；非 git/不可用返回 None。
 
-        生产传感器默认完整扫描。调用方若为轻量路径显式设置预算，超限必须
-        抛错而不是静默截断；部分证据不能支撑 fail-closed 的门禁结论。
-        范围削减通过两类通用类别完成：点目录（工具状态）与 manifest
-        `scan_excludes`（项目声明的数据目录）；两者都不把超限变成静默截断。
+        git 是嵌入的第一等边界：gitignore、嵌套仓库、worktree 归属都由 git 自己
+        回答，控制器不重新发明。失败一律回退文件系统遍历，绝不静默改成空集。
         """
+        if self._git_listing is _UNSET:
+            try:
+                proc = subprocess.run(
+                    [
+                        "git", "-C", str(self.root), "ls-files", "-z",
+                        "--cached", "--others", "--exclude-standard",
+                    ],
+                    capture_output=True, timeout=120,
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                self._git_listing = None
+            else:
+                if proc.returncode != 0:
+                    self._git_listing = None
+                else:
+                    out = proc.stdout.decode("utf-8", "surrogateescape")
+                    self._git_listing = frozenset(
+                        line for line in out.split("\0") if line
+                    )
+        return self._git_listing
+
+    def _iter_git(self, suffixes: set[str], limit: int | None):
+        count = 0
+        for rel in sorted(self._git_files()):
+            parts = PurePosixPath(rel).parts
+            if any(part.startswith(".") for part in parts):
+                continue
+            if self._excluded(parts):
+                continue
+            if PurePosixPath(rel).suffix not in suffixes:
+                continue
+            count += 1
+            if limit is not None and count > limit:
+                raise FileScanLimitExceeded(limit=limit, suffixes=suffixes)
+            yield self.root / rel
+
+    def _iter_walk(self, suffixes: set[str], limit: int | None):
         root = str(self.root)
         count = 0
         for dirpath, dirnames, filenames in os.walk(root):
@@ -157,6 +202,79 @@ class ProjectContext:
                     if limit is not None and count > limit:
                         raise FileScanLimitExceeded(limit=limit, suffixes=suffixes)
                     yield Path(dirpath) / name
+
+    def iter_files(self, suffixes: set[str], limit: int | None = None):
+        """按稳定顺序遍历匹配文件。
+
+        生产传感器默认完整扫描。调用方若为轻量路径显式设置预算，超限必须
+        抛错而不是静默截断；部分证据不能支撑 fail-closed 的门禁结论。
+        范围削减通过三类通用类别完成：git 边界（tracked/untracked-not-ignored）、
+        点目录（工具状态）与 manifest `scan_excludes`（项目声明的数据目录）；
+        都不把超限变成静默截断。
+        """
+        if self._git_files() is not None:
+            yield from self._iter_git(suffixes, limit)
+        else:
+            yield from self._iter_walk(suffixes, limit)
+
+    def scan_coverage(self, suffixes: set[str]) -> dict:
+        """覆盖报告（嵌入产品的诚实性面）：eligible/scanned 分类与完整与否。
+
+        complete=True 表示本次枚举没有触及预算上限——报告可支撑 fail-closed
+        结论；pruned_* 是被通用类别排除但在列的文件数，供大仓解释自己的边界。
+        """
+        mode = "git" if self._git_files() is not None else "walk"
+        eligible = pruned_tool = pruned_manifest = 0
+        listing = self._git_files()
+        if mode == "git":
+            candidates = (
+                (PurePosixPath(rel).parts, rel) for rel in sorted(listing)
+            )
+        else:
+            def _walk_all():
+                for dirpath, dirnames, filenames in os.walk(self.root):
+                    rel_dir = os.path.relpath(dirpath, self.root)
+                    rel_parts = (
+                        ()
+                        if rel_dir == "."
+                        else tuple(PurePosixPath(rel_dir.replace(os.sep, "/")).parts)
+                    )
+                    dirnames[:] = sorted(
+                        d
+                        for d in dirnames
+                        if not self._is_tool_state(d)
+                        and not self._excluded(rel_parts + (d,))
+                    )
+                    for name in sorted(filenames):
+                        rel = (
+                            name
+                            if rel_dir == "."
+                            else f"{rel_dir}/{name}"
+                        )
+                        yield tuple(PurePosixPath(rel).parts)
+            candidates = ((parts, None) for parts in _walk_all())
+        for parts, _rel in candidates:
+            rel_path = "/".join(parts)
+            if PurePosixPath(rel_path).suffix not in suffixes:
+                continue
+            if any(part.startswith(".") for part in parts):
+                pruned_tool += 1
+            elif self._excluded(parts):
+                pruned_manifest += 1
+            else:
+                eligible += 1
+        return {
+            "mode": mode,
+            "eligible": eligible,
+            "pruned_tool_state": pruned_tool,
+            "pruned_manifest": pruned_manifest,
+            "complete": True,
+            "reason": (
+                "git tracked + untracked-not-ignored"
+                if mode == "git"
+                else "non-git filesystem walk"
+            ),
+        }
 
     def rel(self, path: Path) -> str:
         return path.relative_to(self.root).as_posix()
