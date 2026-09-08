@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Universal control plane: `ProjectScope` + discovery/enforcement split; worktree-local evidence cache & events; hook CLI resolver; `sopctl audit --enforce` / `--no-persist`; `sopctl event` (see `docs/verification/UNIVERSAL_PLANE_20260908.md`)
+
 ## 0.2.0 — 2026-09-06
 
 First public-facing packaging of the living-project control plane.
