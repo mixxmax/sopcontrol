@@ -138,13 +138,19 @@ sopctl gate examples/minimal
 
 ### Option B: Progressive Adoption in Your Project (3 Steps)
 
-#### Step 1. Zero-Intrusion Healthcheck (Diagnostic Tool Only)
+#### Step 1. One-command attach (preferred) or manual init
 
 ```bash
 pip install sopcontrol   # or: pip install "git+https://github.com/mixxmax/sopcontrol.git"
 cd /path/to/your-app
 
-sopctl init .
+# Preferred: non-blocking attach (identity + projection + hooks; no auto-accepted rules)
+sopctl attach .
+sopctl attach-status .
+sopctl compat .          # platform / harness / perf budget self-check
+
+# Or manual:
+# sopctl init .
 sopctl doctor .          # Diagnoses parallel states & open bypasses; outputs next moves
 ```
 
@@ -196,6 +202,13 @@ All harness adapters consume the same repository control plane. They are executi
 
 | Command | Role & Description |
 | :--- | :--- |
+| `sopctl attach .` | **Non-blocking connect** (init/identity/project/hooks; gaps localized) |
+| `sopctl attach-status .` | Connection status (identity / hook / harness / gaps) |
+| `sopctl coverage .` | **Control coverage ledger** (`--probe` for verified; not scan-only) |
+| `sopctl enter --path . -- -- <cmd>` | **Supervised runtime** (process events + identity env; not a sandbox) |
+| `sopctl effect ...` | External side-effect primitives (network / browser / credential / idempotent) |
+| `sopctl compat .` | Platform matrix + harness declarations + perf budgets |
+| `sopctl detach --plan` / `--confirm` | Preview or remove sopctl-owned install items (keeps rules/evidence) |
 | `sopctl doctor .` | **Health check & next moves** (lightweight recommendations) |
 | `sopctl audit .` | **Absorption audit** (checks if MUST rules are wired and tested) |
 | `sopctl gate .` | **Final gate** (unified blocker for local pre-push and CI) |

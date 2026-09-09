@@ -33,10 +33,25 @@ def test_detach_plan_preview_only(tmp_path, capsys):
     work.mkdir()
     _git_init(work)
     assert main(["attach", str(work)]) == 0
-    assert main(["detach", str(work)]) == 2  # requires --plan
+    assert main(["detach", str(work)]) == 2  # requires --plan or --confirm
     assert main(["detach", str(work), "--plan"]) == 0
     out = capsys.readouterr().out
     assert "Detach preview" in out or "removable" in out
     preview = plan_detachment(work)
     assert preview.removable
     assert any("registry" in k for k in preview.keep)
+
+
+def test_detach_confirm_removes_hook_keeps_registry(tmp_path):
+    work = tmp_path / "g"
+    work.mkdir()
+    _git_init(work)
+    assert main(["attach", str(work)]) == 0
+    registry = work / ".sopcontrol" / "rules" / "registry.yaml"
+    assert registry.exists()
+    before = registry.read_text(encoding="utf-8")
+    assert main(["detach", str(work), "--confirm"]) == 0
+    assert registry.exists()
+    assert registry.read_text(encoding="utf-8") == before
+    # hook removed or restored; evidence kept
+    assert (work / ".sopcontrol" / "evidence").exists()

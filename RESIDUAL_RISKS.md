@@ -79,6 +79,19 @@ allow 不归一化。宪法测试 `test_allow_list_stays_case_sensitive` 锁住�
 默认 `project_id` 由绝对路径哈希派生；挪盘/换路径会变。缓解：`sopctl identity lock`
 固定 id（仍非全局 registry）。全局 daemon / 远程身份同步仍属 Phase 6 其余部分。
 
+## R12 supervised runtime 不是沙箱（Phase D）
+
+`sopctl enter --mode supervised` 记录进程事件并注入身份环境，**不**拦截子进程直接
+读写文件或出网。Coverage 对 `runtime_supervised` / `network` / `browser` 保持
+observable+gap，不以 HTTP_PROXY 冒充不可绕过控制。真正隔离属 isolated/system 级，
+需单独评估权限成本。
+
+## R13 effect 原语不是产品 breaker（Phase E）
+
+`sopctl effect` 提供网络分类、浏览器会话分类、凭证 ticket、DB 摘要、后台登记与
+幂等回执。门户级 WAF / Cloudflare / JobsDB breaker 语义仍在业务 Policy Pack；
+Core 不内置任何产品站点规则。
+
 ## R10 JS/TS/Go/Rust 词法剥离的已知缝隙（2026-08-30 更新：Go 已结构化）
 
 **Go 已升级**：`go_ast_scan`（tree-sitter-go，2026-08-30 用户授权越过依赖白名单）

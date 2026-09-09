@@ -20,6 +20,7 @@ from .cli_attach import *
 from .cli_coverage import *
 from .cli_enter import *
 from .cli_effect import *
+from .cli_product import *
 from .registry import RegistryError
 from .repair import RepairError
 
@@ -54,11 +55,32 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_attach_status)
 
-    p = sub.add_parser("detach", help="解除接入预览（Phase A 仅 --plan）")
+    p = sub.add_parser(
+        "detach",
+        help="解除 sopctl 安装项（--plan 预览；--confirm 真正移除；不删 rules/evidence）",
+    )
     p.add_argument("path", nargs="?", default=".")
     p.add_argument("--plan", action="store_true", help="只预览可移除的 sopctl 安装项")
+    p.add_argument(
+        "--confirm",
+        action="store_true",
+        help="确认移除 removable 列表中的 sopctl 拥有项（钩子/插件）",
+    )
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_detach)
+
+    p = sub.add_parser(
+        "compat",
+        help="产品化兼容自检（Phase F）：平台矩阵、harness 声明、性能预算",
+    )
+    p.add_argument("path", nargs="?", default=".", help="可选：同时检查该项目接入状态")
+    p.add_argument("--json", action="store_true")
+    p.add_argument(
+        "--measure",
+        action="store_true",
+        help="测量 attach-status / coverage 暖启动耗时并对照预算",
+    )
+    p.set_defaults(func=cmd_compat)
 
     p = sub.add_parser(
         "coverage",

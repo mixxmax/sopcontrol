@@ -1,4 +1,4 @@
-"""CLI — sopctl attach / attach-status / detach --plan (Phase A)."""
+"""CLI — sopctl attach / attach-status / detach (Phase A + F confirm)."""
 from __future__ import annotations
 
 import json
@@ -6,6 +6,7 @@ import sys
 
 from .attachment import (
     apply_attachment,
+    apply_detachment,
     attachment_status,
     format_plan,
     format_report,
@@ -48,7 +49,10 @@ def cmd_attach_status(args) -> int:
         print(f"root: {status.root}")
         print(f"connected: {status.connected}")
         print(f"project_id: {status.project_id or '-'}")
-        print(f"control_dir: {status.has_control_dir}  identity: {status.has_identity}  registry: {status.has_registry}")
+        print(
+            f"control_dir: {status.has_control_dir}  identity: {status.has_identity}  "
+            f"registry: {status.has_registry}"
+        )
         print(f"git_hook: {status.git_hook}")
         print(f"harness: {status.harness}")
         if status.last_receipt_path:
@@ -60,23 +64,49 @@ def cmd_attach_status(args) -> int:
 
 def cmd_detach(args) -> int:
     root = _project(args.path)
-    if not getattr(args, "plan", False):
+    plan_only = bool(getattr(args, "plan", False))
+    confirm = bool(getattr(args, "confirm", False))
+    as_json = bool(getattr(args, "json", False))
+
+    if plan_only and confirm:
+        print("不要同时传 --plan 与 --confirm", file=sys.stderr)
+        return 2
+    if not plan_only and not confirm:
         print(
-            "detach 需要 --plan（Phase A 仅预览）。真正解除需后续显式确认命令。",
+            "detach 需要 --plan（预览）或 --confirm（真正移除 sopctl 安装项）。"
+            "不会删除 .sopcontrol/rules 或 evidence。",
             file=sys.stderr,
         )
         return 2
-    preview = plan_detachment(root)
-    if getattr(args, "json", False):
-        print(json.dumps(preview.model_dump(mode="json"), ensure_ascii=False, indent=2))
+
+    if plan_only:
+        preview = plan_detachment(root)
+        if as_json:
+            print(json.dumps(preview.model_dump(mode="json"), ensure_ascii=False, indent=2))
+        else:
+            print(f"Detach preview for {preview.root}")
+            print("removable (sopctl-owned):")
+            for item in preview.removable:
+                print(f"  - {item.path}: {item.summary}")
+            print("keep:")
+            for item in preview.keep:
+                print(f"  - {item}")
+            for note in preview.notes:
+                print(f"note: {note}")
+        return 0
+
+    result = apply_detachment(root, confirm=True)
+    if as_json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
-        print(f"Detach preview for {preview.root}")
-        print("removable (sopctl-owned):")
-        for item in preview.removable:
-            print(f"  - {item.path}: {item.summary}")
-        print("keep:")
-        for item in preview.keep:
-            print(f"  - {item}")
-        for note in preview.notes:
-            print(f"note: {note}")
-    return 0
+        print(f"detach applied: removed={len(result.get('removed', []))} "
+              f"restored={len(result.get('restored', []))}")
+        for item in result.get("removed", []):
+            print(f"  - removed {item['path']}")
+        for item in result.get("restored", []):
+            print(f"  - restored {item['path']} from {item['from']}")
+        if result.get("errors"):
+            for err in result["errors"]:
+                print(f"  ! {err}", file=sys.stderr)
+        print(f"receipt: {result.get('receipt_path')}")
+    return 1 if result.get("errors") else 0

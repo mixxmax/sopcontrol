@@ -16,11 +16,17 @@ SOP Control **v0.2** 是可用的实验性控制平面，不是企业治理套�
 
 ## 平台兼容性
 
-| Harness | 运行时拦截 | 实测状态 |
-|---------|------------|----------|
-| OpenCode | 插件 `tool.execute.before` | **已 live 实测** |
-| Codex | 无运行时钩子 → 投影 + `wrap` 事后门 | **已 live 实测** |
-| Claude Code | PreToolUse 协议已适配 | 协议核实；**live 视环境 API key** |
+声明矩阵（运行时自检：`sopctl compat`）：
+
+| 维度 | 支持 |
+|------|------|
+| Python | 3.10 / 3.11 / 3.12 |
+| OS | macOS / Linux / Windows |
+| OpenCode | 插件 `tool.execute.before` — **live 实测** |
+| Codex | 无 PreToolUse → 投影 + `wrap` / `enter` + git/CI — **事后门 live 实测**；不得报 runtime enforceable |
+| Claude Code | PreToolUse 协议已适配 — live 视环境 API key；settings 损坏只局部 gap |
+
+安装与升级见 `docs/verification/INSTALL_MATRIX_20260909.md`。
 
 ## 已知技术边界
 

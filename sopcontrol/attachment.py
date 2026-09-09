@@ -772,15 +772,76 @@ def plan_detachment(root: Path | str) -> DetachPlan:
                         summary="Remove sopctl OpenCode plugin",
                     )
                 )
+    # Claude settings: only remove sopctl-owned hook entries is complex; list as keep
+    settings = root / ".claude" / "settings.json"
+    if settings.exists():
+        keep.append(
+            str(settings) + " (may contain sopctl hooks — not auto-deleted; edit manually if needed)"
+        )
     return DetachPlan(
         root=str(root),
         removable=removable,
         keep=keep,
         notes=[
-            "Phase A: detach is preview-only; apply requires explicit human confirmation in a later command",
-            "Business source files are never listed as removable by attach",
+            "detach --confirm removes only sopctl-owned install items listed under removable",
+            "Authority (.sopcontrol/rules, evidence) and business sources are never deleted",
         ],
     )
+
+
+def apply_detachment(root: Path | str, *, confirm: bool = False) -> dict:
+    """Remove sopctl-owned install items. Requires confirm=True.
+
+    Never deletes registry/evidence/business sources. Chained hooks restore backup
+    when available; otherwise remove the sopctl chain file.
+    """
+    root = Path(root).resolve()
+    plan = plan_detachment(root)
+    if not confirm:
+        return {
+            "applied": False,
+            "reason": "confirm_required",
+            "plan": plan.model_dump(mode="json"),
+        }
+    removed: list[dict] = []
+    restored: list[dict] = []
+    errors: list[str] = []
+    for item in plan.removable:
+        path = Path(item.path)
+        try:
+            if item.kind == "git_hook" and path.exists():
+                text = path.read_text(encoding="utf-8", errors="replace")
+                if CHAIN_MARKER in text:
+                    backups = sorted(_backups_dir(root).glob("pre-push.*.orig"))
+                    if backups:
+                        prev = backups[-1]
+                        path.write_text(prev.read_text(encoding="utf-8"), encoding="utf-8")
+                        path.chmod(0o755)
+                        restored.append({"path": str(path), "from": str(prev)})
+                        continue
+                path.unlink()
+                removed.append({"path": str(path), "kind": item.kind})
+            elif item.kind == "harness_opencode" and path.exists():
+                path.unlink()
+                removed.append({"path": str(path), "kind": item.kind})
+        except OSError as exc:
+            errors.append(f"{path}: {exc}")
+
+    receipt = {
+        "schema_version": "1",
+        "at": utcnow().isoformat(),
+        "root": str(root),
+        "removed": removed,
+        "restored": restored,
+        "errors": errors,
+        "kept": plan.keep,
+    }
+    _receipts_dir(root).mkdir(parents=True, exist_ok=True)
+    out = _receipts_dir(root) / f"detach-{_utc_stamp()}.json"
+    out.write_text(json.dumps(receipt, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    receipt["receipt_path"] = str(out)
+    receipt["applied"] = True
+    return receipt
 
 
 def format_plan(plan: AttachmentPlan) -> str:
