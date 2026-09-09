@@ -1,0 +1,81 @@
+task_id: TASK-0077
+contract:
+  objective: 细分市场发布准备：关闭 REL-001（cli_product 缺 sys 导入+超预算分支测试）、REL-002（coverage 收尾可重复）、REL-004（hook
+    resolver 三场景验收）、REL-005（版本冻结 0.3.0）、REL-006（发布提交卫生）
+  allowed_writes:
+  - sopcontrol/cli_product.py
+  - tests/harness/test_product_phase_f.py
+  - tests/harness/test_hook_resolver.py
+  - pyproject.toml
+  - CHANGELOG.md
+  required_rules:
+  - CTRL-001
+  - SELF-001
+  - SELF-002
+  required_fields:
+  - rel001_sys_import
+  - rel002_coverage_repeatable
+  - rel004_hook_scenarios
+  - rel005_version_freeze
+  - rel006_hygiene
+  max_repairs: 1
+  repairs_fingerprint: null
+  write_granularity: file
+  strict_schema: true
+  capability_note: 当前模型未声明（已有画像 vertical-backbone 不适用） tier=unknown：模型能力未知：按保守边界执行，文件级写入
+    + 强制 MUST 字段清单；行为事件触发 weak 上限（近期任务迁移被拒）
+  model_identity: ''
+status: blocked
+repair_count: 0
+changed_paths:
+- sopcontrol/cli_product.py
+- tests/harness/test_product_phase_f.py
+revision: 6
+created_at: '2026-09-09T08:08:02.432311Z'
+updated_at: '2026-09-09T08:58:52.072941Z'
+history:
+- at: '2026-09-09T08:08:20.689214Z'
+  action: accept
+  from_status: contract_proposed
+  to_status: executing
+  allowed: true
+  reason: 契约完整：目标、写入范围与可验证完成定义齐备
+  detail:
+    next_action: 执行变更后 task submit 提交改动路径
+- at: '2026-09-09T08:55:00.764669Z'
+  action: withdraw
+  from_status: executing
+  to_status: null
+  allowed: false
+  reason: 任务处于 executing；只有未接受的 contract_proposed 可 withdraw
+  detail:
+    next_action: sopctl task show 查看当前状态与契约
+- at: '2026-09-09T08:55:53.219215Z'
+  action: submit
+  from_status: executing
+  to_status: verification_pending
+  allowed: true
+  reason: 改动 2 个路径，全部在写入范围内；MUST 字段齐备 [rel001_sys_import, rel002_coverage_repeatable,
+    rel004_hook_scenarios, rel005_version_freeze, rel006_hygiene]
+  detail:
+    next_action: 运行 task verify 由控制器独立审计
+- at: '2026-09-09T08:58:51.752987Z'
+  action: verify
+  from_status: verification_pending
+  to_status: blocked
+  allowed: true
+  reason: verifier 自证嫌疑（14.1 场景6 / 手册 9.3）：本任务改动了控制器路径 [sopcontrol/cli_product.py]
+    且未提交基线——不得在被验证代码与 验证器同改后自行批准
+  detail:
+    next_action: 先 git commit 这些变更建立基线，再重新 verify；或人工裁决
+- at: '2026-09-09T08:58:52.068941Z'
+  action: deliver
+  from_status: blocked
+  to_status: null
+  allowed: false
+  reason: 任务处于 blocked；只有 verified 可交付——完成门未过不得宣称交付（防假完成）
+  detail:
+    next_action: sopctl task show 查看当前状态与契约
+resolution_of: []
+superseded_by_task: ''
+blocked_reason_code: other

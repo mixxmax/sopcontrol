@@ -1,0 +1,34 @@
+task_id: TASK-0073
+contract:
+  objective: 修复 harness 探针真实性与运行时等号形式 secret 脱敏
+  allowed_writes:
+  - sopcontrol/coverage_probe.py
+  - sopcontrol/runtime.py
+  - tests/harness/test_p1_hardening.py
+  required_rules: []
+  required_fields: []
+  max_repairs: 1
+  repairs_fingerprint: null
+  write_granularity: file
+  strict_schema: true
+  capability_note: 当前模型未声明（已有画像 vertical-backbone 不适用） tier=unknown：模型能力未知：按保守边界执行，文件级写入
+    + 强制 MUST 字段清单；行为事件触发 weak 上限（近期任务迁移被拒）
+  model_identity: ''
+status: withdrawn
+repair_count: 0
+changed_paths: []
+revision: 2
+created_at: '2026-09-09T05:24:31.407377Z'
+updated_at: '2026-09-09T05:24:54.739544Z'
+history:
+- at: '2026-09-09T05:24:54.736438Z'
+  action: withdraw
+  from_status: contract_proposed
+  to_status: withdrawn
+  allowed: true
+  reason: 契约提案已放弃：任务契约缺少 unknown 能力等级要求的 MUST 字段，按控制器规则重开
+  detail:
+    next_action: 无（withdrawn 为终态；如需继续请重新 task open）
+resolution_of: []
+superseded_by_task: ''
+blocked_reason_code: ''

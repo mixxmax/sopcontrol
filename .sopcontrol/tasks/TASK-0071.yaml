@@ -1,0 +1,42 @@
+task_id: TASK-0071
+contract:
+  objective: 审计全域无阻塞接入目标差距，并编写可交给外部模型实施的技术手册
+  allowed_writes:
+  - docs/SOP_Control_全域无阻塞接入实施手册_2026-09-08.md
+  required_rules: []
+  required_fields:
+  - manual_path
+  - baseline_assessment
+  max_repairs: 1
+  repairs_fingerprint: null
+  write_granularity: file
+  strict_schema: true
+  capability_note: 当前模型未声明（已有画像 vertical-backbone 不适用） tier=unknown：模型能力未知：按保守边界执行，文件级写入
+    + 强制 MUST 字段清单；行为事件触发 weak 上限（近期任务迁移被拒）
+  model_identity: ''
+status: withdrawn
+repair_count: 0
+changed_paths: []
+revision: 3
+created_at: '2026-09-08T15:19:28.459805Z'
+updated_at: '2026-09-08T15:19:55.471791Z'
+history:
+- at: '2026-09-08T15:19:34.616143Z'
+  action: accept
+  from_status: contract_proposed
+  to_status: null
+  allowed: false
+  reason: '契约不完整: required_rules 为空（无可验证完成定义的任务不得接受——防假完成）。请重新 task open 创建完整契约'
+  detail:
+    next_action: sopctl task show 查看当前状态与契约
+- at: '2026-09-08T15:19:55.465890Z'
+  action: withdraw
+  from_status: contract_proposed
+  to_status: withdrawn
+  allowed: true
+  reason: 契约提案已放弃：契约缺少 required_rules，按控制器拒绝结果重开完整契约
+  detail:
+    next_action: 无（withdrawn 为终态；如需继续请重新 task open）
+resolution_of: []
+superseded_by_task: ''
+blocked_reason_code: ''
