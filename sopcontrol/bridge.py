@@ -13,6 +13,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from .action_plane import build_envelope
 from .model import utcnow
 from .tickets import issue_ticket, redeem_ticket, ticket_public_view, TicketError
 
@@ -34,7 +35,25 @@ READ_ONLY_ACTIONS = frozenset({
 
 
 def canonical_payload(integration_id: str, action: str, argv: list[str]) -> dict[str, Any]:
-    return {"integration_id": integration_id, "action": action, "argv": list(argv)}
+    """§9.5 统一规范：bridge 动作并入 ActionEnvelope 分类机器。
+
+    argv 合成为 shell 命令载荷，经 build_envelope 分类出 surface/operation/target，
+    指纹基与 harness 侧完全同构——同一动作经任意 harness 到达，指纹一致。
+    integration_id 入基（不同集成同名命令不混淆），仍不含时间/attempt/secret。
+    """
+    command = " ".join(str(item) for item in argv)
+    envelope = build_envelope(
+        {"tool_name": "Bash", "tool_input": {"command": command}},
+        harness="bridge",
+        task_id=integration_id,
+    )
+    return {
+        "surface": envelope.surface,
+        "operation": envelope.operation,
+        "target": envelope.target,
+        "integration_id": integration_id,
+        "action": action,
+    }
 
 
 def _digest_payload(payload: dict[str, Any]) -> str:
@@ -50,6 +69,54 @@ def canonical_fingerprint(integration_id: str, action: str, argv: list[str]) -> 
 def operation_id(integration_id: str, action: str, argv: list[str]) -> str:
     """与指纹同源的稳定逻辑操作 ID：挑战与重试天然一致。"""
     return "op-" + _digest_payload(canonical_payload(integration_id, action, argv))[:16]
+
+
+def install_wrapper(
+    root: Path, *, integration_id: str, command: list[str], name: str = "",
+) -> dict[str, Any]:
+    """§9.4：生成透明 launcher 并记录回滚清单（.sopcontrol-local 内，可 remove）。"""
+    root = Path(root)
+    name = name or (integration_id.replace(".", "-") + "-bridge")
+    bin_dir = root / ".sopcontrol-local" / "bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    launcher = bin_dir / name
+    rollback = root / ".sopcontrol-local" / "bridge-rollback.json"
+    existed = launcher.exists()
+    launcher.write_text(
+        "#!/bin/sh\n"
+        "# sopcontrol bridge launcher — remove via sopctl bridge remove\n"
+        "exec "
+        + " ".join(json.dumps(part) for part in command)
+        + ' "$@"\n',
+        encoding="utf-8",
+    )
+    launcher.chmod(0o755)
+    manifest: dict[str, Any] = {}
+    if rollback.exists():
+        manifest = json.loads(rollback.read_text(encoding="utf-8"))
+    manifest[name] = {
+        "integration_id": integration_id,
+        "command": list(command),
+        "existed_before": existed,
+    }
+    rollback.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"name": name, "launcher": str(launcher), "rollback": str(rollback)}
+
+
+def remove_wrapper(root: Path, *, name: str) -> dict[str, Any]:
+    """§9.4 回滚：移除 launcher 并按清单恢复原状。"""
+    root = Path(root)
+    launcher = root / ".sopcontrol-local" / "bin" / name
+    rollback = root / ".sopcontrol-local" / "bridge-rollback.json"
+    existed_before = None
+    if rollback.exists():
+        manifest = json.loads(rollback.read_text(encoding="utf-8"))
+        existed_before = manifest.pop(name, None)
+        rollback.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    if launcher.exists():
+        launcher.unlink()
+        return {"name": name, "removed": True, "existed_before": (existed_before or {}).get("existed_before")}
+    return {"name": name, "removed": False}
 
 
 def build_control_envelope(

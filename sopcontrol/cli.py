@@ -42,6 +42,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("path", nargs="?", default=".")
     p.add_argument("--plan", action="store_true", help="只读预览，不修改项目")
     p.add_argument(
+        "--verify", action="store_true",
+        help="真实穿透自检：逐表面跑无害探针，四字段报告 + gap 下一步",
+    )
+    p.add_argument(
         "--mode",
         choices=["auto", "observe"],
         default="auto",
@@ -779,6 +783,27 @@ def cmd_bridge(args) -> int:
     printable = {k: v for k, v in receipt.items() if k != "ticket_model"}
     print(_json.dumps(printable, ensure_ascii=False, indent=2, default=str))
     return 0 if receipt.get("executed") else 1
+
+
+def cmd_attach_verify(args) -> int:
+    """attach --verify：§5.4 真实穿透自检，§7.2 四字段报告，§7 JSON。"""
+    import json as _json
+
+    from .attach_verify import verify_attachment
+
+    report = verify_attachment(_project(args.path))
+    if getattr(args, "json", False):
+        print(_json.dumps(report, ensure_ascii=False, indent=2, default=str))
+    else:
+        for item in report["surfaces"]:
+            print(f"{item['surface']:18} {item['state']:10} {item['why']}")
+            if item["safe_next_action"]:
+                print(f"  next: {item['safe_next_action']}")
+        if report["next_step"]:
+            print(f"下一步: {report['next_step']}")
+        else:
+            print("全部表面 verified：无 gap")
+    return 0 if not report["gaps"] else 2
 
 
 def main(argv=None) -> int:

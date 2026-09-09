@@ -131,3 +131,53 @@ def test_secret_never_persists_in_public_view_or_receipt(tmp_path):
     secret = receipt["ticket_model"].secret
     assert receipt["ticket"].get("secret") is None
     assert secret not in blob
+
+
+def test_unified_fingerprint_matches_action_envelope(tmp_path):
+    """§9.5：bridge 动作并入 ActionEnvelope 分类机器——同一命令经任意
+    harness 到达，指纹一致（build_envelope 与 canonical 同基）。"""
+    from sopcontrol.action_plane import build_envelope
+
+    argv = ["product", "scan", "--url", "https://example.test/api"]
+    command = " ".join(argv)
+    envelope = build_envelope(
+        {"tool_name": "Bash", "tool_input": {"command": command}},
+        harness="bridge",
+        task_id="scan.cli",
+    )
+    basis = {
+        "surface": envelope.surface,
+        "operation": envelope.operation,
+        "target": envelope.target,
+        "integration_id": "scan.cli",
+        "action": "network.scan",
+    }
+    import json as _json
+    import hashlib as _hashlib
+    expected = "sha256:" + _hashlib.sha256(
+        _json.dumps(basis, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+
+    assert canonical_fingerprint("scan.cli", "network.scan", argv) == expected
+    # 同一逻辑动作重试不变
+    assert canonical_fingerprint("scan.cli", "network.scan", list(argv)) == expected
+
+
+def test_bridge_install_and_remove_wrapper_roundtrip(tmp_path):
+    """§9.4：launcher 生成可执行、remove 回滚移除；回滚清单记录 existed_before。"""
+    from sopcontrol.bridge import install_wrapper, remove_wrapper
+
+    installed = install_wrapper(
+        tmp_path, integration_id="scan.cli",
+        command=["/Users/xiezhijie/sopcontrol/.venv/bin/sopctl", "bridge", "run",
+                 "--action", "network.scan", "--side-effect", "network_request"],
+        name="product-scan",
+    )
+    launcher = tmp_path / ".sopcontrol-local" / "bin" / "product-scan"
+    assert launcher.exists() and launcher.stat().st_mode & 0o111
+
+    removed = remove_wrapper(tmp_path, name="product-scan")
+    assert removed["removed"] is True
+    assert not launcher.exists()
+    # 幂等：再 remove 报 removed=False
+    assert remove_wrapper(tmp_path, name="product-scan")["removed"] is False

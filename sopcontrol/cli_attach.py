@@ -20,6 +20,10 @@ def cmd_attach(args) -> int:
     root = _project(args.path)
     mode = "observe" if getattr(args, "mode", None) == "observe" else "auto"
     plan_only = bool(getattr(args, "plan", False))
+    if getattr(args, "verify", False):
+        from .cli import cmd_attach_verify
+
+        return cmd_attach_verify(args)
     as_json = bool(getattr(args, "json", False))
 
     plan = plan_attachment(root, requested_mode=mode)
