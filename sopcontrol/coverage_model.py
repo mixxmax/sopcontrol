@@ -36,6 +36,11 @@ CORE_SURFACES = (
     "harness_opencode",
     "harness_codex",
     "runtime_supervised",
+    "network",
+    "browser",
+    "credential",
+    "database",
+    "background",
 )
 
 

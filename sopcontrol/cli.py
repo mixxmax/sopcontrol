@@ -19,6 +19,7 @@ from .cli_candidate import *
 from .cli_attach import *
 from .cli_coverage import *
 from .cli_enter import *
+from .cli_effect import *
 from .registry import RegistryError
 from .repair import RepairError
 
@@ -70,6 +71,78 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_coverage)
+
+    effect = sub.add_parser(
+        "effect",
+        help="外部副作用原语（Phase E）：network/browser/credential/db/background/idempotent",
+    )
+    effect_sub = effect.add_subparsers(dest="effect_sub", required=True)
+
+    p = effect_sub.add_parser("network", help="分类网络目标并决策")
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--url", required=True)
+    p.add_argument("--method", default="GET")
+    p.add_argument("--allow-host", action="append", help="允许主机候选（可重复）")
+    p.add_argument("--require-ticket", action="store_true")
+    p.add_argument("--ticket-id", default="")
+    p.add_argument("--ticket-secret", default="")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_effect)
+
+    p = effect_sub.add_parser("browser", help="分类浏览器会话/页面动作")
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--profile", default="")
+    p.add_argument("--cdp", default="")
+    p.add_argument("--url", default="")
+    p.add_argument("--approved-profile", action="append")
+    p.add_argument("--action", default="page_action")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_effect)
+
+    p = effect_sub.add_parser("credential-grant", help="签发作用域受限的凭证 capability ticket")
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--scope", action="append", required=True, help="凭证作用域，可重复")
+    p.add_argument("--fingerprint", required=True, help="输入指纹（绑定 ticket）")
+    p.add_argument("--ttl", type=int, default=300)
+    p.add_argument("--show-secret", action="store_true", help="仅 stderr 打印一次性 secret")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_effect)
+
+    p = effect_sub.add_parser("db-summary", help="记录数据库写入摘要（无行内容）")
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--engine", required=True)
+    p.add_argument("--operation", required=True, help="insert|update|delete|txn|write")
+    p.add_argument("--object", default="")
+    p.add_argument("--rows", type=int, default=0)
+    p.add_argument("--txn", default="")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_effect)
+
+    p = effect_sub.add_parser("background", help="登记后台/队列/定时任务（不启动进程）")
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--kind", default="daemon", choices=["scheduler", "queue", "daemon", "timer"])
+    p.add_argument("--command", default="")
+    p.add_argument("--pid", type=int, default=0)
+    p.add_argument("--run-id", default="")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_effect)
+
+    p = effect_sub.add_parser("idempotent-write", help="外部写入幂等键：首次接受，重复拒绝/回放")
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--key", required=True)
+    p.add_argument("--action", required=True)
+    p.add_argument("--result-digest", default="")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_effect)
+
+    p = effect_sub.add_parser("issue-network-ticket", help="为网络请求签发一次性 ticket")
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--url", required=True)
+    p.add_argument("--method", default="GET")
+    p.add_argument("--ttl", type=int, default=300)
+    p.add_argument("--show-secret", action="store_true")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_effect)
 
     p = sub.add_parser(
         "enter",

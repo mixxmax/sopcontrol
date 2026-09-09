@@ -129,6 +129,16 @@ def _from_adapters(root: Path, records: dict[str, SurfaceRecord], worktree_id: s
         adapter="supervised",
         gap_reason="file_and_network_enforce_unsupported_not_unbypassable",
     )
+    # Phase E effect primitives exist as observe/ask adapters — not verified sandboxes
+    for surface, reason in (
+        ("network", "network_classifier_no_egress_enforce"),
+        ("browser", "browser_classifier_no_cdp_enforce"),
+        ("credential", "credential_broker_tickets_only"),
+        ("database", "db_summary_observe_only"),
+        ("background", "background_registry_observe_only"),
+    ):
+        rec = _ensure(records, surface, worktree_id)
+        _upgrade(rec, "observable", "adapter", adapter=f"effects.{surface}", gap_reason=reason)
     # git hooks
     rec = _ensure(records, "git_hooks", worktree_id)
     if status.git_hook == "unavailable":
