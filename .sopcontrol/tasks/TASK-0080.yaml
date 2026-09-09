@@ -1,0 +1,83 @@
+task_id: TASK-0080
+contract:
+  objective: 桥接 P0 欠账与 P1：attach --verify 真实穿透自检（§5.4/§7.2 四字段报告+JSON）；bridge install/remove
+    生成透明 wrapper 并提供回滚（§9.4）；bridge 指纹并入 ActionEnvelope 规范实现全 harness 统一（§9.5）
+  allowed_writes:
+  - sopcontrol/bridge.py
+  - sopcontrol/cli_attach.py
+  - sopcontrol/cli.py
+  - tests/harness/test_bridge.py
+  - tests/harness/test_attach_verify.py
+  required_rules:
+  - CTRL-001
+  - SELF-001
+  - SELF-002
+  required_fields:
+  - attach_verify_report
+  - bridge_install_rollback
+  - unified_fingerprint
+  max_repairs: 1
+  repairs_fingerprint: null
+  write_granularity: file
+  strict_schema: true
+  capability_note: 当前模型未声明（已有画像 vertical-backbone 不适用） tier=unknown：模型能力未知：按保守边界执行，文件级写入
+    + 强制 MUST 字段清单；行为事件触发 weak 上限（近期任务迁移被拒）
+  model_identity: ''
+status: delivered
+repair_count: 0
+changed_paths:
+- sopcontrol/bridge.py
+- sopcontrol/cli.py
+- sopcontrol/cli_attach.py
+- tests/harness/test_bridge.py
+- tests/harness/test_attach_verify.py
+revision: 6
+created_at: '2026-09-09T13:51:18.079206Z'
+updated_at: '2026-09-09T14:52:22.723085Z'
+history:
+- at: '2026-09-09T13:51:30.500422Z'
+  action: accept
+  from_status: contract_proposed
+  to_status: executing
+  allowed: true
+  reason: 契约完整：目标、写入范围与可验证完成定义齐备
+  detail:
+    next_action: 执行变更后 task submit 提交改动路径
+- at: '2026-09-09T14:34:59.868563Z'
+  action: submit
+  from_status: executing
+  to_status: null
+  allowed: false
+  reason: 范围走私被拒绝：sopcontrol/attach_verify.py 不在契约的 allowed_writes 内；扩大范围必须重新创建并确认契约（14.1
+    场景9）
+  detail:
+    next_action: 只提交契约内路径；如确需扩大范围，重新运行 sopctl task open 创建包含精确路径的新任务
+- at: '2026-09-09T14:46:24.434952Z'
+  action: submit
+  from_status: executing
+  to_status: verification_pending
+  allowed: true
+  reason: 改动 5 个路径，全部在写入范围内；MUST 字段齐备 [attach_verify_report, bridge_install_rollback,
+    unified_fingerprint]
+  detail:
+    next_action: 运行 task verify 由控制器独立审计
+- at: '2026-09-09T14:52:15.706046Z'
+  action: verify
+  from_status: verification_pending
+  to_status: verified
+  allowed: true
+  reason: 完成门通过：全部必需规则 [CTRL-001, SELF-001, SELF-002] 判定 pass（E4 实测：本轮执行 .venv/bin/python
+    -m pytest -q 通过（338.475s）+ E3 独立审计）
+  detail:
+    next_action: task deliver 交付
+- at: '2026-09-09T14:52:22.713990Z'
+  action: deliver
+  from_status: verified
+  to_status: delivered
+  allowed: true
+  reason: 完成门已独立验证，允许交付
+  detail:
+    next_action: 无
+resolution_of: []
+superseded_by_task: ''
+blocked_reason_code: ''
