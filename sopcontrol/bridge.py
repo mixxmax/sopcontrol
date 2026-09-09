@@ -71,6 +71,23 @@ def operation_id(integration_id: str, action: str, argv: list[str]) -> str:
     return "op-" + _digest_payload(canonical_payload(integration_id, action, argv))[:16]
 
 
+def _rollback_path(root: Path) -> Path:
+    return Path(root) / ".sopcontrol-local" / "bridge-rollback.json"
+
+
+def _load_manifest(root: Path) -> dict[str, Any]:
+    rollback = _rollback_path(root)
+    if not rollback.exists():
+        return {}
+    return json.loads(rollback.read_text(encoding="utf-8"))
+
+
+def _save_manifest(root: Path, manifest: dict[str, Any]) -> Path:
+    rollback = _rollback_path(root)
+    rollback.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    return rollback
+
+
 def install_wrapper(
     root: Path, *, integration_id: str, command: list[str], name: str = "",
 ) -> dict[str, Any]:
@@ -80,7 +97,6 @@ def install_wrapper(
     bin_dir = root / ".sopcontrol-local" / "bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
     launcher = bin_dir / name
-    rollback = root / ".sopcontrol-local" / "bridge-rollback.json"
     existed = launcher.exists()
     launcher.write_text(
         "#!/bin/sh\n"
@@ -91,32 +107,38 @@ def install_wrapper(
         encoding="utf-8",
     )
     launcher.chmod(0o755)
-    manifest: dict[str, Any] = {}
-    if rollback.exists():
-        manifest = json.loads(rollback.read_text(encoding="utf-8"))
+    manifest = _load_manifest(root)
     manifest[name] = {
         "integration_id": integration_id,
         "command": list(command),
+        "files": [str(launcher)],
         "existed_before": existed,
     }
-    rollback.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    rollback = _save_manifest(root, manifest)
     return {"name": name, "launcher": str(launcher), "rollback": str(rollback)}
 
 
 def remove_wrapper(root: Path, *, name: str) -> dict[str, Any]:
-    """§9.4 回滚：移除 launcher 并按清单恢复原状。"""
+    """§9.4 回滚：移除 launcher/清单内文件并按清单恢复原状。"""
     root = Path(root)
     launcher = root / ".sopcontrol-local" / "bin" / name
-    rollback = root / ".sopcontrol-local" / "bridge-rollback.json"
-    existed_before = None
-    if rollback.exists():
-        manifest = json.loads(rollback.read_text(encoding="utf-8"))
-        existed_before = manifest.pop(name, None)
-        rollback.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    manifest = _load_manifest(root)
+    existed_before = manifest.pop(name, None)
+    _save_manifest(root, manifest)
+    removed = False
+    for f in [str(launcher)] + list((existed_before or {}).get("files") or []):
+        try:
+            p = Path(f)
+            if p.exists() and p.is_file():
+                p.unlink()
+                removed = True
+        except OSError:
+            continue
     if launcher.exists():
         launcher.unlink()
-        return {"name": name, "removed": True, "existed_before": (existed_before or {}).get("existed_before")}
-    return {"name": name, "removed": False}
+        removed = True
+    return {"name": name, "removed": removed,
+            "existed_before": (existed_before or {}).get("existed_before")}
 
 
 def build_control_envelope(

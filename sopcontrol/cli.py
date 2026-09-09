@@ -478,6 +478,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="原始命令与参数（用 -- 分隔）",
     )
     run_p.set_defaults(func=cmd_bridge)
+    inst_p = bridge_sub.add_parser("install", help="生成透明 launcher/scaffold 并登记回滚")
+    inst_p.add_argument("--action", required=True, help="逻辑动作名，如 network.scan")
+    inst_p.add_argument("--integration-id", required=True, help="集成清单 id，如 scan.cli")
+    inst_p.add_argument("--side-effect", default="", help="副作用类；留空=只读免票")
+    inst_p.add_argument("--task-id", default="")
+    inst_p.add_argument("--name", default="", help="安装名（默认 integration-id 派生）")
+    inst_p.add_argument("--lang", default="sh", choices=["sh", "python", "node"],
+                        help="入口模板语言（默认 sh）")
+    inst_p.add_argument("command", nargs=argparse.REMAINDER, help="原始命令与参数（用 -- 分隔）")
+    inst_p.set_defaults(func=cmd_bridge_install)
+    rm_p = bridge_sub.add_parser("remove", help="按回滚清单移除 launcher/scaffold")
+    rm_p.add_argument("--name", required=True, help="安装名")
+    rm_p.set_defaults(func=cmd_bridge_remove)
+    ls_p = bridge_sub.add_parser("list", help="列出已安装的 bridge 入口")
+    ls_p.add_argument("--json", action="store_true", help="机器可读输出")
+    ls_p.set_defaults(func=cmd_bridge_list)
     identity = sub.add_parser("identity", help="项目身份（Phase 6 种子：跨 harness 识别同一项目）")
     identity_sub = identity.add_subparsers(dest="sub", required=True)
     for name, help_text in (
@@ -783,6 +799,70 @@ def cmd_bridge(args) -> int:
     printable = {k: v for k, v in receipt.items() if k != "ticket_model"}
     print(_json.dumps(printable, ensure_ascii=False, indent=2, default=str))
     return 0 if receipt.get("executed") else 1
+
+
+def _strip_dashes(command: list[str]) -> list[str]:
+    command = list(command)
+    while command and command[0] == "--":
+        command.pop(0)
+    return command
+
+
+def cmd_bridge_install(args) -> int:
+    """bridge install：生成透明入口并登记回滚（只写 .sopcontrol-local）。"""
+    import json as _json
+
+    from .bridge_scaffold import install_scaffold
+
+    from pathlib import Path as _Path
+
+    command = _strip_dashes(list(args.command))
+    if not command:
+        print("错误: install 需要原始命令（用 -- 分隔）", file=sys.stderr)
+        return 2
+    root = _Path.cwd()
+    name = args.name or (args.integration_id.replace(".", "-") + "-bridge")
+    # CLI 安装统一走 scaffold：运行时解析 sopctl（不 bake 绝对路径、不依赖 PATH 激活态）。
+    installed = install_scaffold(
+        root, name=name, lang=args.lang, integration_id=args.integration_id,
+        action=args.action, command=command,
+        side_effect=args.side_effect or "", task_id=args.task_id or "",
+    )
+    print(_json.dumps(installed, ensure_ascii=False, indent=2, default=str))
+    return 0
+
+
+def cmd_bridge_remove(args) -> int:
+    """bridge remove：按回滚清单移除入口。"""
+    import json as _json
+
+    from .bridge import remove_wrapper
+
+    from pathlib import Path as _Path
+
+    removed = remove_wrapper(_Path.cwd(), name=args.name)
+    print(_json.dumps(removed, ensure_ascii=False, indent=2, default=str))
+    return 0 if removed["removed"] else 1
+
+
+def cmd_bridge_list(args) -> int:
+    """bridge list：已安装入口一览（文本/JSON）。"""
+    import json as _json
+
+    from .bridge import _load_manifest
+
+    from pathlib import Path as _Path
+
+    manifest = _load_manifest(_Path.cwd())
+    if getattr(args, "json", False):
+        print(_json.dumps(manifest, ensure_ascii=False, indent=2, default=str))
+        return 0
+    if not manifest:
+        print("未安装 bridge 入口")
+        return 0
+    for name, entry in manifest.items():
+        print(f"{name:28} {entry.get('lang', 'sh'):8} {entry.get('integration_id', '')}")
+    return 0
 
 
 def cmd_attach_verify(args) -> int:
