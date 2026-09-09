@@ -43,43 +43,64 @@ def test_unknown_tool_expands_denominator_and_adds_gap_or_observable(tmp_path):
     assert after.control_coverage.verified_ratio <= max(before_ratio, 0.99)
 
 
-def test_probe_can_verify_and_adapter_removal_revokes(tmp_path):
+def test_probe_without_harness_cannot_forge_verified(tmp_path):
     work = tmp_path / "p"
     work.mkdir()
-    assert main(["attach", str(work)]) == 0
+    assert main(["init", str(work)]) == 0
+    result = verify_surface(work, "filesystem_write")
+    assert result.passed is False
+    assert "no_live_harness" in result.detail
+    report = control_coverage(work)
+    fw = next(s for s in report.surfaces if s.surface == "filesystem_write")
+    assert fw.state != "verified"
+
+
+def test_probe_can_verify_with_live_harness_and_adapter_removal_revokes(tmp_path):
+    work = tmp_path / "p"
+    work.mkdir()
+    assert main(["init", str(work)]) == 0
+    assert main(["hook", "opencode", str(work)]) == 0
     result = verify_surface(work, "filesystem_write")
     assert result.passed is True
+    assert "harness-check" in result.detail
     report = control_coverage(work)
     fw = next(s for s in report.surfaces if s.surface == "filesystem_write")
     assert fw.state == "verified"
     assert "probe" in fw.sources
 
-    # Simulate adapter removal for opencode after a fake verified probe
+    # Remove OpenCode adapter → prior verified for tool surfaces and harness must drop
+    for p in (work / ".opencode" / "plugins").glob("sopcontrol*.js"):
+        p.unlink()
+    # Failed re-probe should force gap even over prior verified
+    failed = verify_surface(work, "filesystem_write")
+    assert failed.passed is False
+    report2 = control_coverage(work)
+    fw2 = next(s for s in report2.surfaces if s.surface == "filesystem_write")
+    assert fw2.state == "gap"
+    oc = next(s for s in report2.surfaces if s.surface == "harness_opencode")
+    assert oc.state != "verified"
+
+
+def test_failed_probe_downgrades_enforceable(tmp_path):
+    work = tmp_path / "p"
+    work.mkdir()
+    assert main(["init", str(work)]) == 0
+    assert main(["hook", "opencode", str(work)]) == 0
+    assert verify_surface(work, "shell").passed is True
+    # Force a failing probe record that must downgrade
     record_probe_result(
         work,
         ProbeResult(
-            surface="harness_opencode",
-            passed=True,
-            evidence_digest="deadbeef",
-            detail="fake",
+            surface="shell",
+            passed=False,
+            evidence_digest="fail",
+            detail="forced_fail",
         ),
     )
-    # Ensure plugin exists then remove
-    plugin = work / ".opencode" / "plugins" / "sopcontrol.js"
-    plugin.parent.mkdir(parents=True, exist_ok=True)
-    if not plugin.exists():
-        alt = work / ".opencode" / "plugins" / "sopcontrol-attach.js"
-        if alt.exists():
-            plugin = alt
-    if plugin.exists():
-        plugin.unlink()
-    # Also remove sibling attach plugin if any
-    for p in (work / ".opencode" / "plugins").glob("sopcontrol*.js"):
-        p.unlink()
-    report2 = control_coverage(work)
-    oc = next(s for s in report2.surfaces if s.surface == "harness_opencode")
-    assert oc.state != "verified"
-    assert oc.state in {"gap", "detected"} or "adapter_removed" in (oc.gap_reason or "")
+    report = control_coverage(work)
+    shell = next(s for s in report.surfaces if s.surface == "shell")
+    assert shell.state == "gap"
+    assert shell.gap_reason == "forced_fail"
 
 
 def test_worktree_events_do_not_cross_contaminate(tmp_path):

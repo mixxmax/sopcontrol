@@ -11,12 +11,54 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import signal
 import subprocess
 import time
 from pathlib import Path
 from typing import Optional, Protocol, runtime_checkable
 from uuid import uuid4
+
+_SECRET_FLAG = re.compile(
+    r"(?i)^(--?(?:token|password|passwd|api-?key|secret|authorization|access-token))$"
+)
+_SECRET_HEADER = re.compile(r"(?i)^(authorization|api-?key|x-api-key|token)$")
+_ASSIGN_KEY = re.compile(
+    r"(?i)^(token|password|passwd|api[_-]?key|secret|authorization|access_key|access-token)="
+)
+_BEARER = re.compile(r"(?i)\bbearer\s+\S+")
+
+
+def _redact_part(part: str) -> str:
+    if _ASSIGN_KEY.match(part):
+        return part.split("=", 1)[0] + "=***"
+    if _BEARER.search(part):
+        return _BEARER.sub("Bearer ***", part)
+    if _SECRET_HEADER.match(part.split(":", 1)[0].strip()):
+        return part.split(":", 1)[0] + ":***"
+    return part
+
+
+def redact_argv(argv: list[str]) -> list[str]:
+    """Redact likely secrets from argv for receipts/events (digests stay separate)."""
+    out: list[str] = []
+    hide_next = False
+    for part in argv:
+        if hide_next:
+            out.append("***")
+            hide_next = False
+            continue
+        if _SECRET_FLAG.match(part) or part in {"-H", "--header"}:
+            out.append(part)
+            # -H / --header: next arg is the header line (may contain Authorization)
+            hide_next = part in {"-H", "--header"} or bool(_SECRET_FLAG.match(part))
+            continue
+        out.append(_redact_part(part))
+    return out
+
+
+def redact_command_summary(argv: list[str], limit: int = 120) -> str:
+    return " ".join(redact_argv(argv))[:limit]
 
 from .context import ProjectScope
 from .events import ControlEvent, append_event
@@ -190,6 +232,7 @@ class SupervisedSession:
         # Explicitly do NOT set HTTP_PROXY as a fake control.
         env.pop("SOPCONTROL_FAKE_PROXY_CONTROL", None)
 
+        redacted = redact_argv(self.command)
         append_event(
             root,
             ControlEvent(
@@ -202,13 +245,13 @@ class SupervisedSession:
                 detail={
                     "mode": policy.mode,
                     "command_digest": _digest(" ".join(self.command)),
-                    "command_summary": " ".join(self.command)[:120],
+                    "command_summary": redact_command_summary(self.command),
                     "capabilities_gaps": list(caps.gaps),
                 },
             ),
         )
 
-        argv_summary = " ".join(self.command)[:160]
+        argv_summary = redact_command_summary(self.command, limit=160)
         try:
             self._proc = subprocess.Popen(
                 self.command,
@@ -274,13 +317,13 @@ class SupervisedSession:
             for child in children.get(cur, []):
                 if child not in self._seen_children and child != root_pid:
                     self._seen_children.add(child)
-                    summary = cmds.get(child, "")[:120]
+                    summary = _redact_part(cmds.get(child, ""))[:120]
                     self._events.append(
                         ProcessEvent(
                             kind="child_seen",
                             pid=child,
                             ppid=cur,
-                            argv_digest=_digest(summary),
+                            argv_digest=_digest(cmds.get(child, "")),
                             argv_summary=summary,
                         )
                     )
@@ -344,7 +387,7 @@ class SupervisedSession:
             worktree_id=self._worktree_id,
             root=str(self.root),
             mode=self.policy.mode,
-            command=list(self.command),
+            command=redact_argv(self.command),
             exit_code=exit_code,
             started_at=self._started,
             ended_at=ended,
@@ -352,6 +395,7 @@ class SupervisedSession:
             process_events=list(self._events),
             gaps=sorted(set(gaps)),
             business_tree_damaged=False,
+            detail={"command_digest": _digest(" ".join(self.command))},
         )
         path = _receipts_dir(self.root, self._worktree_id)
         path.mkdir(parents=True, exist_ok=True)
@@ -441,7 +485,7 @@ class _TestingSession:
             worktree_id=self._worktree_id,
             root=str(self.root),
             mode="supervised",
-            command=self.command,
+            command=redact_argv(self.command),
             exit_code=0,
             started_at=self._started,
             ended_at=utcnow().isoformat(),
@@ -449,7 +493,10 @@ class _TestingSession:
             process_events=events,
             gaps=sorted(set(gaps)),
             business_tree_damaged=False,
-            detail={"identity_env_keys": sorted(env.keys())},
+            detail={
+                "identity_env_keys": sorted(env.keys()),
+                "command_digest": _digest(" ".join(self.command)),
+            },
         )
         path = _receipts_dir(self.root, self._worktree_id)
         path.mkdir(parents=True, exist_ok=True)

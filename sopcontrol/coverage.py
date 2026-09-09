@@ -100,11 +100,19 @@ def record_surface_event(
     return record_probe_result(Path(root), result)
 
 
-def _upgrade(record: SurfaceRecord, state: SurfaceState, source: str, **fields: Any) -> None:
+def _upgrade(
+    record: SurfaceRecord,
+    state: SurfaceState,
+    source: str,
+    *,
+    force: bool = False,
+    **fields: Any,
+) -> None:
     # Adapter/event/static must never mint verified — only probes may.
     if state == "verified" and source != "probe":
         state = "enforceable"
-    if _STATE_RANK.get(state, 0) >= _STATE_RANK.get(record.state, 0):
+    # Probe failures / adapter-removed must be allowed to downgrade.
+    if force or _STATE_RANK.get(state, 0) >= _STATE_RANK.get(record.state, 0):
         record.state = state  # type: ignore[assignment]
     if source not in record.sources:
         record.sources.append(source)  # type: ignore[arg-type]
@@ -129,16 +137,18 @@ def _from_adapters(root: Path, records: dict[str, SurfaceRecord], worktree_id: s
         adapter="supervised",
         gap_reason="file_and_network_enforce_unsupported_not_unbypassable",
     )
-    # Phase E effect primitives exist as observe/ask adapters — not verified sandboxes
+    # Phase E effect primitives are available as modules, but without usage evidence
+    # they stay detected (not observable) to avoid inflated coverage.
     for surface, reason in (
-        ("network", "network_classifier_no_egress_enforce"),
-        ("browser", "browser_classifier_no_cdp_enforce"),
-        ("credential", "credential_broker_tickets_only"),
-        ("database", "db_summary_observe_only"),
-        ("background", "background_registry_observe_only"),
+        ("network", "network_classifier_available_unused"),
+        ("browser", "browser_classifier_available_unused"),
+        ("credential", "credential_broker_available_unused"),
+        ("database", "db_summary_available_unused"),
+        ("background", "background_registry_available_unused"),
     ):
         rec = _ensure(records, surface, worktree_id)
-        _upgrade(rec, "observable", "adapter", adapter=f"effects.{surface}", gap_reason=reason)
+        if rec.state == "undiscovered":
+            _upgrade(rec, "detected", "adapter", adapter=f"effects.{surface}", gap_reason=reason)
     # git hooks
     rec = _ensure(records, "git_hooks", worktree_id)
     if status.git_hook == "unavailable":
@@ -186,20 +196,26 @@ def _from_static(root: Path, records: dict[str, SurfaceRecord], worktree_id: str
             rec = _ensure(records, surface, worktree_id)
             if rec.state == "undiscovered":
                 _upgrade(rec, "detected", "static", adapter="action_plane")
-    # Bootstrap-ish signals: network/browser keywords widen denominator as gap
-    for path in list(root.glob("**/*.{py,js,ts,tsx,go}"))[:200]:
+    # Bootstrap-ish signals: network/browser keywords widen denominator as gap.
+    # Path.glob does not support brace expansion — enumerate suffixes explicitly.
+    candidates: list[Path] = []
+    for suffix in (".py", ".js", ".ts", ".tsx", ".go"):
+        candidates.extend(root.rglob(f"*{suffix}"))
+    for path in candidates[:200]:
+        if any(part.startswith(".") for part in path.parts if part not in {".", ".."}):
+            # skip dotdirs like .venv / .git
+            if any(p.startswith(".") and p not in {".", ".."} for p in path.parts[:-1]):
+                continue
         try:
             text = path.read_text(encoding="utf-8", errors="ignore")[:4000].casefold()
         except OSError:
             continue
         if any(k in text for k in ("requests.", "httpx.", "aiohttp", "urllib.request", "fetch(")):
             rec = _ensure(records, "network", worktree_id)
-            if _STATE_RANK[rec.state] < _STATE_RANK["observable"]:
-                _upgrade(rec, "gap", "static", gap_reason="network_usage_detected_no_adapter")
+            _upgrade(rec, "gap", "static", force=True, gap_reason="network_usage_detected_no_egress_enforce")
         if any(k in text for k in ("playwright", "puppeteer", "selenium", "chromedriver")):
             rec = _ensure(records, "browser", worktree_id)
-            if _STATE_RANK[rec.state] < _STATE_RANK["observable"]:
-                _upgrade(rec, "gap", "static", gap_reason="browser_usage_detected_no_adapter")
+            _upgrade(rec, "gap", "static", force=True, gap_reason="browser_usage_detected_no_cdp_enforce")
     return scan if isinstance(scan, dict) else {}
 
 
@@ -240,17 +256,24 @@ def _from_events(root: Path, records: dict[str, SurfaceRecord], worktree_id: str
 
 
 def _from_probes(root: Path, records: dict[str, SurfaceRecord], worktree_id: str) -> None:
-    """Apply probe results. Verified only if probe passed AND adapter still present."""
+    """Apply probe results. Verified only if probe passed AND live harness still present."""
     status = attachment_status(root)
+    live_harness = (
+        status.harness.get("claude") == "installed"
+        or status.harness.get("opencode") == "installed"
+    )
     adapter_alive = {
-        "harness_claude": status.harness.get("claude") in {"installed", "present_without_sopctl"},
+        "harness_claude": status.harness.get("claude") == "installed",
         "harness_opencode": status.harness.get("opencode") == "installed",
-        "harness_codex": status.harness.get("codex") in {"projection", "installed"},
+        "harness_codex": False,  # never pre-tool verified
         "git_hooks": status.git_hook in {"sopctl", "chained"},
-        "filesystem_write": True,
-        "filesystem_read": True,
-        "shell": True,
-        "search": True,
+        # Tool surfaces need a live harness interception path
+        "filesystem_write": live_harness,
+        "filesystem_read": live_harness,
+        "shell": live_harness,
+        "search": live_harness,
+        "network": live_harness,
+        "browser": live_harness,
     }
     # Latest probe per surface wins
     latest: dict[str, ProbeResult] = {}
@@ -260,7 +283,7 @@ def _from_probes(root: Path, records: dict[str, SurfaceRecord], worktree_id: str
         latest[probe.surface] = probe
     for surface, probe in latest.items():
         rec = _ensure(records, surface, worktree_id)
-        alive = adapter_alive.get(surface, True)
+        alive = adapter_alive.get(surface, live_harness)
         if probe.passed and alive:
             _upgrade(
                 rec, "verified", "probe",
@@ -270,12 +293,14 @@ def _from_probes(root: Path, records: dict[str, SurfaceRecord], worktree_id: str
         elif probe.passed and not alive:
             _upgrade(
                 rec, "gap", "probe",
+                force=True,
                 evidence_digest=probe.evidence_digest,
                 gap_reason="adapter_removed_probe_stale",
             )
         else:
             _upgrade(
                 rec, "gap", "probe",
+                force=True,
                 evidence_digest=probe.evidence_digest,
                 gap_reason=probe.detail or "probe_failed",
             )

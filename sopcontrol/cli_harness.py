@@ -346,7 +346,8 @@ def cmd_hook_claude(args) -> int:
     # 于是这个坏掉的安装器一直「看起来装好了」。tests/harness 现在拿真 parser 校验它。
     command = f'"{sys.executable}" -m sopcontrol.cli harness-check'
     pre = data.setdefault("hooks", {}).setdefault("PreToolUse", [])
-    entry = {"matcher": "Bash|Write|Edit|MultiEdit", "hooks": [{"type": "command", "command": command}]}
+    # Match all tools so Read/Search/Browser/MCP/unknown enter Action Plane (Phase B).
+    entry = {"matcher": ".*", "hooks": [{"type": "command", "command": command}]}
 
     replaced = False
     for existing in pre:

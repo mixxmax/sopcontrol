@@ -245,9 +245,11 @@ def plan_attachment(
         else:
             plan.deferred_surfaces.append("git_hooks")
 
-    # Claude settings
+    # Claude / OpenCode: only install when the harness is already present in the project.
+    # Do not create .claude/ or .opencode/ for projects that never used them.
     settings = root / ".claude" / "settings.json"
-    if settings.exists():
+    claude_detected = settings.exists() or (root / ".claude").is_dir()
+    if claude_detected and settings.exists():
         try:
             json.loads(settings.read_text(encoding="utf-8"))
             plan.safe_changes.append(
@@ -269,18 +271,22 @@ def plan_attachment(
                 )
             )
             plan.deferred_surfaces.append("harness_claude")
-    else:
+    elif claude_detected:
         plan.safe_changes.append(
             PlannedChange(
                 change_id="hook_claude",
                 kind="harness_claude",
                 strategy="isolate",
                 path=str(settings),
-                summary="Install Claude settings hook section",
+                summary="Install Claude settings hook section (.claude/ already present)",
             )
         )
+    else:
+        plan.deferred_surfaces.append("harness_claude")
+        plan.notes.append("Claude not detected — skip creating .claude/; run sopctl hook claude when needed")
 
     plugin = root / ".opencode" / "plugins" / "sopcontrol.js"
+    opencode_detected = (root / ".opencode").exists() or plugin.exists()
     if plugin.exists():
         try:
             text = plugin.read_text(encoding="utf-8", errors="replace")
@@ -316,16 +322,19 @@ def plan_attachment(
                     summary="Will not overwrite foreign OpenCode plugin",
                 )
             )
-    else:
+    elif opencode_detected:
         plan.safe_changes.append(
             PlannedChange(
                 change_id="hook_opencode",
                 kind="harness_opencode",
                 strategy="isolate",
                 path=str(plugin),
-                summary="Install OpenCode sopcontrol plugin",
+                summary="Install OpenCode sopcontrol plugin (.opencode/ already present)",
             )
         )
+    else:
+        plan.deferred_surfaces.append("harness_opencode")
+        plan.notes.append("OpenCode not detected — skip creating .opencode/; run sopctl hook opencode when needed")
 
     plan.safe_changes.append(
         PlannedChange(
@@ -772,12 +781,29 @@ def plan_detachment(root: Path | str) -> DetachPlan:
                         summary="Remove sopctl OpenCode plugin",
                     )
                 )
-    # Claude settings: only remove sopctl-owned hook entries is complex; list as keep
     settings = root / ".claude" / "settings.json"
     if settings.exists():
-        keep.append(
-            str(settings) + " (may contain sopctl hooks — not auto-deleted; edit manually if needed)"
-        )
+        try:
+            data = json.loads(settings.read_text(encoding="utf-8"))
+            pre = (data.get("hooks") or {}).get("PreToolUse") or []
+            has_sopctl = any(
+                "sopcontrol.cli" in str(h.get("command", ""))
+                for entry in pre
+                for h in (entry.get("hooks") or [])
+            )
+            if has_sopctl:
+                removable.append(
+                    PlannedChange(
+                        change_id="remove_claude_hooks",
+                        kind="harness_claude",
+                        strategy="merge",
+                        path=str(settings),
+                        summary="Remove sopctl PreToolUse hook entries from Claude settings",
+                    )
+                )
+            keep.append(str(settings) + " (file kept; only sopctl hook entries removed)")
+        except (OSError, json.JSONDecodeError):
+            keep.append(str(settings) + " (unreadable — left untouched)")
     return DetachPlan(
         root=str(root),
         removable=removable,
@@ -824,7 +850,28 @@ def apply_detachment(root: Path | str, *, confirm: bool = False) -> dict:
             elif item.kind == "harness_opencode" and path.exists():
                 path.unlink()
                 removed.append({"path": str(path), "kind": item.kind})
-        except OSError as exc:
+            elif item.kind == "harness_claude" and path.exists():
+                data = json.loads(path.read_text(encoding="utf-8"))
+                pre = (data.get("hooks") or {}).get("PreToolUse") or []
+                new_pre = []
+                stripped = 0
+                for entry in pre:
+                    hooks = [
+                        h for h in (entry.get("hooks") or [])
+                        if "sopcontrol.cli" not in str(h.get("command", ""))
+                    ]
+                    stripped += len(entry.get("hooks") or []) - len(hooks)
+                    if hooks:
+                        entry = dict(entry)
+                        entry["hooks"] = hooks
+                        new_pre.append(entry)
+                    # drop empty matcher entries that only held sopctl
+                if "hooks" not in data:
+                    data["hooks"] = {}
+                data["hooks"]["PreToolUse"] = new_pre
+                path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                removed.append({"path": str(path), "kind": item.kind, "stripped_hooks": stripped})
+        except (OSError, json.JSONDecodeError, ValueError) as exc:
             errors.append(f"{path}: {exc}")
 
     receipt = {
