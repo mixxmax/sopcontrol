@@ -494,6 +494,18 @@ def build_parser() -> argparse.ArgumentParser:
     ls_p = bridge_sub.add_parser("list", help="列出已安装的 bridge 入口")
     ls_p.add_argument("--json", action="store_true", help="机器可读输出")
     ls_p.set_defaults(func=cmd_bridge_list)
+    pack = sub.add_parser(
+        "pack",
+        help="外部 Policy Pack + 版本化连接器包（纯数据校验与展示，不执行包代码）",
+    )
+    pack_sub = pack.add_subparsers(dest="pack_cmd", required=True)
+    v_p = pack_sub.add_parser("validate", help="校验 pack.yaml（只读）")
+    v_p.add_argument("path", help="pack 目录")
+    v_p.set_defaults(func=cmd_pack_validate)
+    s_p = pack_sub.add_parser("show", help="展示 pack 内容（只读）")
+    s_p.add_argument("path", help="pack 目录")
+    s_p.add_argument("--json", action="store_true", help="机器可读输出")
+    s_p.set_defaults(func=cmd_pack_show)
     identity = sub.add_parser("identity", help="项目身份（Phase 6 种子：跨 harness 识别同一项目）")
     identity_sub = identity.add_subparsers(dest="sub", required=True)
     for name, help_text in (
@@ -862,6 +874,41 @@ def cmd_bridge_list(args) -> int:
         return 0
     for name, entry in manifest.items():
         print(f"{name:28} {entry.get('lang', 'sh'):8} {entry.get('integration_id', '')}")
+    return 0
+
+
+def cmd_pack_validate(args) -> int:
+    """pack validate：只读校验 pack.yaml（rc=0 合法，rc=2 非法）。"""
+    from .policy_pack import validate_pack
+
+    errors = validate_pack(args.path)
+    if not errors:
+        print(f"pack 合法: {args.path}")
+        return 0
+    for err in errors:
+        print(f"pack 非法: {err}")
+    return 2
+
+
+def cmd_pack_show(args) -> int:
+    """pack show：只读展示（文本/JSON；永不 import 包代码）。"""
+    import json as _json
+
+    from .policy_pack import PackError, load_pack
+
+    try:
+        pack = load_pack(args.path)
+    except PackError as exc:
+        print(f"pack 非法: {exc}", file=sys.stderr)
+        return 2
+    if getattr(args, "json", False):
+        print(pack.model_dump_json(ensure_ascii=False, indent=2))
+        return 0
+    print(f"{pack.name} {pack.version}（{len(pack.breakers)} breaker / {len(pack.connectors)} connector）")
+    for b in pack.breakers:
+        print(f"  breaker {b.id}: {b.surface} → {b.decision}（{b.reason}）")
+    for c in pack.connectors:
+        print(f"  connector {c.name} {c.version} [{c.kind}]")
     return 0
 
 
