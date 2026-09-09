@@ -27,6 +27,8 @@ from .model import utcnow
 
 ATTACH_MARKER = "# sopcontrol-attach v1"
 CHAIN_MARKER = "# sopcontrol-hook-chain v1"
+# 旧版裸 hook：含 HOOK_MARKER 但直接 exec sopctl、无 resolver（P1 升级对象）。
+RESOLVER_SIGNATURE = "resolve_and_run"
 
 
 def _utc_stamp() -> str:
@@ -134,6 +136,8 @@ def _hook_status(root: Path) -> tuple[str, Optional[Path]]:
         return "foreign", hook
     if CHAIN_MARKER in text or (HOOK_MARKER in text and "sopcontrol-previous" in text):
         return "chained", hook
+    if (HOOK_MARKER in text or ATTACH_MARKER in text) and RESOLVER_SIGNATURE not in text:
+        return "bare", hook
     if HOOK_MARKER in text or ATTACH_MARKER in text:
         return "sopctl", hook
     return "foreign", hook
@@ -221,6 +225,16 @@ def plan_attachment(
                     strategy="noop",
                     path=hook_rel,
                     summary=f"pre-push already sopctl-managed ({status})",
+                )
+            )
+        elif status == "bare":
+            plan.safe_changes.append(
+                PlannedChange(
+                    change_id="hook_pre_push",
+                    kind="git_hook",
+                    strategy="upgrade",
+                    path=hook_rel,
+                    summary="Upgrade bare pre-push to resolver-based hook (backup kept, no PATH dependency)",
                 )
             )
         elif status == "foreign":
@@ -388,6 +402,21 @@ def _write_chain_hook(hook_path: Path, previous_body: str, backup_path: Path) ->
     hook_path.chmod(0o755)
 
 
+def _install_resolver_hook(hook_path: Path) -> None:
+    """Write the resolver-based pre-push body (no PATH dependency)."""
+    body = HOOK_TEMPLATE
+    if not body.startswith("#!"):
+        body = "#!/bin/sh\n" + body
+    # ensure attach marker present for status detection
+    if ATTACH_MARKER not in body:
+        lines = body.splitlines()
+        lines.insert(1, ATTACH_MARKER)
+        body = "\n".join(lines) + "\n"
+    hook_path.parent.mkdir(parents=True, exist_ok=True)
+    hook_path.write_text(body, encoding="utf-8")
+    hook_path.chmod(0o755)
+
+
 def _apply_init(root: Path) -> AppliedChange:
     from .cli_core import cmd_init
 
@@ -466,18 +495,23 @@ def _apply_hook(root: Path, change: PlannedChange) -> AppliedChange:
             summary="chained existing pre-push with sopctl gate",
             detail={"backup": str(backup)},
         )
+    if change.strategy == "upgrade" or status == "bare":
+        previous = hook_path.read_text(encoding="utf-8", errors="replace") if hook_path.exists() else ""
+        backup = _backups_dir(root) / f"pre-push.{_utc_stamp()}.bare"
+        backup.parent.mkdir(parents=True, exist_ok=True)
+        backup.write_text(previous, encoding="utf-8")
+        _install_resolver_hook(hook_path)
+        return AppliedChange(
+            change_id=change.change_id,
+            kind="git_hook",
+            strategy="upgrade",
+            path=str(hook_path),
+            outcome="applied",
+            summary="upgraded bare pre-push to resolver-based hook",
+            detail={"backup": str(backup)},
+        )
     # isolate / missing
-    hook_path.parent.mkdir(parents=True, exist_ok=True)
-    body = HOOK_TEMPLATE
-    if not body.startswith("#!"):
-        body = "#!/bin/sh\n" + body
-    # ensure attach marker present for status detection
-    if ATTACH_MARKER not in body:
-        lines = body.splitlines()
-        lines.insert(1, ATTACH_MARKER)
-        body = "\n".join(lines) + "\n"
-    hook_path.write_text(body, encoding="utf-8")
-    hook_path.chmod(0o755)
+    _install_resolver_hook(hook_path)
     return AppliedChange(
         change_id=change.change_id,
         kind="git_hook",

@@ -15,7 +15,7 @@ ConnectionState = Literal[
     "not_connected",
     "aborted",
 ]
-ChangeStrategy = Literal["merge", "chain", "isolate", "defer", "abort", "noop"]
+ChangeStrategy = Literal["merge", "chain", "isolate", "defer", "abort", "noop", "upgrade"]
 ChangeKind = Literal[
     "init_control_dir",
     "ensure_identity",
