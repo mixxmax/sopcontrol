@@ -34,6 +34,7 @@ def test_verify_reports_all_surfaces_verified_on_clean_project(tmp_path, monkeyp
     assert report["schema_version"] == "1"
     assert set(report["verified"]) == {
         "filesystem_write", "filesystem_read", "shell", "search", "network",
+        "browser", "database", "background",
     }
     assert report["gaps"] == []
     for item in report["surfaces"]:

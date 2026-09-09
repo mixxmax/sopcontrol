@@ -197,6 +197,16 @@ def verify_surface(root: Path | str, surface: str) -> ProbeResult:
             "tool_name": "browser_navigate",
             "tool_input": {"url": "about:blank"},
         },
+        # P2：database/background 真实探针——只走 adapter 回调决策链，不执行。
+        # 无 adapter 时诚实 gap（never verified）；未来真实 adapter 接入后同载荷可 verified。
+        "database": {
+            "tool_name": "db_read",
+            "tool_input": {"query": "SELECT 1", "readonly": True},
+        },
+        "background": {
+            "tool_name": "background_run",
+            "tool_input": {"command": "true"},
+        },
         "git_hooks": None,
         "harness_claude": None,
         "harness_opencode": None,

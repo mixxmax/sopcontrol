@@ -18,6 +18,9 @@ _PROBE_SURFACES = (
     "shell",
     "search",
     "network",
+    "browser",
+    "database",
+    "background",
 )
 
 
