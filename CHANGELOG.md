@@ -1,46 +1,36 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — 2026-09-09
+
+Universal attach control plane + segmentation release (Early Access). Audit baseline: `f65b191`.
 
 ### Added
 
 - Universal attach handbook Phases A–F: `attach` / `coverage` / `enter` / `effect` / `compat` / `detach --confirm` (see `docs/verification/PHASE_*` and `INSTALL_MATRIX_20260909.md`)
 - Universal control plane: `ProjectScope` + discovery/enforcement split; worktree-local evidence cache & events; hook CLI resolver; `sopctl audit --enforce` / `--no-persist`; `sopctl event` (see `docs/verification/UNIVERSAL_PLANE_20260908.md`)
-- P0/P1 hardening: ledger id-cache + `append_many` (kill O(n²) persist); `sopctl ledger diagnose`; gate stage progress; one-shot `sopctl ticket issue|redeem` (see `docs/verification/P0P1_HARDENING_20260908.md`)
-
-## 0.2.0 — 2026-09-06
-
-First public-facing packaging of the living-project control plane.
-
-### Added
-
-- Living project loop: projection slices with chain-head budget & session recovery protocol, chronicle (`project-events.jsonl` + `sopctl chronicle check|snapshot`), ambient growth, space measure (`growth measure|diff`)
-- Reversible rule lifecycle: `rule suspend --until` / `reinstate` / `narrow --scope` — content-addressed two-phase human confirmation, inclusive deadline (`at <= until` paused, `at > until` auto-recovers), path-scope v1 (project or repo-relative prefixes) enforced across audit, verdicts, conflicts, maturity, tasks, repair and projections
-- Permanent exits: `rule deprecate` / `rule supersede` (supersede atomically accepts proposed replacements; replacement must cover the retiring scope)
-- `task withdraw` — unaccepted contract proposals exit legally to a terminal state (repair tasks refused; reason required; envelope + chronicle leave a paper trail)
-- Evidence lifecycle binding: attestations bind to the current lifecycle revision (agent self-signature refused; sources must be in-repo regular files), trace freshness checked per guard (stale / future / naive rejected)
-- Mid-conversation model switch: `task rebind` (permissions only tighten), harness executor identity guard
-- Disambiguation: `redundant_entry_point`, `candidate enact` → bounded delete-entry tasks; retire-rule candidates materialize after sustained multi-round evidence (human two-phase exit only — never automatic)
-- Dual-language README lifecycle/withdraw parity; combined statement+branch coverage enforced at >=85% (`fail_under`), with branch coverage reported separately
-- Verification artifacts: product red-team checklist + first report; product verification simulation (`docs/verification/`)
+- **下一刀（中途接入）**: `sopctl doctor` 末尾最多 3 步可执行下一步（武装 / 真规则 / enact·吸收·退场）
+- **deliver 空间帧**: `task deliver` 成功后自动 `growth` 全量快照 + 对照上一帧变窄叙事（编年 `growth.deliver_measure`）
+- **久悬 gap**: `documented_rule_no_consumer` 等 → `improve_entry`；约 6 轮仍缺消费者 → 额外 `retire_rule` 候选（仅建议 `rule suspend` / `deprecate`，不自动退场）
+- Scan honors git boundaries: dot-directories pruned as tool state; manifest `scan_excludes` for data directories; over-limit still fails loud
 
 ### Fixed
 
-- Governance facts single-entry: ordinary `Registry.save/add/transition` cannot inject, rewrite, delete or restore retirement / lifecycle / attestation facts; duplicate rule IDs rejected before write
-- Concurrency safety: registry-wide reentrant RLock + cross-process `flock` on canonical paths with atomic temp-file writes; ledger RLock + `flock` with atomic `replace_snapshot`; task check-to-save and repair check-to-copy share the registry lock
-- Symlink TOCTOU closures: attestation hashes an `O_NOFOLLOW`-opened fd; repair copies via dirfd + `O_NOFOLLOW`
-- Projection energy-cap warning now lands inside the managed section — `project all -> check` converges beyond budget; retire-candidate fingerprints are round-count stable (aggregation, not proliferation)
-- Audit completeness/atomicity verified from a clean controller baseline
+- REL-001: `cli_product` missing `sys` import — over-budget warnings now print instead of NameError (with regression tests)
+- REL-002: coverage combine INTERNALERROR (statement/branch mix from subprocess measurement) — release verification command unified on `--cov-branch` so main and child processes agree
+- REL-004: hook resolver python fallbacks no longer swallow the fail-closed install hint when the module import fails (importability pre-check on both fallbacks)
 - Scan traversal excludes `.worktrees` / `.dsh` / `.pnpm-store` / `.planning` so the 500-file cap does not hide main-tree consumers
 
 ### Energy
 
 - `sopctl doctor` defaults to **light** (space snapshot + next moves; no full-tree inventory/audit); use `--full` when needed
-- Projection section fitted to <=~1500 tokens / 80 lines; pending candidates ranked delete/improve before `register_rule`; warn when observed candidates > 32
-- **Next-move (mid-session)**: `sopctl doctor` ends with up to 3 executable next steps (arm / real rule / enact-absorb-retire)
-- **Deliver space frame**: `task deliver` captures a full growth snapshot and narrates whether the ambiguity space narrowed
+- Projection section fitted to ≤~1500 tokens / 80 lines; pending candidates ranked delete/improve before `register_rule`; warn when observed candidates > 32
 
-### Notes
+### Verification
 
-- Still **experimental**. Authority stays in `.sopcontrol/`; candidates never auto-promote; permanent exits remain human two-phase.
-- Not published to PyPI yet; install from git (see README).
+- Product red-team checklist + first report (`docs/verification/REDTEAM_CHECKLIST.md`, `REDTEAM_20260902.md`)
+- Product verification simulation (`docs/verification/SIM_20260902T071439Z.md`)
+
+### Docs
+
+- Dual-language README (EN + ZH) with reversible lifecycle, withdraw and coverage-gate parity
+- JobsFlow enablement kit (`docs/onboarding/JOBSFLOW_ENABLEMENT.md`)

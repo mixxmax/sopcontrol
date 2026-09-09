@@ -101,10 +101,10 @@ resolve_and_run() {
   if command -v sopctl >/dev/null 2>&1; then
     exec sopctl gate "$ROOT"
   fi
-  if [ -x "$ROOT/.venv/bin/python" ]; then
+  if [ -x "$ROOT/.venv/bin/python" ] && "$ROOT/.venv/bin/python" -c "import sopcontrol.cli" 2>/dev/null; then
     exec "$ROOT/.venv/bin/python" -m sopcontrol.cli gate "$ROOT"
   fi
-  if command -v python3 >/dev/null 2>&1; then
+  if command -v python3 >/dev/null 2>&1 && python3 -c "import sopcontrol.cli" 2>/dev/null; then
     exec python3 -m sopcontrol.cli gate "$ROOT"
   fi
   echo "sopctl: controller CLI not found (fail-closed)." >&2

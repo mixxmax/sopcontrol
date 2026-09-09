@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sopcontrol"
-version = "0.2.0"
+version = "0.3.0"
 description = "SOP Control: model-neutral project control plane for coding agents (experimental but real)"
 readme = "README.md"
 requires-python = ">=3.10"
