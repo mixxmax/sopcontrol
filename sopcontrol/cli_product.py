@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import sys
 
 from .cli_common import _project
 from .product import PERF_BUDGETS, compat_check, measure_attach_status_seconds, measure_coverage_seconds

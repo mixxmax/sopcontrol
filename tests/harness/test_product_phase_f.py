@@ -117,3 +117,53 @@ def test_parser_exposes_phase_commands():
     assert choices is not None
     for name in ("attach", "coverage", "enter", "effect", "compat", "detach"):
         assert name in choices
+
+
+def test_compat_measure_warns_when_attach_status_over_budget(tmp_path, capsys, monkeypatch):
+    _git_init(tmp_path)
+    monkeypatch.setattr(
+        "sopcontrol.cli_product.measure_attach_status_seconds", lambda root: 999.0
+    )
+    monkeypatch.setattr(
+        "sopcontrol.cli_product.measure_coverage_seconds", lambda root: 0.001
+    )
+
+    rc = main(["compat", "--measure", str(tmp_path)])
+    err = capsys.readouterr().err
+
+    assert "warn: attach-status exceeded warm budget" in err
+    assert "warn: coverage exceeded warm budget" not in err
+    assert rc == 0  # 预算超支是 warn 不是 fail：暖路径预算超支不改变接入判定
+
+
+def test_compat_measure_warns_when_coverage_over_budget(tmp_path, capsys, monkeypatch):
+    _git_init(tmp_path)
+    monkeypatch.setattr(
+        "sopcontrol.cli_product.measure_attach_status_seconds", lambda root: 0.001
+    )
+    monkeypatch.setattr(
+        "sopcontrol.cli_product.measure_coverage_seconds", lambda root: 999.0
+    )
+
+    rc = main(["compat", "--measure", str(tmp_path)])
+    err = capsys.readouterr().err
+
+    assert "warn: coverage exceeded warm budget" in err
+    assert "warn: attach-status exceeded warm budget" not in err
+    assert rc == 0
+
+
+def test_compat_measure_without_sys_regression(tmp_path, monkeypatch, capsys):
+    """REL-001 回归：超预算分支真实走到 sys.stderr，不再 NameError。"""
+    _git_init(tmp_path)
+    monkeypatch.setattr(
+        "sopcontrol.cli_product.measure_attach_status_seconds", lambda root: 999.0
+    )
+    monkeypatch.setattr(
+        "sopcontrol.cli_product.measure_coverage_seconds", lambda root: 999.0
+    )
+
+    rc = main(["compat", "--measure", str(tmp_path)])
+
+    assert rc == 0
+    assert "warn: attach-status exceeded warm budget" in capsys.readouterr().err
