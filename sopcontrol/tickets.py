@@ -6,6 +6,7 @@ environment variables as proof of authorization.
 """
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import secrets
@@ -141,31 +142,38 @@ def redeem_ticket(
     now: datetime | None = None,
 ) -> CapabilityTicket:
     """Verify and consume a ticket. Env vars alone cannot forge a valid ticket."""
-    ticket = _load_ticket(root, ticket_id, worktree_id=worktree_id)
+    root_path = Path(root)
+    scope_wt = worktree_id or ProjectScope(root_path, mode="discovery").worktree_id
+    directory = _ticket_dir(root_path, scope_wt)
+    directory.mkdir(parents=True, exist_ok=True)
+    lock_path = directory / f".{ticket_id}.lock"
     when = now or utcnow()
-    if ticket.consumed_at is not None:
-        raise TicketError("ticket already consumed")
-    if when > ticket.expires_at:
-        raise TicketError("ticket expired")
-    if not secrets.compare_digest(ticket.secret, secret):
-        raise TicketError("ticket secret mismatch")
-    scope = ProjectScope(Path(root), mode="discovery")
-    if ticket.worktree_id and ticket.worktree_id != (worktree_id or scope.worktree_id):
-        raise TicketError("ticket worktree mismatch")
-    ident = load_identity(root)
-    if ident and ticket.project_id not in ("", "unknown") and ticket.project_id != ident.project_id:
-        raise TicketError("ticket project_id mismatch")
-    if ticket.action != action:
-        raise TicketError("ticket action mismatch")
-    if ticket.input_fingerprint != input_fingerprint:
-        raise TicketError("ticket input fingerprint mismatch")
-    if task_id and ticket.task_id and ticket.task_id != task_id:
-        raise TicketError("ticket task_id mismatch")
-    if side_effect and side_effect not in ticket.allowed_side_effects:
-        raise TicketError(f"side effect not allowed: {side_effect}")
-    ticket.consumed_at = when
-    _save_ticket(root, ticket)
-    return ticket
+    # §9 P1：兑换的读-验-写全程持锁，防止并发双消费（flock 对进程与线程均互斥）
+    with open(lock_path, "a+") as lock_handle:
+        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+        ticket = _load_ticket(root_path, ticket_id, worktree_id=scope_wt)
+        if ticket.consumed_at is not None:
+            raise TicketError("ticket already consumed")
+        if when > ticket.expires_at:
+            raise TicketError("ticket expired")
+        if not secrets.compare_digest(ticket.secret, secret):
+            raise TicketError("ticket secret mismatch")
+        if ticket.worktree_id and ticket.worktree_id != scope_wt:
+            raise TicketError("ticket worktree mismatch")
+        ident = load_identity(root_path)
+        if ident and ticket.project_id not in ("", "unknown") and ticket.project_id != ident.project_id:
+            raise TicketError("ticket project_id mismatch")
+        if ticket.action != action:
+            raise TicketError("ticket action mismatch")
+        if ticket.input_fingerprint != input_fingerprint:
+            raise TicketError("ticket input fingerprint mismatch")
+        if task_id and ticket.task_id and ticket.task_id != task_id:
+            raise TicketError("ticket task_id mismatch")
+        if side_effect and side_effect not in ticket.allowed_side_effects:
+            raise TicketError(f"side effect not allowed: {side_effect}")
+        ticket.consumed_at = when
+        _save_ticket(root_path, ticket)
+        return ticket
 
 
 def ticket_public_view(ticket: CapabilityTicket) -> dict[str, Any]:

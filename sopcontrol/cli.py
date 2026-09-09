@@ -452,6 +452,28 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_task)
     _task_cmd("list", "列出任务")
 
+    bridge = sub.add_parser(
+        "bridge",
+        help="兼容桥接（P0）：统一 envelope + Ticket 挑战/兑换 + 原命令执行",
+    )
+    bridge_sub = bridge.add_subparsers(dest="bridge_cmd", required=True)
+    run_p = bridge_sub.add_parser("run", help="经 Bridge 执行原始命令并产出脱敏回执")
+    run_p.add_argument("--action", required=True, help="逻辑动作名，如 network.scan")
+    run_p.add_argument(
+        "--integration-id", required=True,
+        help="集成清单 id（发现阶段生成，如 scan.cli）",
+    )
+    run_p.add_argument(
+        "--side-effect", default="",
+        help="副作用类：network_request/credential_use/browser_session/"
+             "database_write/external_write/irreversible；留空=只读免票",
+    )
+    run_p.add_argument("--task-id", default="")
+    run_p.add_argument(
+        "command", nargs=argparse.REMAINDER,
+        help="原始命令与参数（用 -- 分隔）",
+    )
+    run_p.set_defaults(func=cmd_bridge)
     identity = sub.add_parser("identity", help="项目身份（Phase 6 种子：跨 harness 识别同一项目）")
     identity_sub = identity.add_subparsers(dest="sub", required=True)
     for name, help_text in (
@@ -733,6 +755,30 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_event, sub="validate")
 
     return parser
+
+
+def cmd_bridge(args) -> int:
+    """bridge run：构建稳定 envelope → 按副作用类走免票/票据流程 → 脱敏回执。"""
+    import json as _json
+    from pathlib import Path as _Path
+
+    from .bridge import run_bridge
+
+    root = _Path.cwd()
+    command = list(args.command)
+    while command and command[0] == "--":
+        command.pop(0)
+    receipt = run_bridge(
+        root,
+        integration_id=args.integration_id,
+        action=args.action,
+        argv=command,
+        side_effect=args.side_effect or "",
+        task_id=args.task_id or "",
+    )
+    printable = {k: v for k, v in receipt.items() if k != "ticket_model"}
+    print(_json.dumps(printable, ensure_ascii=False, indent=2, default=str))
+    return 0 if receipt.get("executed") else 1
 
 
 def main(argv=None) -> int:
