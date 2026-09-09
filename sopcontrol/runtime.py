@@ -23,6 +23,9 @@ _SECRET_FLAG = re.compile(
     r"(?i)^(--?(?:token|password|passwd|api-?key|secret|authorization|access-token))$"
 )
 _SECRET_HEADER = re.compile(r"(?i)^(authorization|api-?key|x-api-key|token)$")
+_INLINE_SECRET_FLAG = re.compile(
+    r"(?i)^(--?(?:token|password|passwd|api-?key|secret|authorization|access-token))=.+$"
+)
 _ASSIGN_KEY = re.compile(
     r"(?i)^(token|password|passwd|api[_-]?key|secret|authorization|access_key|access-token)="
 )
@@ -30,6 +33,10 @@ _BEARER = re.compile(r"(?i)\bbearer\s+\S+")
 
 
 def _redact_part(part: str) -> str:
+    if _INLINE_SECRET_FLAG.match(part):
+        return part.split("=", 1)[0] + "=***"
+    if part.lower().startswith(("--header=", "-h=")):
+        return part.split("=", 1)[0] + "=***"
     if _ASSIGN_KEY.match(part):
         return part.split("=", 1)[0] + "=***"
     if _BEARER.search(part):

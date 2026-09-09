@@ -7,6 +7,7 @@ from pathlib import Path
 
 from sopcontrol.cli import main
 from sopcontrol.coverage import control_coverage
+from sopcontrol.coverage_probe import verify_surface
 from sopcontrol.runtime import redact_argv, redact_command_summary
 
 
@@ -30,6 +31,19 @@ def test_opencode_plugin_forwards_unknown_tools(tmp_path):
     text = (work / ".opencode" / "plugins" / "sopcontrol.js").read_text(encoding="utf-8")
     assert 'tool_name: String(input.tool' in text or "tool_name: String(input.tool" in text
     assert "if (!payload) return" not in text
+
+
+def test_probe_rejects_broken_opencode_adapter(tmp_path):
+    work = tmp_path / "p"
+    work.mkdir()
+    assert main(["init", str(work)]) == 0
+    assert main(["hook", "opencode", str(work)]) == 0
+    (work / ".opencode" / "plugins" / "sopcontrol.js").write_text(
+        "export const broken = ;\n", encoding="utf-8"
+    )
+    result = verify_surface(work, "filesystem_write")
+    assert result.passed is False
+    assert "callback" in result.detail or "adapter" in result.detail
 
 
 def test_static_network_discovery_via_rglob(tmp_path):
@@ -63,6 +77,9 @@ def test_runtime_redacts_secrets_in_argv():
     assert "abc123" not in joined
     assert "***" in joined
     assert "supersecret" not in redact_command_summary(["export", "API_KEY=supersecret", "run"])
+    equals = " ".join(redact_argv(["curl", "--token=eqsecret", "--api-key=keysecret"]))
+    assert "eqsecret" not in equals
+    assert "keysecret" not in equals
 
 
 def test_attach_skips_creating_claude_opencode_when_absent(tmp_path):

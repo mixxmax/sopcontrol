@@ -2,15 +2,17 @@
 
 Verified requires a live harness adapter (Claude PreToolUse or OpenCode plugin)
 and a decision path that goes through `sopctl harness-check` — the same entry
-hooks use. Pure `evaluate_payload` alone must never mint verified.
+hooks use. A direct `evaluate_payload` call alone must never mint verified.
 """
 from __future__ import annotations
 
 import hashlib
 import json
+import shlex
+import shutil
+import subprocess
 from pathlib import Path
 
-from .action_plane import commit_action_result, evaluate_payload
 from .coverage import record_probe_result
 from .coverage_model import ProbeResult
 from .context import ProjectScope
@@ -31,21 +33,10 @@ def _live_harness_present(root: Path) -> tuple[bool, str]:
     return False, "none"
 
 
-def _run_via_harness_check(root: Path, payload: dict) -> tuple[bool, str, dict]:
-    """Invoke the same CLI path PreToolUse / OpenCode plugins call."""
-    from .cli import main
-    import io
-    from contextlib import redirect_stdout, redirect_stderr
-
-    raw = json.dumps(payload, ensure_ascii=False)
-    buf = io.StringIO()
-    err = io.StringIO()
-    with redirect_stdout(buf), redirect_stderr(err):
-        rc = main(["harness-check", str(root), "--payload", raw])
-    out = buf.getvalue().strip()
-    # Parse last JSON object line from stdout
+def _last_json(text: str) -> dict:
+    """Parse the decision object without returning command output or secrets."""
     decision_payload: dict = {}
-    for line in reversed(out.splitlines()):
+    for line in reversed(text.strip().splitlines()):
         line = line.strip()
         if line.startswith("{"):
             try:
@@ -53,9 +44,120 @@ def _run_via_harness_check(root: Path, payload: dict) -> tuple[bool, str, dict]:
                 break
             except json.JSONDecodeError:
                 continue
-    ok = rc == 0 and bool(decision_payload)
-    detail = f"harness-check rc={rc}"
-    return ok, detail, decision_payload
+    return decision_payload
+
+
+def _claude_hook_command(root: Path) -> str | None:
+    settings = root / ".claude" / "settings.json"
+    try:
+        data = json.loads(settings.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    for entry in (data.get("hooks") or {}).get("PreToolUse") or []:
+        for hook in entry.get("hooks") or []:
+            command = str(hook.get("command") or "")
+            if "sopcontrol.cli" in command and "harness-check" in command:
+                return command
+    return None
+
+
+def _opencode_plugin(root: Path) -> Path | None:
+    for name in ("sopcontrol.js", "sopcontrol-attach.js"):
+        path = root / ".opencode" / "plugins" / name
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        if "sopcontrol-hook v1" in text and "tool.execute.before" in text:
+            return path
+    return None
+
+
+def _run_claude_callback(root: Path, payload: dict) -> tuple[bool, str, dict]:
+    command = _claude_hook_command(root)
+    if not command:
+        return False, "claude_hook_missing_or_unusable", {}
+    try:
+        argv = shlex.split(command)
+    except ValueError:
+        return False, "claude_hook_command_unparseable", {}
+    if not argv or any(any(char in part for char in ";|&<>") for part in argv):
+        return False, "claude_hook_command_unsafe", {}
+    try:
+        completed = subprocess.run(
+            argv,
+            cwd=root,
+            input=json.dumps(payload, ensure_ascii=False) + "\n",
+            text=True,
+            capture_output=True,
+            timeout=10,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return False, "claude_callback_timeout", {}
+    except OSError:
+        return False, "claude_callback_unavailable", {}
+    decision = _last_json(completed.stdout)
+    return completed.returncode == 0 and bool(decision), f"claude-callback rc={completed.returncode}", decision
+
+
+_OPENCODE_CALLBACK = r"""
+import { pathToFileURL } from "node:url";
+const plugin = process.argv[1];
+const payload = JSON.parse(process.argv[2]);
+const module = await import(pathToFileURL(plugin).href);
+if (typeof module.SopControl !== "function") throw new Error("missing SopControl export");
+const handlers = await module.SopControl();
+const callback = handlers["tool.execute.before"];
+if (typeof callback !== "function") throw new Error("missing tool.execute.before");
+const name = String(payload.tool_name || "unknown");
+const lower = name.toLowerCase();
+const inputTool = lower === "bash" ? "bash" : lower === "edit" ? "edit" : lower === "write" ? "write" : lower;
+const raw = payload.tool_input || {};
+const args = inputTool === "bash"
+  ? { command: raw.command }
+  : inputTool === "edit" || inputTool === "write"
+    ? { filePath: raw.file_path || raw.filePath || raw.path, content: raw.content,
+        oldString: raw.old_string || raw.oldString, newString: raw.new_string || raw.newString }
+    : raw;
+await callback({ tool: inputTool }, { args });
+"""
+
+
+def _run_opencode_callback(root: Path, payload: dict) -> tuple[bool, str, dict]:
+    plugin = _opencode_plugin(root)
+    node = shutil.which("node")
+    if not plugin or not node:
+        return False, "opencode_callback_unavailable", {}
+    try:
+        completed = subprocess.run(
+            [node, "--input-type=module", "-e", _OPENCODE_CALLBACK, str(plugin), json.dumps(payload)],
+            cwd=root,
+            text=True,
+            capture_output=True,
+            timeout=10,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return False, "opencode_callback_timeout", {}
+    except OSError:
+        return False, "opencode_callback_unavailable", {}
+    if completed.returncode == 0:
+        # The plugin consumes harness-check's JSON internally and only throws on
+        # deny/ask. A clean callback return is therefore the adapter's allow proof.
+        decision = {"hookSpecificOutput": {"permissionDecision": "allow"}}
+    else:
+        decision = _last_json(completed.stdout)
+    return completed.returncode == 0, f"opencode-callback rc={completed.returncode}", decision
+
+
+def _run_via_harness_check(root: Path, payload: dict, harness: str) -> tuple[bool, str, dict]:
+    """Exercise the installed adapter callback, which then calls harness-check."""
+    if harness == "claude":
+        return _run_claude_callback(root, payload)
+    if harness == "opencode":
+        return _run_opencode_callback(root, payload)
+    return False, "unsupported_harness_adapter", {}
 
 
 def verify_surface(root: Path | str, surface: str) -> ProbeResult:
@@ -112,7 +214,7 @@ def verify_surface(root: Path | str, surface: str) -> ProbeResult:
         record_probe_result(root, result)
         return result
 
-    # Structural adapter probes (presence only — never verified for codex pre-tool)
+    # Structural adapter probes must exercise the installed callback, not only file presence.
     if probes.get(surface) is None and surface in {
         "git_hooks", "harness_claude", "harness_opencode", "harness_codex",
     }:
@@ -122,12 +224,18 @@ def verify_surface(root: Path | str, surface: str) -> ProbeResult:
         if surface == "git_hooks":
             passed = status.git_hook in {"sopctl", "chained"}
             detail = f"git_hook={status.git_hook}"
-        elif surface == "harness_claude":
-            passed = status.harness.get("claude") == "installed"
-            detail = f"claude={status.harness.get('claude')}"
-        elif surface == "harness_opencode":
-            passed = status.harness.get("opencode") == "installed"
-            detail = f"opencode={status.harness.get('opencode')}"
+        elif surface in {"harness_claude", "harness_opencode"}:
+            expected = "claude" if surface == "harness_claude" else "opencode"
+            if status.harness.get(expected) != "installed":
+                passed = False
+                detail = f"{expected}={status.harness.get(expected)}"
+            else:
+                passed, callback_detail, _ = _run_via_harness_check(
+                    root,
+                    {"tool_name": "Read", "tool_input": {"file_path": "README.md"}},
+                    expected,
+                )
+                detail = f"{expected}={callback_detail}"
         else:
             passed = False
             detail = "codex_projection_only_no_pretool"
@@ -156,7 +264,7 @@ def verify_surface(root: Path | str, surface: str) -> ProbeResult:
 
     payload = probes[surface]
     assert payload is not None
-    ok, detail, decision_payload = _run_via_harness_check(root, payload)
+    ok, detail, decision_payload = _run_via_harness_check(root, payload, harness_name)
     perm = ""
     if decision_payload:
         perm = str(
@@ -167,13 +275,6 @@ def verify_surface(root: Path | str, surface: str) -> ProbeResult:
     # Write probe must be allow (path is under .sopcontrol-local, not controller)
     if surface == "filesystem_write":
         passed = ok and perm == "allow"
-
-    # Also record Action Plane receipt for ledger correlation
-    try:
-        decision = evaluate_payload(payload, harness=harness_name)
-        commit_action_result(root, decision)
-    except Exception:
-        pass
 
     result = ProbeResult(
         surface=surface,
