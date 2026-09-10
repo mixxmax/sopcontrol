@@ -67,6 +67,11 @@ def compat_check(root: Path | str | None = None) -> dict[str, Any]:
         issues.append(f"OS {info['os']} outside declared matrix {INSTALL_MATRIX['os']}")
 
     root_info: dict[str, Any] = {}
+    from .resolve_cli import hook_shell_available
+
+    shell_ok, shell_why = hook_shell_available()
+    if not shell_ok:
+        issues.append(f"pre-push hook shell 不可用（{shell_why}）")
     if root is not None:
         root = Path(root).resolve()
         status = attachment_status(root)
@@ -89,6 +94,7 @@ def compat_check(root: Path | str | None = None) -> dict[str, Any]:
     return {
         "schema_version": "1",
         "platform": info,
+        "hook_shell": {"available": shell_ok, "detail": shell_why},
         "matrix": INSTALL_MATRIX,
         "perf_budgets_s": PERF_BUDGETS,
         "project": root_info,

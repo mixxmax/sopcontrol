@@ -637,6 +637,13 @@ def cmd_event(args) -> int:
 
 
 def cmd_hook(args) -> int:
+    from .resolve_cli import hook_shell_available
+
+    shell_ok, shell_why = hook_shell_available()
+    if not shell_ok:
+        # P2 Windows 矩阵：无 shell 时拒绝写入必坏的 sh hook。
+        print(f"拒绝安装: {shell_why}", file=sys.stderr)
+        return 2
     root = _project(args.path)
     git_dir = root / ".git"
     if not git_dir.exists():

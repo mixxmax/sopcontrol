@@ -70,6 +70,43 @@ def resolve_sopctl(
     )
 
 
+def hook_shell_available(
+    *, os_name: str | None = None, find_bash=None,
+) -> tuple[bool, str]:
+    """sh 版 pre-push 能否被执行（P2 Windows 矩阵）。
+
+    POSIX 直接可用；Windows 仅在找得到 bash 时可用（Git for Windows
+    自带 bash 可跑 sh hook）。无 shell 时调用方不得写入 sh hook——
+    装一个必坏的钩子比明说 gap 更糟。
+    """
+    name = os_name if os_name is not None else os.name
+    if name != "nt":
+        return True, "posix-sh"
+
+    def _find(prog: str) -> str | None:
+        if find_bash is not None:
+            return find_bash(prog)
+        hit = shutil.which(prog)
+        if hit:
+            return hit
+        for candidate in (
+            r"C:\Program Files\Git\bin\bash.exe",
+            r"C:\Program Files (x86)\Git\bin\bash.exe",
+        ):
+            if os.path.exists(candidate):
+                return candidate
+        return None
+
+    hit = _find("bash")
+    if hit:
+        return True, f"windows-bash:{hit}"
+    return False, (
+        "Windows 下无 bash：sh 版 pre-push 无法执行；"
+        "装 Git for Windows（含 Git Bash）或用 WSL 后重跑 attach；"
+        "期间高影响动作走 sopctl gate 人工门"
+    )
+
+
 def hook_script_body() -> str:
     """Shell hook that resolves CLI then runs gate fail-closed."""
     return '''#!/bin/sh

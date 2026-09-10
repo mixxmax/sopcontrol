@@ -205,9 +205,19 @@ def plan_attachment(
         plan.deferred_surfaces.append("git_ci")
         plan.notes.append("Non-git project: identity/events/harness still attach; git marked unavailable")
     else:
-        status, hook_path = _hook_status(root)
+        from .resolve_cli import hook_shell_available
+
+        shell_ok, shell_why = hook_shell_available()
+        if shell_ok:
+            status, hook_path = _hook_status(root)
+        else:
+            status, hook_path = "noshell", _git_path(root, "hooks", "pre-push")
         hook_rel = str(hook_path) if hook_path else "hooks/pre-push"
-        if status == "missing":
+        if not shell_ok:
+            # P2 Windows 矩阵：无 shell 时不写必坏的 sh hook，降级为 gap。
+            plan.deferred_surfaces.append("git_hooks")
+            plan.notes.append(f"pre-push 未安装（{shell_why}）")
+        elif status == "missing":
             plan.safe_changes.append(
                 PlannedChange(
                     change_id="hook_pre_push",
