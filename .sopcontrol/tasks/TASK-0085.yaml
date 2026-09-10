@@ -1,0 +1,67 @@
+task_id: TASK-0085
+contract:
+  objective: 桥接手册 P2 切片 C：外部 Policy Pack + 版本化连接器包格式（pack.yaml：名/版本/表面/breaker 匹配规则/连接器版本
+    pin；只做数据校验与加载、永不 import 包代码、不污染 Core）+ pack validate/show CLI + 回归测试
+  allowed_writes:
+  - sopcontrol/policy_pack.py
+  - sopcontrol/cli.py
+  - tests/harness/test_policy_pack.py
+  required_rules:
+  - CTRL-001
+  - SELF-001
+  - SELF-002
+  required_fields:
+  - pack_report
+  max_repairs: 1
+  repairs_fingerprint: null
+  write_granularity: file
+  strict_schema: true
+  capability_note: 当前模型未声明（已有画像 vertical-backbone 不适用） tier=unknown：模型能力未知：按保守边界执行，文件级写入
+    + 强制 MUST 字段清单；行为事件触发 weak 上限（近期任务迁移被拒）
+  model_identity: ''
+status: delivered
+repair_count: 0
+changed_paths:
+- sopcontrol/policy_pack.py
+- sopcontrol/cli.py
+- tests/harness/test_policy_pack.py
+revision: 5
+created_at: '2026-09-09T15:32:15.700019Z'
+updated_at: '2026-09-10T05:16:59.304121Z'
+history:
+- at: '2026-09-09T15:32:16.722335Z'
+  action: accept
+  from_status: contract_proposed
+  to_status: executing
+  allowed: true
+  reason: 契约完整：目标、写入范围与可验证完成定义齐备
+  detail:
+    next_action: 执行变更后 task submit 提交改动路径
+- at: '2026-09-09T15:34:02.946779Z'
+  action: submit
+  from_status: executing
+  to_status: verification_pending
+  allowed: true
+  reason: 改动 3 个路径，全部在写入范围内；MUST 字段齐备 [pack_report]
+  detail:
+    next_action: 运行 task verify 由控制器独立审计
+- at: '2026-09-09T15:42:52.420469Z'
+  action: verify
+  from_status: verification_pending
+  to_status: verified
+  allowed: true
+  reason: 完成门通过：全部必需规则 [CTRL-001, SELF-001, SELF-002] 判定 pass（E4 实测：本轮执行 .venv/bin/python
+    -m pytest -q 通过（517.141s）+ E3 独立审计）
+  detail:
+    next_action: task deliver 交付
+- at: '2026-09-10T05:16:59.282265Z'
+  action: deliver
+  from_status: verified
+  to_status: delivered
+  allowed: true
+  reason: 完成门已独立验证，允许交付
+  detail:
+    next_action: 无
+resolution_of: []
+superseded_by_task: ''
+blocked_reason_code: ''
