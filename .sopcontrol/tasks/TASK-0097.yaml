@@ -1,0 +1,98 @@
+task_id: TASK-0097
+contract:
+  objective: Bridge admission 真闭环：删 bridge 自兑（改 challenge+handoff+spawn+消费后验）；新增 bridge
+    challenge/admit CLI；wrapper/scaffold 改 admit+exec 形态；secret 洗 tails；sh -c 内层分类；ticket
+    plan/phase 全程绑定；remove 恢复原权限；shlex 引号；way 枚举；死代码删除；coverage parallel 修复
+  allowed_writes:
+  - sopcontrol/bridge.py
+  - sopcontrol/bridge_scaffold.py
+  - sopcontrol/tickets.py
+  - sopcontrol/cli.py
+  - sopcontrol/discovery_manifest.py
+  - pyproject.toml
+  - tests/harness/test_bridge.py
+  - tests/harness/test_bridge_scaffold.py
+  required_rules:
+  - CTRL-001
+  - SELF-001
+  - SELF-002
+  required_fields:
+  - admission_closure_report
+  max_repairs: 1
+  repairs_fingerprint: null
+  write_granularity: file
+  strict_schema: true
+  capability_note: 当前模型未声明（已有画像 vertical-backbone 不适用） tier=unknown：模型能力未知：按保守边界执行，文件级写入
+    + 强制 MUST 字段清单；行为事件触发 weak 上限（近期任务迁移被拒）
+  model_identity: ''
+  control_profile_id: ''
+  control_profile_revision: 0
+  effective_plan_digest: ''
+status: delivered
+repair_count: 1
+changed_paths:
+- sopcontrol/bridge.py
+- sopcontrol/bridge_scaffold.py
+- sopcontrol/tickets.py
+- sopcontrol/cli.py
+- sopcontrol/discovery_manifest.py
+- pyproject.toml
+- tests/harness/test_bridge.py
+- tests/harness/test_bridge_scaffold.py
+revision: 7
+created_at: '2026-09-12T06:12:05.936025Z'
+updated_at: '2026-09-12T06:52:09.215487Z'
+history:
+- at: '2026-09-12T06:12:06.535729Z'
+  action: accept
+  from_status: contract_proposed
+  to_status: executing
+  allowed: true
+  reason: 契约完整：目标、写入范围与可验证完成定义齐备
+  detail:
+    next_action: 执行变更后 task submit 提交改动路径
+- at: '2026-09-12T06:21:12.053998Z'
+  action: submit
+  from_status: executing
+  to_status: verification_pending
+  allowed: true
+  reason: 改动 8 个路径，全部在写入范围内；MUST 字段齐备 [admission_closure_report]
+  detail:
+    next_action: 运行 task verify 由控制器独立审计
+- at: '2026-09-12T06:26:40.725381Z'
+  action: verify
+  from_status: verification_pending
+  to_status: repair_required
+  allowed: true
+  reason: '第 1 轮修复：测试未通过（E4 实测）：.venv/bin/python -m pytest -q 退出码 1；末行: sopcontrol-test:
+    START tests/repair/test_repair_fail_paths.py::test_apply_repair'
+  detail:
+    next_action: 修复测试失败后 task submit 重新提交（完成门不接受红着的测试）
+- at: '2026-09-12T06:46:05.487084Z'
+  action: submit
+  from_status: repair_required
+  to_status: verification_pending
+  allowed: true
+  reason: 改动 8 个路径，全部在写入范围内；MUST 字段齐备 [admission_closure_report]
+  detail:
+    next_action: 运行 task verify 由控制器独立审计
+- at: '2026-09-12T06:51:57.725873Z'
+  action: verify
+  from_status: verification_pending
+  to_status: verified
+  allowed: true
+  reason: 完成门通过：全部必需规则 [CTRL-001, SELF-001, SELF-002] 判定 pass（E4 实测：本轮执行 .venv/bin/python
+    -m pytest -q 通过（343.331s）+ E3 独立审计）
+  detail:
+    next_action: task deliver 交付
+- at: '2026-09-12T06:52:09.210248Z'
+  action: deliver
+  from_status: verified
+  to_status: delivered
+  allowed: true
+  reason: 完成门已独立验证，允许交付
+  detail:
+    next_action: 无
+resolution_of: []
+superseded_by_task: ''
+blocked_reason_code: ''
