@@ -506,6 +506,25 @@ def build_parser() -> argparse.ArgumentParser:
     s_p.add_argument("path", help="pack 目录")
     s_p.add_argument("--json", action="store_true", help="机器可读输出")
     s_p.set_defaults(func=cmd_pack_show)
+    prof = sub.add_parser(
+        "profile",
+        help="动态控制 Profile（P0a）：创建/冻结/查看，本次运行的动态契约",
+    )
+    prof_sub = prof.add_subparsers(dest="profile_cmd", required=True)
+    c_p = prof_sub.add_parser("create", help="从 YAML 创建草稿（只校验不冻结）")
+    c_p.add_argument("--from", dest="from_file", required=True, help="profile YAML 文件")
+    c_p.add_argument("--path", default=".", help="项目根（profile 存 .sopcontrol-local）")
+    c_p.set_defaults(func=cmd_profile_create)
+    f_p = prof_sub.add_parser("freeze", help="冻结新 revision（只增不改）")
+    f_p.add_argument("profile_id", help="profile id")
+    f_p.add_argument("--path", default=".", help="项目根")
+    f_p.set_defaults(func=cmd_profile_freeze)
+    s_p2 = prof_sub.add_parser("show", help="查看草稿或冻结 revision")
+    s_p2.add_argument("profile_id", help="profile id")
+    s_p2.add_argument("--revision", type=int, default=0, help="0=草稿，正数=冻结 revision")
+    s_p2.add_argument("--path", default=".", help="项目根")
+    s_p2.add_argument("--json", action="store_true", help="机器可读输出")
+    s_p2.set_defaults(func=cmd_profile_show)
     identity = sub.add_parser("identity", help="项目身份（Phase 6 种子：跨 harness 识别同一项目）")
     identity_sub = identity.add_subparsers(dest="sub", required=True)
     for name, help_text in (
@@ -909,6 +928,79 @@ def cmd_pack_show(args) -> int:
         print(f"  breaker {b.id}: {b.surface} → {b.decision}（{b.reason}）")
     for c in pack.connectors:
         print(f"  connector {c.name} {c.version} [{c.kind}]")
+    return 0
+
+
+def _profile_root(args) -> object:
+    from pathlib import Path as _Path
+
+    return _Path(getattr(args, "path", "."))
+
+
+def cmd_profile_create(args) -> int:
+    """profile create：读 YAML → 归一化校验 → 存草稿（不冻结）。"""
+    import yaml
+
+    from .control_profile import ProfileError, normalize_profile, save_draft
+
+    try:
+        data = yaml.safe_load(open(args.from_file, encoding="utf-8").read())
+    except Exception as exc:
+        print(f"profile 非法: YAML 解析失败: {exc}", file=sys.stderr)
+        return 2
+    if not isinstance(data, dict):
+        print("profile 非法: 顶层必须是映射", file=sys.stderr)
+        return 2
+    try:
+        profile = normalize_profile(data)
+    except ProfileError as exc:
+        print(f"profile 非法: {exc}", file=sys.stderr)
+        return 2
+    path = save_draft(_profile_root(args), profile)
+    print(f"草稿已存: {profile.profile_id} → {path}")
+    return 0
+
+
+def cmd_profile_freeze(args) -> int:
+    """profile freeze：冻结新 revision，打印 digest（任务绑定用）。"""
+    from .control_profile import ProfileError, freeze_profile
+
+    try:
+        frozen = freeze_profile(_profile_root(args), args.profile_id)
+    except ProfileError as exc:
+        print(f"冻结失败: {exc}", file=sys.stderr)
+        return 2
+    print(f"已冻结: {frozen.profile_id}.r{frozen.revision} digest={frozen.digest}")
+    return 0
+
+
+def cmd_profile_show(args) -> int:
+    """profile show：草稿或冻结 revision（文本/JSON）。"""
+    import json as _json
+
+    from .control_profile import ProfileError, load_draft, load_frozen, plan_digest
+
+    try:
+        if args.revision and args.revision > 0:
+            frozen = load_frozen(_profile_root(args), args.profile_id, args.revision)
+            profile, rev, digest = frozen.profile, frozen.revision, frozen.digest
+        else:
+            profile, rev = load_draft(_profile_root(args), args.profile_id), 0
+            digest = plan_digest(profile, rev)
+    except ProfileError as exc:
+        print(f"profile 非法: {exc}", file=sys.stderr)
+        return 2
+    if getattr(args, "json", False):
+        print(_json.dumps({"profile_id": profile.profile_id, "revision": rev,
+                           "digest": digest,
+                           "profile": profile.model_dump(mode="json")},
+                          ensure_ascii=False, indent=2))
+        return 0
+    print(f"{profile.profile_id} r{rev} digest={digest}")
+    print(f"  required={profile.checks.required} excluded={profile.checks.excluded}")
+    print(f"  baseline={profile.baseline.generation_mode} "
+          f"repair≤{profile.repair.max_rounds}轮 "
+          f"audit≤{profile.budget.max_audit_calls}/repair≤{profile.budget.max_repair_calls}")
     return 0
 
 
