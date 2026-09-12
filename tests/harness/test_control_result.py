@@ -201,13 +201,20 @@ def test_ticket_plan_digest_binding(tmp_path):
         redeem_ticket(tmp_path, ticket_id=t2.ticket_id, secret=t2.secret,
                       action="network.scan", input_fingerprint="fp-1",
                       side_effect="network_request", expected_plan_digest="plan-other")
-    # 未绑定 digest 的旧票行为不变
+    # 未绑定 digest 的旧票 + 期待绑定 → 拒绝（空字段不是通配符，§12.1.2）
     t3 = issue_ticket(tmp_path, action="network.scan", input_fingerprint="fp-1",
                       allowed_side_effects=["network_request"])
-    assert redeem_ticket(tmp_path, ticket_id=t3.ticket_id, secret=t3.secret,
+    with pytest.raises(TicketError):
+        redeem_ticket(tmp_path, ticket_id=t3.ticket_id, secret=t3.secret,
+                      action="network.scan", input_fingerprint="fp-1",
+                      side_effect="network_request",
+                      expected_plan_digest="plan-abc")
+    # 无期待时旧票行为不变（向后兼容）
+    t4 = issue_ticket(tmp_path, action="network.scan", input_fingerprint="fp-1",
+                      allowed_side_effects=["network_request"])
+    assert redeem_ticket(tmp_path, ticket_id=t4.ticket_id, secret=t4.secret,
                          action="network.scan", input_fingerprint="fp-1",
-                         side_effect="network_request",
-                         expected_plan_digest="plan-abc").consumed_at is not None
+                         side_effect="network_request").consumed_at is not None
 
 
 def test_contract_binds_profile_fields():
