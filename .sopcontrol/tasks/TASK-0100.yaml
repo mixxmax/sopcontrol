@@ -1,0 +1,89 @@
+task_id: TASK-0100
+contract:
+  objective: 复查第三轮硬化：有效组合全字段合并；stop_when 进最终门；过期按判定时间；scaffold 指纹统一为调用argv；自兑换删 handoff；大文件内容绑定；门禁
+    base 回退；scaffold 备份恢复；ticket 消费公开函数；CLI 重复 except 清理
+  allowed_writes:
+  - sopcontrol/control_profile.py
+  - sopcontrol/control_result.py
+  - sopcontrol/task.py
+  - sopcontrol/cli.py
+  - sopcontrol/bridge.py
+  - sopcontrol/bridge_scaffold.py
+  - sopcontrol/tickets.py
+  - tests/harness/test_control_gate_pure.py
+  - tests/harness/test_task_profile_binding.py
+  - tests/harness/test_bridge.py
+  - tests/harness/test_bridge_scaffold.py
+  - tests/harness/test_control_lifecycle.py
+  required_rules:
+  - CTRL-001
+  - SELF-001
+  - SELF-002
+  required_fields:
+  - round3_report
+  max_repairs: 1
+  repairs_fingerprint: null
+  write_granularity: file
+  strict_schema: true
+  capability_note: 当前模型未声明（已有画像 vertical-backbone 不适用） tier=unknown：模型能力未知：按保守边界执行，文件级写入
+    + 强制 MUST 字段清单；行为事件触发 weak 上限（近期任务迁移被拒）
+  model_identity: ''
+  control_profile_id: ''
+  control_profile_revision: 0
+  effective_plan_digest: ''
+status: delivered
+repair_count: 0
+changed_paths:
+- sopcontrol/control_profile.py
+- sopcontrol/control_result.py
+- sopcontrol/task.py
+- sopcontrol/cli.py
+- sopcontrol/bridge.py
+- sopcontrol/bridge_scaffold.py
+- sopcontrol/tickets.py
+- tests/harness/test_control_gate_pure.py
+- tests/harness/test_task_profile_binding.py
+- tests/harness/test_bridge.py
+- tests/harness/test_bridge_scaffold.py
+- tests/harness/test_control_lifecycle.py
+submit_input_digest: in-e2f1d97d3f7276c6fc6ea184a23d0919
+revision: 5
+created_at: '2026-09-12T07:42:13.252702Z'
+updated_at: '2026-09-12T07:51:29.844120Z'
+history:
+- at: '2026-09-12T07:42:13.951866Z'
+  action: accept
+  from_status: contract_proposed
+  to_status: executing
+  allowed: true
+  reason: 契约完整：目标、写入范围与可验证完成定义齐备
+  detail:
+    next_action: 执行变更后 task submit 提交改动路径
+- at: '2026-09-12T07:46:40.811160Z'
+  action: submit
+  from_status: executing
+  to_status: verification_pending
+  allowed: true
+  reason: 改动 12 个路径，全部在写入范围内；MUST 字段齐备 [round3_report]
+  detail:
+    next_action: 运行 task verify 由控制器独立审计
+- at: '2026-09-12T07:51:04.208001Z'
+  action: verify
+  from_status: verification_pending
+  to_status: verified
+  allowed: true
+  reason: 完成门通过：全部必需规则 [CTRL-001, SELF-001, SELF-002] 判定 pass（E4 实测：本轮执行 .venv/bin/python
+    -m pytest -q 通过（248.424s）+ E3 独立审计）
+  detail:
+    next_action: task deliver 交付
+- at: '2026-09-12T07:51:29.840113Z'
+  action: deliver
+  from_status: verified
+  to_status: delivered
+  allowed: true
+  reason: 完成门已独立验证，允许交付
+  detail:
+    next_action: 无
+resolution_of: []
+superseded_by_task: ''
+blocked_reason_code: ''
