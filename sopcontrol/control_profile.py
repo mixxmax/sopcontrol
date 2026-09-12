@@ -46,10 +46,12 @@ class ProfileBaseline(BaseModel):
     audit_mode: str = "compare_output_only"
     challenge_without_explicit_request: bool = False
     independence_required: str = "self_check"
+    require_accept: bool = False  # True=基线接受纳入状态门（无接受记录不得通过）
+    require_proven_independence: bool = False  # True=高独立性声明必须实证（无任务上下文也强制）
 
 
 class ProfileRepair(BaseModel):
-    policy: str = "hard_errors_only"
+    policy: Literal["hard_errors_only"] = "hard_errors_only"
     max_rounds: int = 1
     recheck_unchanged_input: bool = False
     stop_after_pass: bool = True
@@ -102,6 +104,8 @@ def normalize_profile(data: dict[str, Any]) -> ControlProfile:
     for name, mode in profile.checks.modes.items():
         if name in profile.checks.excluded and mode != "ignore":
             conflicts.append(f"excluded 检查 {name} 的 mode 必须为 ignore（现为 {mode}）")
+        if name in profile.checks.required and mode == "ignore":
+            conflicts.append(f"required 检查 {name} 的 mode 不能为 ignore")
     if profile.repair.max_rounds < 0:
         conflicts.append("repair.max_rounds 不能为负")
     if profile.repair.max_rounds > SYSTEM_MAX_ROUNDS:

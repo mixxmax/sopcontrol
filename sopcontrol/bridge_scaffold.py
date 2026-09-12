@@ -117,7 +117,10 @@ def install_scaffold(
     root = Path(root)
     if lang not in LANGS:
         raise ValueError(f"unsupported lang {lang!r} (want one of {LANGS})")
+    from .scope import validate_identifier
+
     name = name or (integration_id.replace(".", "-") + "-bridge")
+    validate_identifier(name, kind="bridge 安装名")
     bin_dir = root / ".sopcontrol-local" / "bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
     target = bin_dir / (name + _EXT[lang])

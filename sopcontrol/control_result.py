@@ -30,12 +30,15 @@ _INDEPENDENCE_RANK = {
 class ResultFinding(BaseModel):
     dimension: str
     severity: FindingSeverity
-    summary: str = ""  # 人读摘要；判定只看 dimension+severity，不看文本
+    summary: str = ""  # 人读摘要；判定只看 dimension+severity(+category/tolerance)，不看文本
+    category: str = ""  # tolerance 映射键（如 reasonable_exaggeration）；空=不映射
 
 
 class ResultProducer(BaseModel):
     actor: str = ""
     independence: Independence = "self_check"
+    context_ref: str = ""  # separate_context+ 要求：独立上下文凭据（非空）
+    evidence_ref: str = ""  # human_required 要求：账本可验证据；自报 actor 时的旁证
 
 
 class ControlResult(BaseModel):
@@ -60,8 +63,28 @@ class ControlResult(BaseModel):
 class Evaluation(BaseModel):
     outcome: Outcome
     reasons: list[str] = Field(default_factory=list)
+    next_action: str = ""  # 宪法：判定永远带下一步（DESIGN.md §2.3）
     idempotency_key: str = ""
     result_id: str = ""
+    reused: bool = False  # True=复用既有结论，本次未消耗审计调用（调用方不得再消费）
+
+
+class GateState(BaseModel):
+    """decide() 的全部显式输入——纯函数，无 I/O、无隐藏状态、无时钟。"""
+
+    consumed_ids: set[str] = Field(default_factory=set)
+    cached: dict[str, Any] | None = None
+    accept_digest: str = ""
+    accept_mode: str = ""
+    accept_missing: bool = False
+    task_identity: str = ""
+    binding_profile: str = ""
+    binding_revision: int = 0
+    binding_digest: str = ""
+    evidence_ids: set[str] = Field(default_factory=set)
+    audits_used: int = 0
+    repair_rounds_used: int = 0
+    now_iso: str = ""
 
 
 def idempotency_key(result: ControlResult) -> str:
@@ -101,6 +124,9 @@ def _mark_consumed(root: Path, result: ControlResult, outcome: Outcome,
     record = {
         "result_id": result.result_id, "outcome": outcome,
         "reasons": reasons, "idempotency_key": key,
+        "task_id": result.task_id, "profile_id": result.profile_id,
+        "profile_revision": result.profile_revision,
+        "plan_digest": result.effective_plan_digest,
         "rounds_used": result.rounds_used,
         "finding_severities": [f.severity for f in result.findings],
         "at": datetime.now(timezone.utc).isoformat(),
@@ -190,90 +216,318 @@ def _parse_time(value: Any) -> datetime | None:
         return None
 
 
-def evaluate_control_result(
-    root: Path | str, result: ControlResult, frozen: FrozenPlan,
-) -> Evaluation:
-    """§6.3 确定性状态门。优先序固定：协议违规 > 缺失 > 阻断 > 警告 > 通过。"""
-    root = Path(root)
+def _mode_of(frozen: FrozenPlan, dimension: str, required: set[str],
+             excluded: set[str]) -> str:
+    mode = frozen.profile.checks.modes.get(dimension)
+    if mode:
+        return mode
+    if dimension in required:
+        return "block"  # fail-closed 默认：required 不写 mode 视为最严
+    if dimension in excluded:
+        return "ignore"
+    return "required"
+
+
+def _effective_severity(frozen: FrozenPlan, finding: ResultFinding,
+                        mode: str) -> tuple[str, str]:
+    """mode/tolerance 映射到裁决用 severity；返回 (severity, 降级说明)。"""
+    sev = finding.severity
+    if mode == "report_only" and sev == "blocking":
+        return "advisory", f"{finding.dimension} 原 blocking 按 report_only 降级记录"
+    tol = (frozen.profile.tolerance or {}).get(finding.category or "")
+    if tol == "allowed" and sev == "blocking":
+        return "tolerated", f"{finding.dimension} 按 tolerance[{finding.category}] 保留"
+    if tol == "report_only" and sev in ("blocking", "tolerated"):
+        return "advisory", f"{finding.dimension} 按 tolerance[{finding.category}] 降级记录"
+    return sev, ""
+
+
+def decide_control_result(result: ControlResult, frozen: FrozenPlan,
+                          state: GateState) -> Evaluation:
+    """§6.3 确定性状态门——纯函数：同输入同状态必同输出，无 I/O、无时钟。
+
+    优先序固定：协议违规 > 缺失 > 阻断 > 警告 > 通过。I/O（消费/复用/账本）
+    由调用方按返回 outcome 执行，本函数只裁决。
+    """
     key = idempotency_key(result)
     reasons: list[str] = []
 
-    def done(outcome: Outcome, why: str, *, consume: bool = True) -> Evaluation:
+    def done(outcome: Outcome, why: str, next_action: str) -> Evaluation:
         reasons.append(why)
-        if consume:
-            _mark_consumed(root, result, outcome, reasons, key)
         return Evaluation(outcome=outcome, reasons=list(reasons),
+                          next_action=next_action,
                           idempotency_key=key, result_id=result.result_id)
 
     # §11.1：plan digest 必须一致——任务按一套规则开始，不能按另一套验收。
     if result.effective_plan_digest != frozen.digest:
-        return done("unknown", "plan digest 不一致：结果不属于当前冻结计划", consume=False)
+        return done("unknown", "plan digest 不一致：结果不属于当前冻结计划",
+                    "用当前 revision 重新冻结并求值，或核对结果是否取错计划")
     if result.profile_id != frozen.profile_id:
-        return done("unknown", "profile_id 与冻结计划不一致", consume=False)
+        return done("unknown", "profile_id 与冻结计划不一致",
+                    "核对结果的 profile_id 是否属于本次任务")
     # §11.2：输入属于当前任务（scope 声明 task 时绑定）。
     scope_task = frozen.profile.scope.task
     if scope_task and result.task_id != scope_task:
         return done("unknown", f"结果 task {result.task_id!r} 不属于当前任务 {scope_task!r}",
-                    consume=False)
+                    "用当前任务重跑检查并求值")
+    # 任务契约绑定（§9.2）：结果必须与 open 时声明一致。
+    if state.binding_digest:
+        if (result.profile_id != state.binding_profile
+                or result.profile_revision != state.binding_revision
+                or result.effective_plan_digest != state.binding_digest):
+            return done("unknown", "结果与任务契约绑定（profile/revision/digest）不一致",
+                        "按任务绑定的 revision 重新求值，或走新任务")
     # §15.12：旧 revision 结果不可静默用于新策略。
     if result.profile_revision != frozen.revision:
         return done("unknown",
                     f"结果 revision r{result.profile_revision} 非当前 r{frozen.revision}：已失效",
-                    consume=False)
+                    "用当前 revision 重新求值")
     # §11.6：过期 profile 的结果不新鲜。
     expires = (frozen.profile.expires_at or "").strip()
     if expires:
         exp = _parse_time(expires)
         created = _parse_time(result.created_at)
         if exp is not None and created is not None and created > exp:
-            return done("unknown", "结果晚于 profile 过期时间：已失效", consume=False)
-    # §6.4：独立性不足的结果不能作为通过凭据。
+            return done("unknown", "结果晚于 profile 过期时间：已失效",
+                        "更新 profile 有效期后重跑检查")
+    # §6.4：独立性——自报不算数，需具名 + 非执行者本人 + 高等级需账本证据。
     required_rank = _INDEPENDENCE_RANK[frozen.profile.baseline.independence_required]
     got_rank = _INDEPENDENCE_RANK[result.producer.independence]
     if got_rank < required_rank:
         return done("unknown",
                     f"独立性不足：要求 {frozen.profile.baseline.independence_required}，"
                     f"实际 {result.producer.independence}",
-                    consume=False)
-    # §12.3：重放已消费结果一律拒绝（不消费本次，防记录污染）。
-    if _is_consumed(root, result.result_id):
-        return done("unknown", f"结果 {result.result_id} 已消费：拒绝重放", consume=False)
+                    "换满足独立性要求的执行者重跑检查")
+    if got_rank > 0 and not result.producer.actor.strip():
+        return done("unknown", "独立性声明要求具名执行者（actor 为空即自报）",
+                    "以具名身份重跑检查并声明 producer.actor")
+    # 独立性实证：有任务上下文可比对执行者；或 profile 声明强制实证。
+    # 无上下文 + 未声明强制时沿用旧语义（只比 rank），否则自报无法证伪。
+    if bool(state.task_identity) or frozen.profile.baseline.require_proven_independence:
+        if (result.producer.independence == "separate_context"
+                and not result.producer.context_ref.strip()):
+            return done("unknown", "separate_context 要求 context_ref 独立上下文凭据",
+                        "补 context_ref 后重新求值")
+        if got_rank >= 2:
+            if state.task_identity and result.producer.actor == state.task_identity:
+                return done("unknown", "自报独立：生产者与任务执行者相同",
+                            "换另一执行者重跑检查")
+            if not state.task_identity and not result.producer.evidence_ref:
+                return done("unknown", "声明强制实证但无任务上下文、无账本证据",
+                            "绑定任务（--task）或补 producer.evidence_ref")
+            if result.producer.independence == "human_required" and (
+                    not result.producer.evidence_ref
+                    or result.producer.evidence_ref not in state.evidence_ids):
+                return done("unknown", "human_required 需要账本可验证据",
+                            "补 ledger 存在的 evidence_ref 后重新求值")
+            if (result.producer.evidence_ref
+                    and result.producer.evidence_ref not in state.evidence_ids):
+                return done("unknown", "独立性证据在账本中不存在：疑似伪造",
+                            "用真实 evidence id 重跑检查")
+    # 基线接受（§5.4）：profile 声明 require_accept 且任务绑定时，无记录不得通过。
+    # 状态由调用方显式传入——API 直调传不了接受记录即判 unknown，不存在绕过。
+    if frozen.profile.baseline.require_accept and scope_task and result.task_id:
+        if state.accept_missing:
+            return done("unknown", f"任务 {result.task_id} 未接受基线（先 profile accept）",
+                        f"sopctl profile accept {frozen.profile_id} "
+                        f"--revision {frozen.revision} --task {result.task_id} --digest <基线摘要>")
+        if state.accept_digest and state.accept_digest != result.baseline_digest:
+            return done("unknown", "基线 digest 与接受时不一致：基线已变",
+                        "接受新基线后重跑检查")
+        if (result.baseline_mode and state.accept_mode
+                and result.baseline_mode != state.accept_mode):
+            return done("unknown",
+                        f"基线模式被改变：接受时 {state.accept_mode}，"
+                        f"结果声明 {result.baseline_mode}",
+                        "恢复接受时的基线模式后重跑检查")
+    # §12.3：重放已消费结果一律拒绝。
+    if result.result_id in state.consumed_ids:
+        return done("unknown", f"结果 {result.result_id} 已消费：拒绝重放",
+                    "用新 result_id 重新执行检查")
     # §7.3/§10.2：同幂等键已有有效结果即复用（一次编译，多次执行）。
-    cached = _find_cached(root, key)
+    cached = state.cached
     if cached is not None and cached.get("outcome") in (
         "pass", "pass_with_warnings", "block",
     ):
-        _log_reuse(root, result, cached)
         reused = [f"复用幂等结果 {cached.get('cached_result_id')}（本次未消耗审计调用）"]
         reused.extend(str(x) for x in cached.get("reasons") or [])
         return Evaluation(outcome=cached["outcome"], reasons=reused,
+                          next_action="复用既有结论，无需动作", reused=True,
                           idempotency_key=key, result_id=result.result_id)
     # §6.3：required 缺失 → not_run（未知不解释成通过）。
     required = set(frozen.profile.checks.required)
     checked = set(result.checked_dimensions)
     missing = sorted(required - checked)
     if missing:
-        return done("not_run", f"required 检查缺失: {missing}")
-    # §11.4：excluded 不得参决——出现在 checked 或带 blocking finding 即协议违规。
+        return done("not_run", f"required 检查缺失: {missing}",
+                    f"补跑缺失检查：{', '.join(missing)}")
+    # §11.4：excluded 不得参决——出现在 checked 中即协议违规。
     excluded = set(frozen.profile.checks.excluded) | set(result.excluded_dimensions)
     intruding = sorted(excluded & checked)
     if intruding:
-        return done("block", f"excluded 检查参决（出现在 checked 中）: {intruding}")
+        return done("block", f"excluded 检查参决（出现在 checked 中）: {intruding}",
+                    "去掉 excluded 维度后重新求值")
     for f in result.findings:
         if f.dimension in excluded and f.severity == "blocking":
-            return done("block", f"excluded 维度 {f.dimension} 带 blocking finding：协议违规")
-    # 修轮超预算 → 阻断（§7.1）。
+            return done("block", f"excluded 维度 {f.dimension} 带 blocking finding：协议违规",
+                        "去掉 excluded 维度的 blocking 发现后重新求值")
+    # 预算（§10.6 有牙齿）：审计次数与修正轮数超限即阻断。
+    if state.audits_used >= frozen.profile.budget.max_audit_calls:
+        return done("block",
+                    f"审计预算耗尽（已用 {state.audits_used}/{frozen.profile.budget.max_audit_calls}）",
+                    "放宽 budget 或开新任务")
+    if state.repair_rounds_used + result.rounds_used > frozen.profile.budget.max_repair_calls:
+        return done("block", "修正预算耗尽",
+                    "放宽 budget.max_repair_calls 或开新任务")
     if result.rounds_used > frozen.profile.repair.max_rounds:
         return done("block",
-                    f"修正轮数 {result.rounds_used} 超出上限 {frozen.profile.repair.max_rounds}")
-    # §6.3：required 维度的 blocking → block；其余 out_of_scope 忽略（§4.3）。
+                    f"修正轮数 {result.rounds_used} 超出上限 {frozen.profile.repair.max_rounds}",
+                    "本轮已无修正额度：接受现状或开新任务")
+    # §6.3/§4.2：逐维度 mode + tolerance 映射后判定。
+    downgrades: list[str] = []
     for f in result.findings:
-        if f.severity == "blocking" and f.dimension in required:
-            return done("block", f"blocking finding：{f.dimension}")
-    # §6.3：仅 tolerated/advisory → pass_with_warnings；全净 → pass。
+        if f.dimension not in required:
+            continue
+        mode = _mode_of(frozen, f.dimension, required, excluded)
+        eff, note = _effective_severity(frozen, f, mode)
+        if note:
+            downgrades.append(note)
+        if eff == "blocking":
+            return done("block", f"blocking finding：{f.dimension}",
+                        f"按 repair 策略修正后重跑受影响检查（≤{frozen.profile.repair.max_rounds}轮）")
     decisive = [f for f in result.findings
                 if f.severity in ("tolerated", "advisory") and f.dimension in required]
-    if decisive or any(f.severity in ("tolerated", "advisory") for f in result.findings):
+    notes = downgrades + [f"{f.dimension}: {f.severity}" for f in decisive]
+    if downgrades or decisive or any(
+            f.severity in ("tolerated", "advisory") for f in result.findings):
         return done("pass_with_warnings",
-                    f"仅容忍/提示类发现 {len(decisive)} 项，不阻断")
-    return done("pass", "required 检查完成，无阻断发现")
+                    f"仅容忍/提示类发现 {len(decisive)} 项，不阻断"
+                    + (f"（{'; '.join(downgrades)}）" if downgrades else ""),
+                    "容忍项已记录，无需修正")
+    return done("pass", "required 检查完成，无阻断发现",
+                "无（已通过且终止；输入/规则/证据变化才重检）")
+
+
+def _scan_consumed(root: Path) -> list[dict[str, Any]]:
+    d = _consumed_dir(root)
+    if not d.is_dir():
+        return []
+    out: list[dict[str, Any]] = []
+    for p in sorted(d.glob("*.json")):
+        try:
+            out.append(json.loads(p.read_text(encoding="utf-8")))
+        except (OSError, ValueError):
+            continue
+    return out
+
+
+def evaluate_control_result(
+    root: Path | str, result: ControlResult, frozen: FrozenPlan,
+    *, task_id: str = "",
+) -> Evaluation:
+    """I/O 外壳：加载显式状态 → 纯 decide() → 按 outcome 持久化。
+
+    task_id 绑定 sopctl 任务时，执行者身份/契约绑定/账本证据一并进入 GateState；
+    不传 task_id 即无任务上下文（旧行为兼容，独立性按无绑定语义）。
+    """
+    from .control_lifecycle import load_accept
+
+    root = Path(root)
+    key = idempotency_key(result)
+    records = _scan_consumed(root)
+    consumed_ids = {str(r.get("result_id")) for r in records}
+    cached = _find_cached(root, key)
+
+    task_identity = ""
+    binding_profile = binding_digest = ""
+    binding_revision = 0
+    if task_id:
+        from .task import TaskStore
+
+        try:
+            task = TaskStore(root).load(task_id)
+        except Exception as exc:
+            raise ValueError(f"任务不存在: {task_id}（{exc}）") from exc
+        task_identity = task.contract.model_identity
+        binding_profile = task.contract.control_profile_id
+        binding_revision = task.contract.control_profile_revision
+        binding_digest = task.contract.effective_plan_digest
+
+    accept_digest = accept_mode = ""
+    accept_missing = False
+    if (frozen.profile.baseline.require_accept and frozen.profile.scope.task
+            and result.task_id):
+        accept = load_accept(root, result.task_id, result.profile_revision)
+        if accept is None:
+            accept_missing = True
+        else:
+            accept_digest = accept.baseline_digest
+            accept_mode = accept.baseline_mode
+
+    evidence_ids: set[str] = set()
+    if result.producer.evidence_ref:
+        try:
+            from .ledger import Ledger
+
+            ledger = Ledger(root / ".sopcontrol" / "evidence" / "ledger.jsonl")
+            if ledger.path.exists():
+                for ev in ledger.load_evidence(current_only=False):
+                    eid = getattr(ev, "evidence_id", "")
+                    if eid:
+                        evidence_ids.add(str(eid))
+        except Exception:
+            evidence_ids = set()
+
+    scoped = [r for r in records
+              if str(r.get("task_id")) == (result.task_id or task_id or "")
+              and str(r.get("profile_id")) == result.profile_id
+              and int(r.get("profile_revision") or 0) == result.profile_revision]
+    audits_used = len(scoped)
+    repair_rounds_used = sum(int(r.get("rounds_used") or 0) for r in scoped)
+
+    state = GateState(
+        consumed_ids=consumed_ids, cached=cached,
+        accept_digest=accept_digest, accept_mode=accept_mode,
+        accept_missing=accept_missing, task_identity=task_identity,
+        binding_profile=binding_profile, binding_revision=binding_revision,
+        binding_digest=binding_digest, evidence_ids=evidence_ids,
+        audits_used=audits_used, repair_rounds_used=repair_rounds_used,
+        now_iso=datetime.now(timezone.utc).isoformat(),
+    )
+    ev = decide_control_result(result, frozen, state)
+    if not ev.reused and ev.outcome in ("pass", "pass_with_warnings", "block", "not_run"):
+        _mark_consumed(root, result, ev.outcome, ev.reasons, key)
+    if ev.reused:
+        _log_reuse(root, result, cached or {})
+    return ev
+
+
+def check_task_profile_gate(root: Path | str, task: Any) -> tuple[bool, str]:
+    """任务 verify 前门：契约绑定 profile 时，必须有同 digest 的通过消费记录。
+
+    未绑定返回 (True, 理由)；否则按消费账本判定。纯读，不写盘。
+    """
+    contract = task.contract
+    if not contract.control_profile_id:
+        return True, "未绑定动态 profile"
+    want = (contract.control_profile_id, contract.control_profile_revision,
+            contract.effective_plan_digest)
+    best: dict[str, Any] | None = None
+    for r in _scan_consumed(Path(root)):
+        if (str(r.get("task_id")) != task.task_id
+                or str(r.get("profile_id")) != want[0]
+                or int(r.get("profile_revision") or 0) != want[1]
+                or str(r.get("plan_digest")) != want[2]):
+            continue
+        if best is None or str(r.get("at", "")) > str(best.get("at", "")):
+            best = r
+    if best is None:
+        return False, (
+            f"任务 {task.task_id} 绑定 {want[0]}.r{want[1]} 但无通过的动态结果："
+            f"先 control-result evaluate --task {task.task_id}")
+    if str(best.get("outcome")) not in ("pass", "pass_with_warnings"):
+        return False, (
+            f"任务 {task.task_id} 最新动态结果 {best.get('outcome')} 未通过："
+            f"先修到通过再 verify")
+    return True, (f"动态结果 {best.get('result_id')} "
+                  f"{best.get('outcome')}（digest 一致）")

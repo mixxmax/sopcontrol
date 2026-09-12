@@ -794,6 +794,25 @@ def _reject(reason: str) -> TransitionDecision:
     return TransitionDecision(allowed=False, to_status=None, reason=reason, next_action="sopctl task show 查看当前状态与契约")
 
 
+def profile_gate_denial(task: TaskRecord, reason: str) -> TransitionDecision:
+    """动态 profile 门失败 → repair_required（预算耗尽则 failed_unverified 熔断）。
+
+    与 E4 测试失败同制：给修复机会，不直接 blocked（手册 14.1 场景 11 预算语义）。
+    """
+    new_count = task.repair_count + 1
+    if new_count > task.contract.max_repairs:
+        return TransitionDecision(
+            allowed=True, to_status=TaskStatus.failed_unverified, repair_count=new_count,
+            reason=f"{reason}；修复预算耗尽（{task.repair_count} 轮未收敛）——转终态",
+            next_action="人工介入分析动态门失败根因后另开任务",
+        )
+    return TransitionDecision(
+        allowed=True, to_status=TaskStatus.repair_required, repair_count=new_count,
+        reason=f"第 {new_count} 轮修复：{reason}",
+        next_action="产生通过的动态结果后 task submit 重新提交",
+    )
+
+
 class TaskStore:
     """任务文件存储：.sopcontrol/tasks/TASK-xxxx.yaml；revision 冲突即拒绝写。"""
 

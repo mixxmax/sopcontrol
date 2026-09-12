@@ -408,6 +408,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--resolves", action="append",
         help="接替的 blocked/failed_unverified 任务 ID（可重复）；旧任务保持终态并写入 superseded_by_task",
     )
+    p.add_argument("--control-profile", default="", help="绑定的动态 profile id（§9.2）")
+    p.add_argument("--control-profile-revision", type=int, default=0, help="冻结 revision")
+    p.add_argument("--plan-digest", default="", help="冻结计划 digest（验收一致性）")
     p.set_defaults(func=cmd_task)
     def _task_cmd(name: str, help_text: str, *, task_id: bool = False, changed: bool = False, fields: bool = False):
         p = task_sub.add_parser(name, help=help_text)
@@ -544,6 +547,7 @@ def build_parser() -> argparse.ArgumentParser:
     ev_p.add_argument("--file", required=True, help="ControlResult JSON 文件")
     ev_p.add_argument("--profile", required=True, help="profile id")
     ev_p.add_argument("--revision", type=int, required=True, help="冻结 revision")
+    ev_p.add_argument("--task", default="", help="sopctl 任务 id（执行者核验+契约绑定比对）")
     ev_p.add_argument("--path", default=".", help="项目根")
     ev_p.add_argument("--json", action="store_true", help="机器可读输出")
     ev_p.set_defaults(func=cmd_control_result_evaluate)
@@ -1084,14 +1088,21 @@ def cmd_control_result_evaluate(args) -> int:
     if baseline_rejection is not None:
         print("unknown")
         print(f"  - {baseline_rejection}")
+        print("  下一步: 先 profile accept 接受基线后重新求值")
         return 2
-    ev = evaluate_control_result(args.path, result, frozen)
+    try:
+        ev = evaluate_control_result(args.path, result, frozen,
+                                     task_id=getattr(args, "task", "") or "")
+    except ValueError as exc:
+        print(f"求值失败: {exc}", file=sys.stderr)
+        return 2
     if getattr(args, "json", False):
         print(ev.model_dump_json(ensure_ascii=False, indent=2))
     else:
         print(f"{ev.outcome}")
         for reason in ev.reasons:
             print(f"  - {reason}")
+        print(f"  下一步: {ev.next_action}")
         print(f"  idempotency_key={ev.idempotency_key}")
     if ev.outcome in ("pass", "pass_with_warnings"):
         return 0
