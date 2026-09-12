@@ -121,9 +121,9 @@ def test_bridge_enforces_deny_breaker(tmp_path):
     assert receipt["executed"] is False
     assert receipt["policy_decision"] == "deny:egress-deny"
     assert "egress-deny" in receipt["error"]
-    # 无 pack 时同调用正常执行（对照组）
-    clean = run_bridge(tmp_path, integration_id="scan.cli", action="network.scan",
-                       argv=["curl", "--version"], side_effect="network_request")
+    # 无 pack 时只读调用正常执行（对照组；票据类对照见 test_bridge 闭环测试）
+    clean = run_bridge(tmp_path, integration_id="scan.cli", action="scan",
+                       argv=["echo", "hi"])
     assert clean["executed"] is True
 
 
