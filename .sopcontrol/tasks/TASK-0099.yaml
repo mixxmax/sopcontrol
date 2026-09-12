@@ -1,0 +1,85 @@
+task_id: TASK-0099
+contract:
+  objective: 动态门硬化：submit 输入摘要绑定与门比对；独立性 rank2+ 永需实证（删无上下文例外）；accept mode 必须等于计划；profile/result/task
+    ID 全路径校验；STOP_WHEN 模型与 repair 门；Base+Task+Run 有效组合编译（只收紧）+ evaluate --run-override
+  allowed_writes:
+  - sopcontrol/control_result.py
+  - sopcontrol/control_profile.py
+  - sopcontrol/control_lifecycle.py
+  - sopcontrol/task.py
+  - sopcontrol/cli.py
+  - sopcontrol/cli_task.py
+  - tests/harness/test_control_gate_pure.py
+  - tests/harness/test_control_result.py
+  - tests/harness/test_control_lifecycle.py
+  - tests/harness/test_task_profile_binding.py
+  required_rules:
+  - CTRL-001
+  - SELF-001
+  - SELF-002
+  required_fields:
+  - hardening_report
+  max_repairs: 1
+  repairs_fingerprint: null
+  write_granularity: file
+  strict_schema: true
+  capability_note: 当前模型未声明（已有画像 vertical-backbone 不适用） tier=unknown：模型能力未知：按保守边界执行，文件级写入
+    + 强制 MUST 字段清单；行为事件触发 weak 上限（近期任务迁移被拒）
+  model_identity: ''
+  control_profile_id: ''
+  control_profile_revision: 0
+  effective_plan_digest: ''
+status: delivered
+repair_count: 0
+changed_paths:
+- sopcontrol/control_result.py
+- sopcontrol/control_profile.py
+- sopcontrol/control_lifecycle.py
+- sopcontrol/task.py
+- sopcontrol/cli.py
+- sopcontrol/cli_task.py
+- tests/harness/test_control_gate_pure.py
+- tests/harness/test_control_result.py
+- tests/harness/test_control_lifecycle.py
+- tests/harness/test_task_profile_binding.py
+submit_input_digest: in-0d2a2e38830e1a63f09277af55567d4c
+revision: 5
+created_at: '2026-09-12T06:52:52.616768Z'
+updated_at: '2026-09-12T07:06:54.946935Z'
+history:
+- at: '2026-09-12T06:52:53.857699Z'
+  action: accept
+  from_status: contract_proposed
+  to_status: executing
+  allowed: true
+  reason: 契约完整：目标、写入范围与可验证完成定义齐备
+  detail:
+    next_action: 执行变更后 task submit 提交改动路径
+- at: '2026-09-12T07:00:18.675790Z'
+  action: submit
+  from_status: executing
+  to_status: verification_pending
+  allowed: true
+  reason: 改动 10 个路径，全部在写入范围内；MUST 字段齐备 [hardening_report]
+  detail:
+    next_action: 运行 task verify 由控制器独立审计
+- at: '2026-09-12T07:06:27.963641Z'
+  action: verify
+  from_status: verification_pending
+  to_status: verified
+  allowed: true
+  reason: 完成门通过：全部必需规则 [CTRL-001, SELF-001, SELF-002] 判定 pass（E4 实测：本轮执行 .venv/bin/python
+    -m pytest -q 通过（334.619s）+ E3 独立审计）
+  detail:
+    next_action: task deliver 交付
+- at: '2026-09-12T07:06:54.940366Z'
+  action: deliver
+  from_status: verified
+  to_status: delivered
+  allowed: true
+  reason: 完成门已独立验证，允许交付
+  detail:
+    next_action: 无
+resolution_of: []
+superseded_by_task: ''
+blocked_reason_code: ''
