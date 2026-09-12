@@ -218,6 +218,45 @@ def issue_phase_grant(
     )
 
 
+def verify_ticket_for_admission(
+    root: Path,
+    *,
+    ticket_id: str,
+    secret: str,
+    action: str,
+    input_fingerprint: str,
+    side_effect: str = "",
+    task_id: str = "",
+    worktree_id: str = "",
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Adapter 在真实 admission point 核验授权：只读，不消费票据。
+
+    供经 SOPCTL_TICKET_FILE handoff 拿到票据的子进程 adapter 调用；
+     opaque 命令忽略该文件（由 bridge 代兑并在 receipt 明示）。
+    """
+    root_path = Path(root)
+    scope_wt = worktree_id or ProjectScope(root_path, mode="discovery").worktree_id
+    when = now or utcnow()
+    ticket = _load_ticket(root_path, ticket_id, worktree_id=scope_wt)
+    if when > ticket.expires_at:
+        raise TicketError("ticket expired")
+    if not secrets.compare_digest(ticket.secret, secret):
+        raise TicketError("ticket secret mismatch")
+    if ticket.action != action:
+        raise TicketError("ticket action mismatch")
+    if ticket.input_fingerprint != input_fingerprint:
+        raise TicketError("ticket input fingerprint mismatch")
+    if task_id and ticket.task_id and ticket.task_id != task_id:
+        raise TicketError("ticket task_id mismatch")
+    if side_effect and side_effect not in ticket.allowed_side_effects:
+        raise TicketError(f"side effect not allowed: {side_effect}")
+    return {"ticket_id": ticket.ticket_id, "verified": True,
+            "consumed": ticket.consumed_at is not None,
+            "effective_plan_digest": ticket.effective_plan_digest,
+            "phase": ticket.phase}
+
+
 def ticket_public_view(ticket: CapabilityTicket) -> dict[str, Any]:
     """Safe view for logs (excludes secret)."""
     data = ticket.model_dump(mode="json")

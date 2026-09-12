@@ -45,7 +45,7 @@ def test_ticket_required_action_challenges_once_then_succeeds_on_retry(tmp_path)
         tmp_path,
         integration_id="scan.cli",
         action="network.scan",
-        argv=["echo", "side-effect"],
+        argv=["curl", "--version"],
         side_effect="network_request",
     )
 
@@ -54,6 +54,7 @@ def test_ticket_required_action_challenges_once_then_succeeds_on_retry(tmp_path)
     assert receipt["ticket"]["ticket_id"].startswith("tkt-")
     assert "secret" not in receipt["ticket"]        # 回执不含 secret
     assert receipt["operation_id"].startswith("op-")
+    assert receipt["redemption_point"].startswith("bridge ")
 
 
 def test_tampered_retry_is_rejected_and_ticket_not_consumed(tmp_path):
@@ -125,12 +126,26 @@ def test_concurrent_redemption_only_one_succeeds(tmp_path):
 def test_secret_never_persists_in_public_view_or_receipt(tmp_path):
     receipt = run_bridge(
         tmp_path, integration_id="scan.cli", action="network.scan",
-        argv=["echo", "x"], side_effect="network_request",
+        argv=["curl", "--version"], side_effect="network_request",
     )
-    blob = str({k: v for k, v in receipt.items() if k != "ticket_model"})
-    secret = receipt["ticket_model"].secret
+
+    def _walk(o):
+        if isinstance(o, dict):
+            for k, v in o.items():
+                assert k != "secret", "secret key leaked into receipt object"
+                yield from _walk(v)
+        elif isinstance(o, list):
+            for v in o:
+                yield from _walk(v)
+
+    assert "ticket_model" not in receipt  # 对象级剥离：打印过滤之外无残留
+    list(_walk(receipt))
     assert receipt["ticket"].get("secret") is None
-    assert secret not in blob
+    # handoff 文件跑后删除，不留 secret 载体
+    from pathlib import Path as _Path
+
+    assert receipt["ticket_handoff"].endswith("(removed after run)")
+    assert not _Path(receipt["ticket_handoff"].split(" ")[0]).exists()
 
 
 def test_unified_fingerprint_matches_action_envelope(tmp_path):
@@ -181,3 +196,58 @@ def test_bridge_install_and_remove_wrapper_roundtrip(tmp_path):
     assert not launcher.exists()
     # 幂等：再 remove 报 removed=False
     assert remove_wrapper(tmp_path, name="product-scan")["removed"] is False
+
+
+def test_undeclared_side_effect_mismatch_or_unknown_refused(tmp_path):
+    # 声明 database_write 实跑 curl：可证伪的矛盾 → 拒绝
+    r1 = run_bridge(tmp_path, integration_id="scan.cli", action="network.scan",
+                    argv=["curl", "--version"], side_effect="database_write")
+    assert r1["executed"] is False and "不符" in r1["error"]
+    # 未知副作用字符串：拒绝
+    r2 = run_bridge(tmp_path, integration_id="scan.cli", action="network.scan",
+                    argv=["echo", "x"], side_effect="teleport")
+    assert r2["executed"] is False
+    # 只读动作未声明但触及 curl：自动进票据流程（fail-closed 分类生效）
+    r3 = run_bridge(tmp_path, integration_id="scan.cli", action="scan",
+                    argv=["curl", "--version"])
+    assert r3["executed"] is True and r3["challenge_count"] == 1
+    assert r3["side_effect"] == "network_request"
+
+
+def test_identifier_traversal_rejected_and_preexisting_restored(tmp_path):
+    import pytest as _pytest
+
+    from sopcontrol.bridge import install_wrapper, remove_wrapper
+
+    with _pytest.raises(ValueError):
+        install_wrapper(tmp_path, integration_id="x", command=["echo"], name="../../escaped")
+    with _pytest.raises(ValueError):
+        remove_wrapper(tmp_path, name="../../escaped")
+    assert not (tmp_path / "escaped").exists()
+
+    launcher = tmp_path / ".sopcontrol-local" / "bin" / "keep-me"
+    launcher.parent.mkdir(parents=True, exist_ok=True)
+    launcher.write_text("#!/bin/sh\necho ORIGINAL\n", encoding="utf-8")
+    install_wrapper(tmp_path, integration_id="x", command=["echo", "new"], name="keep-me")
+    assert "ORIGINAL" not in launcher.read_text(encoding="utf-8")
+    removed = remove_wrapper(tmp_path, name="keep-me")
+    assert removed["restored"] is True and removed["removed"] is False
+    assert "ORIGINAL" in launcher.read_text(encoding="utf-8")
+
+
+def test_admission_verification_for_handoff_ticket(tmp_path):
+    from sopcontrol.tickets import TicketError, issue_ticket, verify_ticket_for_admission
+
+    t = issue_ticket(tmp_path, action="network.scan", input_fingerprint="fp-9",
+                     allowed_side_effects=["network_request"])
+    ok = verify_ticket_for_admission(
+        tmp_path, ticket_id=t.ticket_id, secret=t.secret,
+        action="network.scan", input_fingerprint="fp-9",
+        side_effect="network_request")
+    assert ok["verified"] is True
+    import pytest as _pytest
+
+    with _pytest.raises(TicketError):
+        verify_ticket_for_admission(
+            tmp_path, ticket_id=t.ticket_id, secret="wrong",
+            action="network.scan", input_fingerprint="fp-9")
