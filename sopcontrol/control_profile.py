@@ -45,6 +45,7 @@ class ProfileBaseline(BaseModel):
     generation_mode: BaselineMode = "authoritative"
     audit_mode: str = "compare_output_only"
     challenge_without_explicit_request: bool = False
+    independence_required: str = "self_check"
 
 
 class ProfileRepair(BaseModel):
@@ -90,6 +91,11 @@ def normalize_profile(data: dict[str, Any]) -> ControlProfile:
     except Exception as exc:
         raise ProfileError(f"profile schema 非法: {exc}") from exc
     conflicts: list[str] = []
+    if profile.baseline.independence_required not in (
+        "self_check", "separate_context", "separate_actor", "human_required",
+    ):
+        conflicts.append(
+            f"baseline.independence_required 非法: {profile.baseline.independence_required}")
     overlap = set(profile.checks.required) & set(profile.checks.excluded)
     if overlap:
         conflicts.append(f"required 与 excluded 重叠: {sorted(overlap)}")

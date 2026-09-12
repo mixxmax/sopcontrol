@@ -525,6 +525,18 @@ def build_parser() -> argparse.ArgumentParser:
     s_p2.add_argument("--path", default=".", help="项目根")
     s_p2.add_argument("--json", action="store_true", help="机器可读输出")
     s_p2.set_defaults(func=cmd_profile_show)
+    cres = sub.add_parser(
+        "control-result",
+        help="结构化控制结果求值（P0b）：按冻结计划判定 pass/warn/block/not_run/unknown",
+    )
+    cres_sub = cres.add_subparsers(dest="control_result_cmd", required=True)
+    ev_p = cres_sub.add_parser("evaluate", help="求值一份结果 JSON（只读输入，结果消费记录进本地账）")
+    ev_p.add_argument("--file", required=True, help="ControlResult JSON 文件")
+    ev_p.add_argument("--profile", required=True, help="profile id")
+    ev_p.add_argument("--revision", type=int, required=True, help="冻结 revision")
+    ev_p.add_argument("--path", default=".", help="项目根")
+    ev_p.add_argument("--json", action="store_true", help="机器可读输出")
+    ev_p.set_defaults(func=cmd_control_result_evaluate)
     identity = sub.add_parser("identity", help="项目身份（Phase 6 种子：跨 harness 识别同一项目）")
     identity_sub = identity.add_subparsers(dest="sub", required=True)
     for name, help_text in (
@@ -1002,6 +1014,39 @@ def cmd_profile_show(args) -> int:
           f"repair≤{profile.repair.max_rounds}轮 "
           f"audit≤{profile.budget.max_audit_calls}/repair≤{profile.budget.max_repair_calls}")
     return 0
+
+
+def cmd_control_result_evaluate(args) -> int:
+    """control-result evaluate：rc=0 pass（含 warn），1 block，2 not_run/unknown/协议错。"""
+    import json as _json
+
+    from .control_profile import ProfileError, load_frozen
+    from .control_result import ControlResult, evaluate_control_result
+
+    try:
+        data = _json.loads(open(args.file, encoding="utf-8").read())
+        result = ControlResult.model_validate(data)
+    except Exception as exc:
+        print(f"结果非法: {exc}", file=sys.stderr)
+        return 2
+    try:
+        frozen = load_frozen(args.path, args.profile, args.revision)
+    except ProfileError as exc:
+        print(f"profile 非法: {exc}", file=sys.stderr)
+        return 2
+    ev = evaluate_control_result(args.path, result, frozen)
+    if getattr(args, "json", False):
+        print(ev.model_dump_json(ensure_ascii=False, indent=2))
+    else:
+        print(f"{ev.outcome}")
+        for reason in ev.reasons:
+            print(f"  - {reason}")
+        print(f"  idempotency_key={ev.idempotency_key}")
+    if ev.outcome in ("pass", "pass_with_warnings"):
+        return 0
+    if ev.outcome == "block":
+        return 1
+    return 2
 
 
 def cmd_attach_verify(args) -> int:

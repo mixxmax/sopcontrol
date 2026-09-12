@@ -73,6 +73,9 @@ class Contract(BaseModel):
     strict_schema: bool = False                                # 弱/不稳画像：accept 时强制 required_fields
     capability_note: Optional[str] = None                      # 握手说明（只读审计）
     model_identity: str = ""                                  # task open 时固化，供事件归属使用
+    control_profile_id: str = ""                              # §9.2：绑定的动态 profile
+    control_profile_revision: int = 0                         # 冻结 revision（0=未绑定）
+    effective_plan_digest: str = ""                           # 冻结计划 digest（验收一致性）
 
 
 class EnvelopeRecord(BaseModel):

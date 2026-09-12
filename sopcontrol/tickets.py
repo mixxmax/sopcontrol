@@ -43,6 +43,7 @@ class CapabilityTicket(BaseModel):
     created_at: datetime = Field(default_factory=utcnow)
     consumed_at: Optional[datetime] = None
     issued_by: str = "sopctl"
+    effective_plan_digest: str = ""  # §9.4：能力授权绑定的冻结计划（空=未绑定，不改变旧行为）
 
 
 def _ticket_dir(root: Path, worktree_id: str) -> Path:
@@ -61,6 +62,7 @@ def issue_ticket(
     run_id: str = "",
     ttl_seconds: int = 900,
     issued_by: str = "sopctl",
+    effective_plan_digest: str = "",
 ) -> CapabilityTicket:
     root = Path(root)
     scope = ProjectScope(root, mode="discovery")
@@ -78,6 +80,7 @@ def issue_ticket(
         allowed_side_effects=list(allowed_side_effects or []),
         expires_at=utcnow() + timedelta(seconds=int(ttl_seconds)),
         issued_by=issued_by,
+        effective_plan_digest=effective_plan_digest,
     )
     directory = _ticket_dir(root, ticket.worktree_id)
     directory.mkdir(parents=True, exist_ok=True)
@@ -139,6 +142,7 @@ def redeem_ticket(
     side_effect: str = "",
     task_id: str = "",
     worktree_id: str = "",
+    expected_plan_digest: str = "",
     now: datetime | None = None,
 ) -> CapabilityTicket:
     """Verify and consume a ticket. Env vars alone cannot forge a valid ticket."""
@@ -171,6 +175,9 @@ def redeem_ticket(
             raise TicketError("ticket task_id mismatch")
         if side_effect and side_effect not in ticket.allowed_side_effects:
             raise TicketError(f"side effect not allowed: {side_effect}")
+        if expected_plan_digest and ticket.effective_plan_digest and \
+                ticket.effective_plan_digest != expected_plan_digest:
+            raise TicketError("ticket plan digest mismatch: 授权不属于当前冻结计划")
         ticket.consumed_at = when
         _save_ticket(root_path, ticket)
         return ticket
