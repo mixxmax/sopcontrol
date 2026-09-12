@@ -8,16 +8,16 @@
 1. 权威在项目 `.sopcontrol/`；模型上下文不是记忆本体。
 2. 只推进「当前链头」里的合法动作；不要重做已交付副作用。
 3. 全量历史与接手包：`sopctl task list` / `task show <id>` / `task takeover <id>`。
-4. 本切片摘要: `9ed432ba4ee99358`（漂移时 `sopctl project check` 会报 stale）。
+4. 本切片摘要: `10966a95d0f8ad39`（漂移时 `sopctl project check` 会报 stale）。
 5. 项目何以至此：见下节；全量编年 `sopctl chronicle`。
 
 ## 何以至此（换模型/换会话）
-- 编年 144 条（完整性 OK）；下列为最近 5 条治理动作：
-- [2026-09-09T08:55] TASK-0077 executing→verification_pending（submit）
-- [2026-09-09T08:58] TASK-0077 verification_pending→blocked（verify）
-- [2026-09-09T09:05] TASK-0078 executing→verification_pending（submit）
-- [2026-09-09T09:08] TASK-0078 verification_pending→verified（verify）
-- [2026-09-09T09:08] TASK-0078 verified→delivered（deliver）
+- 编年 194 条（完整性 OK）；下列为最近 5 条治理动作：
+- [2026-09-10T05:33] TASK-0086 executing→verification_pending（submit）
+- [2026-09-10T05:41] TASK-0086 verification_pending→verified（verify）
+- [2026-09-10T05:41] TASK-0086 verified→delivered（deliver）
+- [2026-09-12T03:56] TASK-0087 开任务
+- [2026-09-12T03:56] TASK-0087 contract_proposed→executing（accept）
 - 全量：`sopctl chronicle`；核对：`sopctl chronicle check`。
 
 ## 空间生长（无感观察；定型需人）
@@ -37,7 +37,10 @@
 - [CTRL-001][MUST] 控制器状态目录 .sopcontrol/ 内任何文件不得直接读写或修改，一切写入必须经 sopctl 子命令 （生产消费者标记: touches_protected_path, check_tool_call）
 
 ## 当前链头（可执行切片）
-- 上限 5 条明细；verified 折叠；摘要 `9ed432ba4ee99358`
+- 上限 5 条明细；verified 折叠；摘要 `10966a95d0f8ad39`
+- TASK-0087 [executing] 修复 0082 回归：bare hook 状态未进 AttachmentStatus 字面量，attach --veri
+  执行者: （未绑定）；完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: submit --changed <paths>
+  为何在切片: 执行中：改完后 task submit
 - TASK-0077 [blocked] 细分市场发布准备：关闭 REL-001（cli_product 缺 sys 导入+超预算分支测试）、REL-002（co
   执行者: （未绑定）；完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）人工裁决后另开任务
   为何在切片: 未接替阻断（other）；需 --resolves 另开决议
