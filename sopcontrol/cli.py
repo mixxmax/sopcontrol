@@ -555,6 +555,13 @@ def build_parser() -> argparse.ArgumentParser:
     cost_p.add_argument("--path", default=".", help="项目根")
     cost_p.add_argument("--json", action="store_true", help="机器可读输出")
     cost_p.set_defaults(func=cmd_control_result_costs)
+    man_p = sub.add_parser(
+        "manifest",
+        help="集成发现清单（P1）：只读扫描入口与证据 + 最轻连接规划",
+    )
+    man_p.add_argument("path", nargs="?", default=".")
+    man_p.add_argument("--json", action="store_true", help="机器可读输出")
+    man_p.set_defaults(func=cmd_manifest)
     identity = sub.add_parser("identity", help="项目身份（Phase 6 种子：跨 harness 识别同一项目）")
     identity_sub = identity.add_subparsers(dest="sub", required=True)
     for name, help_text in (
@@ -1127,6 +1134,30 @@ def cmd_control_result_costs(args) -> int:
           f"容忍偏差 {costs['tolerated_findings']} / "
           f"profile 冲突阻断 {costs['profile_conflict_blocks']}")
     print(f"结论分布: {costs['outcomes']}")
+    return 0
+
+
+def cmd_manifest(args) -> int:
+    """manifest：打印发现清单 + 最轻连接规划（文本/JSON，只读）。"""
+    import json as _json
+
+    from .discovery_manifest import build_manifest, manifest_summary, plan_connections
+
+    from pathlib import Path as _Path
+
+    manifest = build_manifest(_Path(args.path))
+    plans = plan_connections(manifest)
+    if getattr(args, "json", False):
+        print(_json.dumps({"manifest": manifest.model_dump(mode="json"),
+                           "plans": [p.model_dump(mode="json") for p in plans]},
+                          ensure_ascii=False, indent=2))
+        return 0
+    summary = manifest_summary(manifest, plans)
+    print(f"发现 {summary['entries']} 个候选入口（git={summary['is_git']}）")
+    for p in plans:
+        print(f"  [{p.way:16}] {p.entry_id}")
+        if p.next_command:
+            print(f"    下一步: {p.next_command}")
     return 0
 
 

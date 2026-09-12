@@ -380,6 +380,17 @@ def plan_attachment(
     ]
     if mode == "observe":
         plan.notes.append("mode=observe: install adapters/hooks but do not imply new enforced rules")
+    try:
+        from .discovery_manifest import build_manifest, manifest_summary, plan_connections
+
+        manifest = build_manifest(root)
+        summary = manifest_summary(manifest, plan_connections(manifest))
+        by_way = ", ".join(f"{k}={v}" for k, v in sorted(summary["by_way"].items()))
+        plan.notes.append(
+            f"discovery: {summary['entries']} 个候选入口（{by_way}）；"
+            f"明细 sopctl manifest {root}")
+    except Exception as exc:  # 发现失败不得阻断接入
+        plan.notes.append(f"discovery 跳过（{type(exc).__name__}）")
     return plan
 
 
