@@ -81,9 +81,9 @@ def render_scaffold(*, lang: str, integration_id: str, action: str,
             "(remove via sopctl bridge remove)\n"
             f"{_SH_RESOLVER}"
             'if [ -z "${SOPCTL_TICKET_FILE:-}" ]; then\n'
-            f"  eval $($BIN bridge challenge {f} --format export -- {q} \"$@\") || exit $?\n"
+            f"  eval $($BIN bridge challenge {f} --format export -- \"$0\" \"$@\") || exit $?\n"
             "fi\n"
-            f"$BIN bridge admit {f} -- {q} \"$@\" || exit $?\n"
+            f"$BIN bridge admit {f} -- \"$0\" \"$@\" || exit $?\n"
             f"exec {q} \"$@\"\n"
         )
     if lang == "python":
@@ -118,15 +118,16 @@ def render_scaffold(*, lang: str, integration_id: str, action: str,
             "if __name__ == '__main__':\n"
             "    _bin = _resolve()\n"
             "    _user = sys.argv[1:]\n"
+            "    _invocation = [sys.argv[0]] + _user\n"
             "    if NEEDS_TICKET and not os.environ.get('SOPCTL_TICKET_FILE'):\n"
             "        ch = _run(_bin, 'bridge', 'challenge', *FLAGS, '--format', 'json',\n"
-            "                '--', *(COMMAND + _user))\n"
+            "                '--', *_invocation)\n"
             "        if ch.returncode != 0:\n"
             "            sys.stderr.write(ch.stderr[-500:])\n"
             "            sys.exit(ch.returncode or 1)\n"
             "        os.environ['SOPCTL_TICKET_FILE'] = json.loads(ch.stdout)['handoff']\n"
             "    if NEEDS_TICKET:\n"
-            "        ad = _run(_bin, 'bridge', 'admit', *FLAGS, '--', *(COMMAND + _user))\n"
+            "        ad = _run(_bin, 'bridge', 'admit', *FLAGS, '--', *_invocation)\n"
             "        if ad.returncode != 0:\n"
             "            sys.stderr.write((ad.stdout + ad.stderr)[-500:])\n"
             "            sys.exit(ad.returncode or 1)\n"
@@ -152,18 +153,19 @@ def render_scaffold(*, lang: str, integration_id: str, action: str,
         "  return ['sopctl'];\n"
         "}\n"
         "const user = process.argv.slice(2);\n"
+        "const invocation = [process.argv[1]].concat(user);\n"
         "const bin = resolve();\n"
         "function run(...args) {\n"
         "  return spawnSync(bin[0], bin.slice(1).concat(args), { encoding: 'utf8' });\n"
         "}\n"
         "if (NEEDS_TICKET && !process.env.SOPCTL_TICKET_FILE) {\n"
         "  const ch = run('bridge', 'challenge', ...FLAGS, '--format', 'json',\n"
-        "               '--', ...COMMAND, ...user);\n"
+        "               '--', ...invocation);\n"
         "  if (ch.status !== 0) { process.stderr.write(String(ch.stderr).slice(-500)); process.exit(ch.status ?? 1); }\n"
         "  process.env.SOPCTL_TICKET_FILE = JSON.parse(ch.stdout).handoff;\n"
         "}\n"
         "if (NEEDS_TICKET) {\n"
-        "  const ad = run('bridge', 'admit', ...FLAGS, '--', ...COMMAND, ...user);\n"
+        "  const ad = run('bridge', 'admit', ...FLAGS, '--', ...invocation);\n"
         "  if (ad.status !== 0) { process.stderr.write(String(ad.stdout + ad.stderr).slice(-500)); process.exit(ad.status ?? 1); }\n"
         "}\n"
         "const r = spawnSync(COMMAND[0], COMMAND.slice(1).concat(user), { stdio: 'inherit' });\n"
@@ -188,6 +190,19 @@ def install_scaffold(
     bin_dir.mkdir(parents=True, exist_ok=True)
     target = bin_dir / (name + _EXT[lang])
     existed = target.exists()
+    prev_backup: str | None = None
+    prev_mode: int | None = None
+    if existed:
+        backup_dir = root / ".sopcontrol-local" / "bridge-rollback"
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        prev_path = backup_dir / f"{target.name}.prev"
+        prev_path.write_bytes(target.read_bytes())
+        try:
+            prev_mode = target.stat().st_mode & 0o7777
+            prev_path.chmod(prev_mode)
+        except OSError:
+            pass
+        prev_backup = str(prev_path)
     target.write_text(render_scaffold(
         lang=lang, integration_id=integration_id, action=action,
         command=[str(c) for c in command], side_effect=side_effect,
@@ -204,6 +219,8 @@ def install_scaffold(
         "phase": phase,
         "files": [str(target)],
         "existed_before": existed,
+        "prev_backup": prev_backup,
+        "prev_mode": prev_mode,
     }
     rollback = _save_manifest(root, manifest)
     return {"name": name, "file": str(target), "rollback": str(rollback)}

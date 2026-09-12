@@ -796,9 +796,9 @@ def _reject(reason: str) -> TransitionDecision:
 
 
 def submit_input_digest_for(root: Path, changed_paths: list[str]) -> str:
-    """submit 改动内容摘要（§7.3 输入绑定）：路径排序 + 小文件内容哈希。
+    """submit 改动内容摘要（§7.3 输入绑定）：路径排序 + 全量内容哈希。
 
-    超过 256KB 的文件只取路径与大小（防大仓 submit 卡死）；缺失文件按路径计。
+    同大小不同内容必出不同摘要；缺失/不可读文件按路径标记（fail-closed 可见）。
     """
     import hashlib as _hashlib
 
@@ -807,11 +807,11 @@ def submit_input_digest_for(root: Path, changed_paths: list[str]) -> str:
     for rel in sorted(changed_paths or []):
         try:
             p = (root / rel).resolve()
-            if p.is_file() and p.stat().st_size <= 256 * 1024:
+            if p.is_file():
                 digest = _hashlib.sha256(p.read_bytes()).hexdigest()[:16]
                 parts.append(f"{rel}:{digest}")
             elif p.exists():
-                parts.append(f"{rel}:large:{p.stat().st_size}")
+                parts.append(f"{rel}:nonfile")
             else:
                 parts.append(f"{rel}:missing")
         except OSError:

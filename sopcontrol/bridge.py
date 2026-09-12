@@ -213,15 +213,24 @@ def remove_wrapper(root: Path, *, name: str) -> dict[str, Any]:
     restored = False
     prev_backup = (existed_before or {}).get("prev_backup")
     prev_mode = (existed_before or {}).get("prev_mode")
+    # 恢复目标取清单 files[0]（scaffold 带扩展名），回落 launcher 路径；
+    # 必须仍在 bin 内（清单被篡改则只删不恢复）。
+    listed = list((existed_before or {}).get("files") or [])
+    bin_dir = root / ".sopcontrol-local" / "bin"
+    restore_target = Path(listed[0]) if listed else launcher
+    try:
+        restore_target.relative_to(bin_dir)
+    except ValueError:
+        restore_target = launcher
     if prev_backup:
         try:
             prev_path = Path(prev_backup)
             if prev_path.is_file():
-                launcher.write_bytes(prev_path.read_bytes())
+                restore_target.write_bytes(prev_path.read_bytes())
                 try:
-                    launcher.chmod(int(prev_mode) if prev_mode else 0o755)
+                    restore_target.chmod(int(prev_mode) if prev_mode else 0o755)
                 except (OSError, ValueError, TypeError):
-                    launcher.chmod(0o755)
+                    restore_target.chmod(0o755)
                 restored = True
         except OSError:
             restored = False
@@ -365,19 +374,20 @@ def admit_ticket(
         expected_plan_digest=expected_plan_digest,
         expected_phase=expected_phase,
     )
+    # 兑换成功即删 handoff（secret 不留盘；失败保留以支持重试语义）。
+    try:
+        Path(ticket_file).unlink()
+    except OSError:
+        pass
     return {"admitted": True, "ticket_id": ticket.ticket_id,
             "operation_id": str(payload.get("operation_id") or "")}
 
 
 def _ticket_consumed(root: Path, ticket_id: str) -> bool:
     """后验：票据是否已被兑换（run 的消费后验用，只读）。"""
-    from .tickets import _load_ticket
+    from .tickets import is_ticket_consumed
 
-    try:
-        ticket = _load_ticket(root, ticket_id)
-    except TicketError:
-        return False
-    return ticket.consumed_at is not None
+    return is_ticket_consumed(root, ticket_id)
 
 
 def _scrub(text: str, secrets_: list[str]) -> str:
@@ -392,13 +402,23 @@ def _write_ticket_handoff(root: Path, ticket: Any, operation_id: str) -> tuple[s
     """票据 handoff（§2.3 临时安全文件描述符通道）。
 
     secret 只进 0600 文件，不进环境变量/进程表/日志；子进程 adapter 可凭
-    文件向 verify_ticket_for_admission 自证；跑后删除。
+    文件向 verify_ticket_for_admission 自证；admit 成功即删，过期即扫。
     """
     import os as _os
     import stat as _stat
+    from datetime import datetime as _datetime
+    from datetime import timezone as _timezone
 
     d = Path(root) / ".sopcontrol-local" / "tickets" / ".handoff"
     d.mkdir(parents=True, exist_ok=True)
+    now = _datetime.now(_timezone.utc)
+    for stale in d.glob("tkt-*.json"):
+        try:
+            exp = json.loads(stale.read_text(encoding="utf-8")).get("expires_at") or ""
+            if exp and _datetime.fromisoformat(str(exp).replace("Z", "+00:00")) < now:
+                stale.unlink()
+        except (OSError, ValueError):
+            continue
     path = d / f"{ticket.ticket_id}.json"
     path.write_text(json.dumps({
         "ticket_id": ticket.ticket_id,
@@ -408,6 +428,8 @@ def _write_ticket_handoff(root: Path, ticket: Any, operation_id: str) -> tuple[s
         "operation_id": operation_id,
         "root": str(root),
         "worktree_id": ticket.worktree_id,
+        "expires_at": ticket.expires_at.isoformat()
+        if hasattr(ticket.expires_at, "isoformat") else str(ticket.expires_at),
     }, ensure_ascii=False), encoding="utf-8")
     _os.chmod(path, _stat.S_IRUSR | _stat.S_IWUSR)
     return str(path), ticket.ticket_id

@@ -1106,9 +1106,6 @@ def cmd_profile_freeze(args) -> int:
     except (ProfileError, ValueError) as exc:
         print(f"冻结失败: {exc}", file=sys.stderr)
         return 2
-    except ValueError as exc:
-        print(f"冻结失败: {exc}", file=sys.stderr)
-        return 2
     print(f"已冻结: {frozen.profile_id}.r{frozen.revision} digest={frozen.digest}")
     return 0
 

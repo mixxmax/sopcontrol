@@ -287,13 +287,14 @@ def decide_control_result(result: ControlResult, frozen: FrozenPlan,
         return done("unknown",
                     f"结果 revision r{result.profile_revision} 非当前 r{frozen.revision}：已失效",
                     "用当前 revision 重新求值")
-    # §11.6：过期 profile 的结果不新鲜。
+    # §11.6：判定时刻 profile 已过期 → 结果失效（比较 now，不是结果创建时间，
+    # 否则过期后求值仍能通过）。
     expires = (frozen.profile.expires_at or "").strip()
     if expires:
         exp = _parse_time(expires)
-        created = _parse_time(result.created_at)
-        if exp is not None and created is not None and created > exp:
-            return done("unknown", "结果晚于 profile 过期时间：已失效",
+        now = _parse_time(state.now_iso) if state.now_iso else None
+        if exp is not None and now is not None and now > exp:
+            return done("unknown", "profile 已过期：结果失效",
                         "更新 profile 有效期后重跑检查")
     # §6.4：独立性——自报不算数，需具名 + 非执行者本人 + 高等级需账本证据。
     required_rank = _INDEPENDENCE_RANK[frozen.profile.baseline.independence_required]
@@ -376,7 +377,17 @@ def decide_control_result(result: ControlResult, frozen: FrozenPlan,
         if f.dimension in excluded and f.severity == "blocking":
             return done("block", f"excluded 维度 {f.dimension} 带 blocking finding：协议违规",
                         "去掉 excluded 维度的 blocking 发现后重新求值")
-    # 预算（§10.6 有牙齿）：审计次数与修正轮数超限即阻断。
+    # 预算（§10.6 有牙齿）：单结果轮数先行（更具体），再看跨结果累计。
+    stop_when = set(frozen.profile.stop_when or ["pass"])
+    if result.rounds_used > frozen.profile.repair.max_rounds:
+        if "max_rounds" in stop_when:
+            return done("block",
+                        f"已达停止条件 max_rounds（已用 {result.rounds_used}轮/上限 "
+                        f"{frozen.profile.repair.max_rounds}）：不再修正",
+                        "开新任务或接受现状")
+        return done("block",
+                    f"修正轮数 {result.rounds_used} 超出上限 {frozen.profile.repair.max_rounds}",
+                    "本轮已无修正额度：接受现状或开新任务")
     if state.audits_used >= frozen.profile.budget.max_audit_calls:
         return done("block",
                     f"审计预算耗尽（已用 {state.audits_used}/{frozen.profile.budget.max_audit_calls}）",
@@ -384,10 +395,6 @@ def decide_control_result(result: ControlResult, frozen: FrozenPlan,
     if state.repair_rounds_used + result.rounds_used > frozen.profile.budget.max_repair_calls:
         return done("block", "修正预算耗尽",
                     "放宽 budget.max_repair_calls 或开新任务")
-    if result.rounds_used > frozen.profile.repair.max_rounds:
-        return done("block",
-                    f"修正轮数 {result.rounds_used} 超出上限 {frozen.profile.repair.max_rounds}",
-                    "本轮已无修正额度：接受现状或开新任务")
     # §6.3/§4.2：逐维度 mode + tolerance 映射后判定。
     downgrades: list[str] = []
     for f in result.findings:
@@ -398,6 +405,9 @@ def decide_control_result(result: ControlResult, frozen: FrozenPlan,
         if note:
             downgrades.append(note)
         if eff == "blocking":
+            if "block" in stop_when:
+                return done("block", f"blocking finding：{f.dimension}（已达停止条件，不再修正）",
+                            "开新任务或接受现状")
             return done("block", f"blocking finding：{f.dimension}",
                         f"按 repair 策略修正后重跑受影响检查（≤{frozen.profile.repair.max_rounds}轮）")
     decisive = [f for f in result.findings
@@ -530,17 +540,15 @@ def check_task_profile_gate(root: Path | str, task: Any,
     for r in _scan_consumed(Path(root)):
         if (str(r.get("task_id")) != task.task_id
                 or str(r.get("profile_id")) != want[0]
-                or int(r.get("profile_revision") or 0) != want[1]):
-            continue
-        plan_ok = (str(r.get("plan_digest")) == want[2]
-                   or str(r.get("base_digest") or "") == want[2])
-        if not plan_ok:
+                or int(r.get("profile_revision") or 0) != want[1]
+                or str(r.get("plan_digest")) != want[2]):
             continue
         if best is None or str(r.get("at", "")) > str(best.get("at", "")):
             best = r
     if best is None:
         return False, (
-            f"任务 {task.task_id} 绑定 {want[0]}.r{want[1]} 但无通过的动态结果："
+            f"任务 {task.task_id} 绑定 {want[0]}.r{want[1]} 但无该有效计划 digest 的通过结果"
+            f"（run override 须绑定组合后 digest）："
             f"先 control-result evaluate --task {task.task_id}")
     if str(best.get("outcome")) not in ("pass", "pass_with_warnings"):
         return False, (

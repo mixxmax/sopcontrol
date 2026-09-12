@@ -155,3 +155,22 @@ def test_verify_denied_without_passing_result_no_e4(tmp_path, capsys):
     assert "repair_required" in out
     assert elapsed < 120, "门控应在 E4（数分钟）之前拒绝"
     assert store.load("TASK-1").status.value == "repair_required"
+
+
+def test_submit_digest_detects_same_size_content_change(tmp_path):
+    from sopcontrol.task import submit_input_digest_for
+
+    target = tmp_path / "big.bin"
+    target.write_bytes(b"A" * (300 * 1024) + b"X")
+    d1 = submit_input_digest_for(tmp_path, ["big.bin"])
+    target.write_bytes(b"A" * (300 * 1024) + b"Y")
+    d2 = submit_input_digest_for(tmp_path, ["big.bin"])
+    assert d1 != d2  # 同大小不同内容必须不同摘要
+    huge = tmp_path / "huge.bin"
+    huge.write_bytes(b"B" * (9 * 1024 * 1024))
+    h1 = submit_input_digest_for(tmp_path, ["huge.bin"])
+    with open(huge, "r+b") as fh:
+        fh.seek(5 * 1024 * 1024)
+        fh.write(b"Z")
+    h2 = submit_input_digest_for(tmp_path, ["huge.bin"])
+    assert h1 != h2  # 超大文件中部变化也必须检出

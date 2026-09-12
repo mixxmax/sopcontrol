@@ -252,3 +252,54 @@ def test_identifier_traversal_rejected(tmp_path):
                         baseline_mode="authoritative")
     assert not (tmp_path / "escaped").exists()
     assert not (tmp_path.parent / "escaped").exists()
+
+
+def test_expired_profile_judged_at_decision_time():
+    from datetime import timedelta
+
+    past = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    future = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+    expired = normalize_profile({**BASE, "expires_at": past})
+    valid = normalize_profile({**BASE, "expires_at": future})
+    frozen_exp = _frozen_like(expired)
+    frozen_ok = _frozen_like(valid)
+    res = _ok_result(frozen_exp)
+    assert decide_control_result(res, frozen_exp, _state()).outcome == "unknown"
+    res2 = _ok_result(frozen_ok)
+    assert decide_control_result(res2, frozen_ok, _state()).outcome == "pass"
+
+
+def test_stop_when_max_rounds_in_gate():
+    profile = normalize_profile({**BASE, "stop_when": ["pass", "max_rounds"]})
+    frozen = _frozen_like(profile)
+    res = _ok_result(frozen, result_id="s1", rounds_used=2)
+    ev = decide_control_result(res, frozen, _state())
+    assert ev.outcome == "block" and "停止条件" in ev.reasons[0]
+
+
+def test_compose_merges_all_layers_tighten_only():
+    from sopcontrol.control_profile import ProfileError, compose_effective_plan
+
+    base = normalize_profile({
+        **BASE, "checks": {"required": ["jd_fit", "factual_accuracy", "llmo"],
+                           "excluded": [],
+                           "modes": {"jd_fit": "block", "llmo": "required"}},
+        "tolerance": {"reasonable_exaggeration": "report_only"},
+        "budget": {"max_audit_calls": 5, "max_repair_calls": 2},
+        "repair": {"max_rounds": 2},
+        "stop_when": ["pass"],
+    })
+    task = normalize_profile({**BASE, "tolerance": {"reasonable_exaggeration": "report_only"}})
+    composed = compose_effective_plan(_frozen_like(task), None, base_profile=base)
+    assert set(composed.profile.checks.required) == {"jd_fit", "factual_accuracy", "llmo"}
+    assert composed.profile.checks.modes["jd_fit"] == "block"
+    assert composed.profile.tolerance["reasonable_exaggeration"] == "report_only"
+    assert composed.profile.budget.max_audit_calls == 2
+    assert composed.profile.repair.max_rounds == 1
+    assert composed.layers["base_profile"] == "pure"
+    # 放宽任一层即拒绝
+    loose = dict(BASE)
+    loose["budget"] = {"max_audit_calls": 99, "max_repair_calls": 1}
+    with pytest.raises(ProfileError):
+        compose_effective_plan(_frozen_like(normalize_profile(loose)), None,
+                               base_profile=base)

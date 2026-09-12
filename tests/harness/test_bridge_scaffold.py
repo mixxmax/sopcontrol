@@ -124,3 +124,47 @@ def test_installed_readonly_entry_direct_exec(tmp_path):
     proc = _subprocess.run([installed["file"], "hi"], capture_output=True,
                            text=True, timeout=30)
     assert proc.returncode == 0 and "hi" in proc.stdout
+
+
+def test_scaffold_install_backs_up_and_restores(tmp_path):
+    from sopcontrol.bridge import remove_wrapper
+
+    target = tmp_path / ".sopcontrol-local" / "bin" / "keep.py"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("# original\n", encoding="utf-8")
+    target.chmod(0o644)
+    install_scaffold(tmp_path, name="keep", lang="python",
+                     integration_id="demo.cli", action="scan",
+                     command=["echo"])
+    assert target.read_text(encoding="utf-8") != "# original\n"
+    removed = remove_wrapper(tmp_path, name="keep")
+    assert removed["restored"] is True
+    assert target.read_text(encoding="utf-8") == "# original\n"
+    import stat as _stat
+
+    assert _stat.S_IMODE(target.stat().st_mode) == 0o644
+
+
+def test_supervised_wrapper_admits_parent_ticket(tmp_path, monkeypatch):
+    """嵌套场景：run  spawn 已安装入口，入口 admit 父票据（指纹一致即过）。"""
+    import subprocess as _subprocess
+    import sys as _sys
+    from pathlib import Path as _Path
+
+    from sopcontrol.bridge import run_bridge
+
+    pybin = _Path(_sys.executable)
+    sopctl = pybin.parent / "sopctl"
+    monkeypatch.setenv("SOPCTL_BIN",
+                       str(sopctl) if sopctl.is_file() else f"{pybin} -m sopcontrol.cli")
+    installed = install_scaffold(
+        tmp_path, name="nested", lang="sh",
+        integration_id="demo.cli", action="network.scan",
+        command=["echo"], side_effect="network_request",
+    )
+    receipt = run_bridge(tmp_path, integration_id="demo.cli", action="network.scan",
+                         argv=[installed["file"], "nested-hi"],
+                         side_effect="network_request")
+    assert receipt["executed"] is True, receipt.get("error")
+    assert receipt["redemption_point"].startswith("child-admission")
+    assert "nested-hi" in receipt["stdout_tail"]

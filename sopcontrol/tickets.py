@@ -257,6 +257,15 @@ def verify_ticket_for_admission(
             "phase": ticket.phase}
 
 
+def is_ticket_consumed(root: Path, ticket_id: str, worktree_id: str = "") -> bool:
+    """只读：票据是否已被兑换（消费后验用；缺失视为未消费）。"""
+    try:
+        ticket = _load_ticket(root, ticket_id, worktree_id=worktree_id)
+    except TicketError:
+        return False
+    return ticket.consumed_at is not None
+
+
 def ticket_public_view(ticket: CapabilityTicket) -> dict[str, Any]:
     """Safe view for logs (excludes secret)."""
     data = ticket.model_dump(mode="json")

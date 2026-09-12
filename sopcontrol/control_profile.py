@@ -107,24 +107,73 @@ class ComposedPlan(BaseModel):
     layers: dict[str, Any] = Field(default_factory=dict)
 
 
+def _merge_all_fields(base: ControlProfile, task: ControlProfile) -> ControlProfile:
+    """Base ⊕ Task 全字段合并（只收紧）：required/excluded/modes/tolerance/
+    budget/repair/baseline/stop_when/expires 全覆盖；放宽即 ProfileError。"""
+    data = task.model_dump(mode="json")
+    # required/excluded：base 并入 task（交集冲突由 normalize 裁决）
+    required = set(task.checks.required) | set(base.checks.required)
+    excluded = set(task.checks.excluded) | set(base.checks.excluded)
+    data["checks"]["required"] = sorted(required)
+    data["checks"]["excluded"] = sorted(excluded)
+    # modes：重叠维度只允许收紧（rank 只升不降）
+    modes = dict(base.checks.modes)
+    for dim, mode in task.checks.modes.items():
+        old = modes.get(dim)
+        if old is not None and _MODE_RANK[mode] < _MODE_RANK[old]:
+            raise ProfileError(f"task 不得放宽 base 的 mode {dim}（{old}→{mode}）")
+        modes[dim] = mode
+    data["checks"]["modes"] = modes
+    # tolerance：重叠类别只允许收紧
+    tolerance = dict(base.tolerance or {})
+    for category, level in (task.tolerance or {}).items():
+        if level not in _TOLERANCE_RANK:
+            raise ProfileError(f"task tolerance 非法: {category}={level}")
+        old = tolerance.get(category, "allowed")
+        if old not in _TOLERANCE_RANK:
+            raise ProfileError(f"base tolerance 非法: {category}={old}")
+        if _TOLERANCE_RANK[level] < _TOLERANCE_RANK[old]:
+            raise ProfileError(f"task 不得放宽 base 的 tolerance[{category}]（{old}→{level}）")
+        tolerance[category] = level
+    data["tolerance"] = tolerance
+    # budget/repair：只允许收紧（数值只降不升）
+    for key in ("max_audit_calls", "max_repair_calls"):
+        old, new = getattr(base.budget, key), getattr(task.budget, key)
+        if new > old:
+            raise ProfileError(f"task 不得放宽 base 的 budget.{key}（{old}→{new}）")
+        data["budget"][key] = min(old, new)
+    if task.repair.max_rounds > base.repair.max_rounds:
+        raise ProfileError("task 不得放宽 base 的 repair.max_rounds")
+    data["repair"]["max_rounds"] = min(base.repair.max_rounds, task.repair.max_rounds)
+    if task.repair.policy != base.repair.policy:
+        raise ProfileError("task 不得改变 base 的 repair.policy")
+    # baseline：跨层必须一致（改基线语义走新 revision，不是叠加）
+    for field in ("generation_mode", "audit_mode", "challenge_without_explicit_request",
+                  "independence_required", "require_accept", "require_proven_independence"):
+        if getattr(task.baseline, field) != getattr(base.baseline, field):
+            raise ProfileError(f"task 不得改变 base 的 baseline.{field}")
+    # stop_when：只允许增加停止条件（停得更快=更紧）
+    if not set(task.stop_when or ["pass"]) >= set(base.stop_when or ["pass"]):
+        raise ProfileError("task 不得减少 base 的 stop_when")
+    data["stop_when"] = sorted(set(task.stop_when or ["pass"]))
+    # expires_at：取最早（先到期先生效）
+    data["expires_at"] = min(
+        (x for x in (base.expires_at, task.expires_at) if x), default=None)
+    # scope 归属 task 层（任务级配置本就声明作用域）
+    return normalize_profile(data)
+
+
 def compile_effective_profile(
     task_profile: ControlProfile,
     run_override: dict[str, Any] | None = None,
     *,
     base_profile: ControlProfile | None = None,
 ) -> ControlProfile:
-    """编译有效 profile：只允许收紧（§8.1/§3.3），放宽即 ProfileError。"""
-    if base_profile is not None and base_profile.profile_id != task_profile.profile_id:
-        pass  # base 仅贡献 required 并集，不要求同 id
-    required = set(task_profile.checks.required)
-    excluded = set(task_profile.checks.excluded)
-    if base_profile is not None:
-        required |= set(base_profile.checks.required)
-        excluded |= set(base_profile.checks.excluded)
-    data = task_profile.model_dump(mode="json")
-    data["checks"]["required"] = sorted(required)
-    data["checks"]["excluded"] = sorted(excluded)
+    """编译有效 profile：Base ⊕ Task ⊕ Run，每层只允许收紧（§8.1/§3.3）。"""
+    merged = _merge_all_fields(base_profile, task_profile) if base_profile is not None else task_profile
+    data = merged.model_dump(mode="json")
     compiled = normalize_profile(data)
+    required = set(compiled.checks.required)
     run = run_override or {}
     unknown_keys = set(run) - {"exclude_add", "mode_tighten", "budget_cap",
                                "repair_max_rounds", "tolerance_tighten"}
@@ -178,6 +227,7 @@ def compose_effective_plan(
         "task_revision": task_frozen.revision,
         "task_digest": task_frozen.digest,
         "base_profile": base_profile.profile_id if base_profile else "",
+        "base_digest": plan_digest(base_profile, task_frozen.revision) if base_profile else "",
         "run_override": run_override or {},
     }
     digest = "plan-" + hashlib.sha256(
