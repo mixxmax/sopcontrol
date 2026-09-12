@@ -1,0 +1,74 @@
+task_id: TASK-0090
+contract:
+  objective: 动态规则 P1a：基线接受事件（任务开始记录，write-once）+ 基线模式防变（evaluate 比对接受模式）+ repair_allowed/tolerated
+    升级 guard + affected 重检 + profile 变更影响分析 + §7 相关测试
+  allowed_writes:
+  - sopcontrol/control_lifecycle.py
+  - sopcontrol/control_result.py
+  - sopcontrol/cli.py
+  - tests/harness/test_control_lifecycle.py
+  - tests/harness/test_control_result.py
+  required_rules:
+  - CTRL-001
+  - SELF-001
+  - SELF-002
+  required_fields:
+  - lifecycle_report
+  max_repairs: 1
+  repairs_fingerprint: null
+  write_granularity: file
+  strict_schema: true
+  capability_note: 当前模型未声明（已有画像 vertical-backbone 不适用） tier=unknown：模型能力未知：按保守边界执行，文件级写入
+    + 强制 MUST 字段清单；行为事件触发 weak 上限（近期任务迁移被拒）
+  model_identity: ''
+  control_profile_id: ''
+  control_profile_revision: 0
+  effective_plan_digest: ''
+status: delivered
+repair_count: 0
+changed_paths:
+- sopcontrol/control_lifecycle.py
+- sopcontrol/control_result.py
+- sopcontrol/cli.py
+- tests/harness/test_control_lifecycle.py
+- tests/harness/test_control_result.py
+revision: 5
+created_at: '2026-09-12T04:19:25.120778Z'
+updated_at: '2026-09-12T04:24:24.650915Z'
+history:
+- at: '2026-09-12T04:19:25.414854Z'
+  action: accept
+  from_status: contract_proposed
+  to_status: executing
+  allowed: true
+  reason: 契约完整：目标、写入范围与可验证完成定义齐备
+  detail:
+    next_action: 执行变更后 task submit 提交改动路径
+- at: '2026-09-12T04:20:19.969596Z'
+  action: submit
+  from_status: executing
+  to_status: verification_pending
+  allowed: true
+  reason: 改动 5 个路径，全部在写入范围内；MUST 字段齐备 [lifecycle_report]
+  detail:
+    next_action: 运行 task verify 由控制器独立审计
+- at: '2026-09-12T04:24:14.313884Z'
+  action: verify
+  from_status: verification_pending
+  to_status: verified
+  allowed: true
+  reason: 完成门通过：全部必需规则 [CTRL-001, SELF-001, SELF-002] 判定 pass（E4 实测：本轮执行 .venv/bin/python
+    -m pytest -q 通过（226.14s）+ E3 独立审计）
+  detail:
+    next_action: task deliver 交付
+- at: '2026-09-12T04:24:24.647492Z'
+  action: deliver
+  from_status: verified
+  to_status: delivered
+  allowed: true
+  reason: 完成门已独立验证，允许交付
+  detail:
+    next_action: 无
+resolution_of: []
+superseded_by_task: ''
+blocked_reason_code: ''
