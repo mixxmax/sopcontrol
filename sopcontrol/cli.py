@@ -519,6 +519,16 @@ def build_parser() -> argparse.ArgumentParser:
     f_p.add_argument("profile_id", help="profile id")
     f_p.add_argument("--path", default=".", help="项目根")
     f_p.set_defaults(func=cmd_profile_freeze)
+    a_p = prof_sub.add_parser("accept", help="任务开始接受基线（§5.4，轻量声明）")
+    a_p.add_argument("profile_id", help="profile id")
+    a_p.add_argument("--revision", type=int, required=True, help="冻结 revision")
+    a_p.add_argument("--task", required=True, help="任务 id")
+    a_p.add_argument("--source-ref", default="", help="基线来源（默认取计划值）")
+    a_p.add_argument("--digest", default="", help="基线 digest（必填）")
+    a_p.add_argument("--mode", default="", help="基线模式（默认取计划值）")
+    a_p.add_argument("--by", default="", help="接受人")
+    a_p.add_argument("--path", default=".", help="项目根")
+    a_p.set_defaults(func=cmd_profile_accept)
     s_p2 = prof_sub.add_parser("show", help="查看草稿或冻结 revision")
     s_p2.add_argument("profile_id", help="profile id")
     s_p2.add_argument("--revision", type=int, default=0, help="0=草稿，正数=冻结 revision")
@@ -986,6 +996,36 @@ def cmd_profile_freeze(args) -> int:
     return 0
 
 
+def cmd_profile_accept(args) -> int:
+    """profile accept：记录基线接受（同任务同 revision 只写一次）。"""
+    from .control_lifecycle import BaselineAcceptError, accept_baseline
+    from .control_profile import ProfileError, load_frozen
+
+    try:
+        frozen = load_frozen(args.path, args.profile_id, args.revision)
+    except ProfileError as exc:
+        print(f"profile 非法: {exc}", file=sys.stderr)
+        return 2
+    if not args.digest:
+        print("profile accept 需要 --digest（基线内容摘要）", file=sys.stderr)
+        return 2
+    try:
+        record = accept_baseline(
+            args.path, task_id=args.task, profile_id=args.profile_id,
+            revision=args.revision,
+            source_ref=args.source_ref or frozen.profile.baseline.source_ref,
+            baseline_digest=args.digest,
+            baseline_mode=args.mode or frozen.profile.baseline.generation_mode,
+            accepted_by=args.by,
+        )
+    except BaselineAcceptError as exc:
+        print(f"接受失败: {exc}", file=sys.stderr)
+        return 2
+    print(f"基线已接受: {record.task_id} {record.profile_id}.r{record.profile_revision} "
+          f"mode={record.baseline_mode}")
+    return 0
+
+
 def cmd_profile_show(args) -> int:
     """profile show：草稿或冻结 revision（文本/JSON）。"""
     import json as _json
@@ -1033,6 +1073,13 @@ def cmd_control_result_evaluate(args) -> int:
         frozen = load_frozen(args.path, args.profile, args.revision)
     except ProfileError as exc:
         print(f"profile 非法: {exc}", file=sys.stderr)
+        return 2
+    from .control_lifecycle import check_baseline_accept
+
+    baseline_rejection = check_baseline_accept(args.path, result, frozen)
+    if baseline_rejection is not None:
+        print("unknown")
+        print(f"  - {baseline_rejection}")
         return 2
     ev = evaluate_control_result(args.path, result, frozen)
     if getattr(args, "json", False):

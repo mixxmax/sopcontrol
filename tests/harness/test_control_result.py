@@ -159,6 +159,9 @@ def test_free_text_instead_of_structured_rejected(tmp_path, capsys):
 
 def test_cli_rc_mapping(tmp_path, capsys):
     frozen = _frozen(tmp_path)
+    assert main(["profile", "accept", "run-q", "--revision", "1", "--task", "TASK-9",
+                 "--digest", "base-1", "--path", str(tmp_path)]) == 0
+    capsys.readouterr()
 
     def run(res, name):
         p = tmp_path / f"{name}.json"

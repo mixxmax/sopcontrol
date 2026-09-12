@@ -46,6 +46,7 @@ class ControlResult(BaseModel):
     effective_plan_digest: str = ""
     input_digest: str = ""
     baseline_digest: str = ""
+    baseline_mode: str = ""  # 为空=结果未声明基线模式（不触发模式比对）
     checked_dimensions: list[str] = Field(default_factory=list)
     excluded_dimensions: list[str] = Field(default_factory=list)
     findings: list[ResultFinding] = Field(default_factory=list)
