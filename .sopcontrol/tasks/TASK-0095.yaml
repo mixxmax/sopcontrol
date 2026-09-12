@@ -1,0 +1,73 @@
+task_id: TASK-0095
+contract:
+  objective: attach 发现补齐：Integration Manifest 生成（git/包文件/CLI/脚本/测试命令/harness 配置/副作用
+    hints/既有状态/第三方 hook）+ 最轻连接规划（直装/bridge 候选/配置片段/scaffold+确认/gap）+ manifest CLI
+    + attach 计划引用 + 回归测试
+  allowed_writes:
+  - sopcontrol/discovery_manifest.py
+  - sopcontrol/attachment.py
+  - sopcontrol/cli.py
+  - tests/harness/test_discovery_manifest.py
+  required_rules:
+  - CTRL-001
+  - SELF-001
+  - SELF-002
+  required_fields:
+  - discovery_report
+  max_repairs: 1
+  repairs_fingerprint: null
+  write_granularity: file
+  strict_schema: true
+  capability_note: 当前模型未声明（已有画像 vertical-backbone 不适用） tier=unknown：模型能力未知：按保守边界执行，文件级写入
+    + 强制 MUST 字段清单；行为事件触发 weak 上限（近期任务迁移被拒）
+  model_identity: ''
+  control_profile_id: ''
+  control_profile_revision: 0
+  effective_plan_digest: ''
+status: delivered
+repair_count: 0
+changed_paths:
+- sopcontrol/discovery_manifest.py
+- sopcontrol/attachment.py
+- sopcontrol/cli.py
+- tests/harness/test_discovery_manifest.py
+revision: 5
+created_at: '2026-09-12T05:17:03.522940Z'
+updated_at: '2026-09-12T05:26:12.187140Z'
+history:
+- at: '2026-09-12T05:17:03.809410Z'
+  action: accept
+  from_status: contract_proposed
+  to_status: executing
+  allowed: true
+  reason: 契约完整：目标、写入范围与可验证完成定义齐备
+  detail:
+    next_action: 执行变更后 task submit 提交改动路径
+- at: '2026-09-12T05:20:15.267570Z'
+  action: submit
+  from_status: executing
+  to_status: verification_pending
+  allowed: true
+  reason: 改动 4 个路径，全部在写入范围内；MUST 字段齐备 [discovery_report]
+  detail:
+    next_action: 运行 task verify 由控制器独立审计
+- at: '2026-09-12T05:26:03.595782Z'
+  action: verify
+  from_status: verification_pending
+  to_status: verified
+  allowed: true
+  reason: 完成门通过：全部必需规则 [CTRL-001, SELF-001, SELF-002] 判定 pass（E4 实测：本轮执行 .venv/bin/python
+    -m pytest -q 通过（284.288s）+ E3 独立审计）
+  detail:
+    next_action: task deliver 交付
+- at: '2026-09-12T05:26:12.181042Z'
+  action: deliver
+  from_status: verified
+  to_status: delivered
+  allowed: true
+  reason: 完成门已独立验证，允许交付
+  detail:
+    next_action: 无
+resolution_of: []
+superseded_by_task: ''
+blocked_reason_code: ''
