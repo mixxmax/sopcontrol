@@ -78,3 +78,89 @@ def test_cli_validate_and_show(tmp_path, capsys):
         pass
     else:
         raise AssertionError("expected PackError")
+
+
+DENY_NETWORK_PACK = """\
+format_version: "1"
+name: corp-egress
+version: 2.0.0
+surfaces: [network]
+breakers:
+  - id: egress-deny
+    surface: network
+    match: {command: curl}
+    decision: deny
+    reason: 外发需走审批通道
+connectors: []
+"""
+
+ASK_PACK = """\
+format_version: "1"
+name: corp-audit
+version: 1.0.0
+surfaces: [shell]
+breakers:
+  - id: shell-ask
+    surface: shell
+    match: {command: echo}
+    decision: ask
+    reason: 高敏操作需票据
+connectors: []
+"""
+
+
+def test_bridge_enforces_deny_breaker(tmp_path):
+    from sopcontrol.bridge import run_bridge
+
+    d = tmp_path / "denypack"
+    d.mkdir()
+    (d / "pack.yaml").write_text(DENY_NETWORK_PACK, encoding="utf-8")
+    receipt = run_bridge(tmp_path, integration_id="scan.cli", action="network.scan",
+                         argv=["curl", "--version"], side_effect="network_request",
+                         policy_pack=str(d))
+    assert receipt["executed"] is False
+    assert receipt["policy_decision"] == "deny:egress-deny"
+    assert "egress-deny" in receipt["error"]
+    # 无 pack 时同调用正常执行（对照组）
+    clean = run_bridge(tmp_path, integration_id="scan.cli", action="network.scan",
+                       argv=["curl", "--version"], side_effect="network_request")
+    assert clean["executed"] is True
+
+
+def test_bridge_ask_forces_ticket_flow(tmp_path):
+    from sopcontrol.bridge import run_bridge
+
+    d = tmp_path / "askpack"
+    d.mkdir()
+    (d / "pack.yaml").write_text(ASK_PACK, encoding="utf-8")
+    # echo 只读本可免票；ask breaker 强制走票（shell 非票据类 → 按 ask 语义拒绝直行）
+    receipt = run_bridge(tmp_path, integration_id="scan.cli", action="scan",
+                         argv=["echo", "hi"], policy_pack=str(d))
+    assert receipt["policy_decision"] == "ask:shell-ask"
+    # shell 无票据类：ask 无法落票则拒绝（不静默放行）
+    assert receipt["executed"] is False
+
+
+def test_bridge_rejects_invalid_pack(tmp_path):
+    from sopcontrol.bridge import run_bridge
+
+    d = tmp_path / "badpack"
+    d.mkdir()
+    receipt = run_bridge(tmp_path, integration_id="scan.cli", action="scan",
+                         argv=["echo", "hi"], policy_pack=str(d))
+    assert receipt["executed"] is False
+    assert "policy pack 非法" in receipt["error"]
+
+
+def test_bridge_run_cli_policy_pack_flag(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    d = tmp_path / "denypack"
+    d.mkdir()
+    (d / "pack.yaml").write_text(DENY_NETWORK_PACK, encoding="utf-8")
+    rc = main(["bridge", "run", "--action", "network.scan",
+               "--integration-id", "scan.cli",
+               "--side-effect", "network_request",
+               "--policy-pack", str(d),
+               "--", "curl", "--version"])
+    assert rc == 1
+    capsys.readouterr()

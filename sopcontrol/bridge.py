@@ -299,6 +299,7 @@ def run_bridge(
     side_effect: str = "",
     task_id: str = "",
     ttl_seconds: int = 900,
+    policy_pack: str = "",
 ) -> dict[str, Any]:
     """§4.1 挑战-重试-兑换-回执的最小闭环（进程内 admission point）。
 
@@ -334,6 +335,8 @@ def run_bridge(
         "stderr_tail": "",
         "redemption_point": "none",
         "ticket_handoff": "",
+        "policy_pack": policy_pack or "",
+        "policy_decision": "",
     }
 
     def _refuse(error: str) -> dict[str, Any]:
@@ -342,6 +345,32 @@ def run_bridge(
         return receipt
 
     surface, classified = classify_bridge_argv(integration_id, argv)
+    if policy_pack:
+        from .policy_pack import PackError, load_pack, match_breakers
+
+        try:
+            pack = load_pack(policy_pack)
+        except PackError as exc:
+            return _refuse(f"policy pack 非法: {exc}")
+        attrs = {"command": " ".join(argv), "integration": integration_id,
+                 "action": action}
+        hits = match_breakers(pack, surface=surface, attrs=attrs)
+        denied = [h for h in hits if h.decision == "deny"]
+        if denied:
+            receipt["policy_decision"] = f"deny:{denied[0].id}"
+            return _refuse(f"policy pack 阻断 [{denied[0].id}]：{denied[0].reason}")
+        asked = [h for h in hits if h.decision == "ask"]
+        if asked:
+            receipt["policy_decision"] = f"ask:{asked[0].id}"
+            # ask 强制走票：无票据类时按分类（无分类则拒绝）。
+            if not side_effect and not classified:
+                return _refuse(
+                    f"policy pack 要求授权 [{asked[0].id}] 但动作无法分类："
+                    f"请声明 --side-effect")
+            if not side_effect:
+                side_effect = classified
+        else:
+            receipt["policy_decision"] = "allow (no breaker hit)"
     effective = side_effect
     if side_effect:
         if side_effect in TICKET_REQUIRED_SIDES:

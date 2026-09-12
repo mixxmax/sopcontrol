@@ -476,6 +476,8 @@ def build_parser() -> argparse.ArgumentParser:
              "database_write/external_write/irreversible；留空=只读免票",
     )
     run_p.add_argument("--task-id", default="")
+    run_p.add_argument("--policy-pack", default="",
+                       help="外部 Policy Pack 目录（deny 拒行、ask 强制走票）")
     run_p.add_argument(
         "command", nargs=argparse.REMAINDER,
         help="原始命令与参数（用 -- 分隔）",
@@ -863,6 +865,7 @@ def cmd_bridge(args) -> int:
         argv=command,
         side_effect=args.side_effect or "",
         task_id=args.task_id or "",
+        policy_pack=getattr(args, "policy_pack", "") or "",
     )
     printable = {k: v for k, v in receipt.items() if k != "ticket_model"}
     print(_json.dumps(printable, ensure_ascii=False, indent=2, default=str))
