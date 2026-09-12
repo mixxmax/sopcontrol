@@ -1,0 +1,72 @@
+task_id: TASK-0091
+contract:
+  objective: 动态规则 P1b 成本优化：阶段级短期授权（ticket phase 绑定）+ 幂等键结果复用（同键免重复审计）+ §10.6 成本指标记录与
+    control-result costs + §12.4 成本测试
+  allowed_writes:
+  - sopcontrol/control_result.py
+  - sopcontrol/tickets.py
+  - sopcontrol/cli.py
+  - tests/harness/test_control_costs.py
+  required_rules:
+  - CTRL-001
+  - SELF-001
+  - SELF-002
+  required_fields:
+  - cost_report
+  max_repairs: 1
+  repairs_fingerprint: null
+  write_granularity: file
+  strict_schema: true
+  capability_note: 当前模型未声明（已有画像 vertical-backbone 不适用） tier=unknown：模型能力未知：按保守边界执行，文件级写入
+    + 强制 MUST 字段清单；行为事件触发 weak 上限（近期任务迁移被拒）
+  model_identity: ''
+  control_profile_id: ''
+  control_profile_revision: 0
+  effective_plan_digest: ''
+status: delivered
+repair_count: 0
+changed_paths:
+- sopcontrol/control_result.py
+- sopcontrol/tickets.py
+- sopcontrol/cli.py
+- tests/harness/test_control_costs.py
+revision: 5
+created_at: '2026-09-12T04:24:59.486014Z'
+updated_at: '2026-09-12T04:33:44.035139Z'
+history:
+- at: '2026-09-12T04:24:59.854963Z'
+  action: accept
+  from_status: contract_proposed
+  to_status: executing
+  allowed: true
+  reason: 契约完整：目标、写入范围与可验证完成定义齐备
+  detail:
+    next_action: 执行变更后 task submit 提交改动路径
+- at: '2026-09-12T04:26:21.155940Z'
+  action: submit
+  from_status: executing
+  to_status: verification_pending
+  allowed: true
+  reason: 改动 4 个路径，全部在写入范围内；MUST 字段齐备 [cost_report]
+  detail:
+    next_action: 运行 task verify 由控制器独立审计
+- at: '2026-09-12T04:33:35.267715Z'
+  action: verify
+  from_status: verification_pending
+  to_status: verified
+  allowed: true
+  reason: 完成门通过：全部必需规则 [CTRL-001, SELF-001, SELF-002] 判定 pass（E4 实测：本轮执行 .venv/bin/python
+    -m pytest -q 通过（422.029s）+ E3 独立审计）
+  detail:
+    next_action: task deliver 交付
+- at: '2026-09-12T04:33:44.031765Z'
+  action: deliver
+  from_status: verified
+  to_status: delivered
+  allowed: true
+  reason: 完成门已独立验证，允许交付
+  detail:
+    next_action: 无
+resolution_of: []
+superseded_by_task: ''
+blocked_reason_code: ''
