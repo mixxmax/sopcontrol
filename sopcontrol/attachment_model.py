@@ -102,7 +102,7 @@ class AttachmentStatus(BaseModel):
     has_control_dir: bool = False
     has_identity: bool = False
     has_registry: bool = False
-    git_hook: Literal["missing", "sopctl", "chained", "foreign", "unavailable"] = "unavailable"
+    git_hook: Literal["missing", "sopctl", "chained", "bare", "foreign", "unavailable"] = "unavailable"
     harness: dict[str, str] = Field(default_factory=dict)
     last_receipt_path: Optional[str] = None
     gaps: list[str] = Field(default_factory=list)

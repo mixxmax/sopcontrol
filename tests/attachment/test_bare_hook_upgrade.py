@@ -76,3 +76,24 @@ def test_upgraded_hook_is_idempotent(tmp_path):
     before = hook.read_text(encoding="utf-8")
     apply_attachment(plan2)
     assert hook.read_text(encoding="utf-8") == before
+
+
+def test_bare_hook_status_and_verify_do_not_crash(tmp_path):
+    """0087 回归：bare 状态必须进 AttachmentStatus 字面量；verify 全链路可跑。"""
+    from sopcontrol.attach_verify import verify_attachment
+    from sopcontrol.attachment import attachment_status
+    from sopcontrol.coverage_probe import verify_surface
+
+    work, _ = _work_with_bare_hook(tmp_path)
+    status = attachment_status(work)
+    assert status.git_hook == "bare"
+
+    report = verify_attachment(work)
+    assert report["schema_version"] == "1"
+    for item in report["surfaces"]:
+        assert set(item) == {
+            "surface", "state", "why", "safe_next_action", "user_input_required",
+        }
+
+    git_probe = verify_surface(work, "git_hooks")
+    assert git_probe.passed is False  # bare 不是已验证的强制钩：fail-closed
