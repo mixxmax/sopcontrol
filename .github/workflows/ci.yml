@@ -26,7 +26,9 @@ jobs:
       - name: Ruff blocking checks
         run: ruff check sopcontrol plugins tests
       - name: Tests and combined coverage
-        run: pytest -q --cov --cov-report=term-missing
+        # --cov-branch 必须显式传递：pytest-cov 只把该 flag（不读 pyproject）
+        # 传播给子进程覆盖，否则子进程写 statement-only 数据导致 combine DataError。
+        run: pytest -q --cov --cov-branch --cov-report=term-missing
       - run: sopctl self-test
       - name: strict gate exits 1 on gap fixture
         run: |

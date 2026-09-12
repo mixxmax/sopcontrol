@@ -19,3 +19,4 @@ corpus/fixtures/**/.sopcontrol/evidence/trace.jsonl
 
 # coverage 运行产物
 .coverage
+.coverage.*
