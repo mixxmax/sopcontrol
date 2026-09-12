@@ -547,6 +547,10 @@ def build_parser() -> argparse.ArgumentParser:
     ev_p.add_argument("--path", default=".", help="项目根")
     ev_p.add_argument("--json", action="store_true", help="机器可读输出")
     ev_p.set_defaults(func=cmd_control_result_evaluate)
+    cost_p = cres_sub.add_parser("costs", help="§10.6 成本指标（审计/复用/修正/范围外/容忍/冲突阻断）")
+    cost_p.add_argument("--path", default=".", help="项目根")
+    cost_p.add_argument("--json", action="store_true", help="机器可读输出")
+    cost_p.set_defaults(func=cmd_control_result_costs)
     identity = sub.add_parser("identity", help="项目身份（Phase 6 种子：跨 harness 识别同一项目）")
     identity_sub = identity.add_subparsers(dest="sub", required=True)
     for name, help_text in (
@@ -1094,6 +1098,25 @@ def cmd_control_result_evaluate(args) -> int:
     if ev.outcome == "block":
         return 1
     return 2
+
+
+def cmd_control_result_costs(args) -> int:
+    """control-result costs：打印 §10.6 成本指标（只读聚合）。"""
+    import json as _json
+
+    from .control_result import control_costs
+
+    costs = control_costs(args.path)
+    if getattr(args, "json", False):
+        print(_json.dumps(costs, ensure_ascii=False, indent=2))
+        return 0
+    print(f"审计 {costs['audits']} 次 / 复用 {costs['reuses']} 次 / "
+          f"修正 {costs['repair_rounds_total']} 轮")
+    print(f"范围外发现 {costs['out_of_scope_findings']} / "
+          f"容忍偏差 {costs['tolerated_findings']} / "
+          f"profile 冲突阻断 {costs['profile_conflict_blocks']}")
+    print(f"结论分布: {costs['outcomes']}")
+    return 0
 
 
 def cmd_attach_verify(args) -> int:

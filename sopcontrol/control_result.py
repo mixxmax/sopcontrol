@@ -79,6 +79,14 @@ def _consumed_dir(root: Path) -> Path:
     return Path(root) / ".sopcontrol-local" / "control-results" / "consumed"
 
 
+def _key_index_dir(root: Path) -> Path:
+    return Path(root) / ".sopcontrol-local" / "control-results" / "by-key"
+
+
+def _reuse_log(root: Path) -> Path:
+    return Path(root) / ".sopcontrol-local" / "control-results" / "reuse.jsonl"
+
+
 def _is_consumed(root: Path, result_id: str) -> bool:
     return (_consumed_dir(root) / f"{result_id}.json").is_file()
 
@@ -90,11 +98,85 @@ def _mark_consumed(root: Path, result: ControlResult, outcome: Outcome,
     path = d / f"{result.result_id}.json"
     if path.exists():
         return
-    path.write_text(json.dumps({
+    record = {
         "result_id": result.result_id, "outcome": outcome,
         "reasons": reasons, "idempotency_key": key,
+        "rounds_used": result.rounds_used,
+        "finding_severities": [f.severity for f in result.findings],
         "at": datetime.now(timezone.utc).isoformat(),
-    }, ensure_ascii=False, indent=2), encoding="utf-8")
+    }
+    path.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
+    kd = _key_index_dir(root)
+    kd.mkdir(parents=True, exist_ok=True)
+    kd.joinpath(f"{key}.json").write_text(
+        json.dumps({**record, "cached_result_id": result.result_id},
+                   ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _find_cached(root: Path, key: str) -> dict[str, Any] | None:
+    """§7.3：同键已有有效结果即复用，不再消耗新的审计调用。"""
+    path = _key_index_dir(root) / f"{key}.json"
+    if not path.is_file():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def _log_reuse(root: Path, result: ControlResult, cached: dict[str, Any]) -> None:
+    with open(_reuse_log(root), "a", encoding="utf-8") as fh:
+        fh.write(json.dumps({
+            "at": datetime.now(timezone.utc).isoformat(),
+            "result_id": result.result_id,
+            "reused_result_id": cached.get("cached_result_id") or cached.get("result_id"),
+            "idempotency_key": cached.get("idempotency_key"),
+            "outcome": cached.get("outcome"),
+        }, ensure_ascii=False) + "\n")
+
+
+def control_costs(root: Path | str) -> dict[str, Any]:
+    """§10.6：成本来自用户明确要求的控制——审计/复用/修正/范围外/容忍/冲突阻断计数。"""
+    root = Path(root)
+    d = _consumed_dir(root)
+    records: list[dict[str, Any]] = []
+    if d.is_dir():
+        for p in sorted(d.glob("*.json")):
+            try:
+                records.append(json.loads(p.read_text(encoding="utf-8")))
+            except (OSError, ValueError):
+                continue
+    reuses = 0
+    log = _reuse_log(root)
+    if log.is_file():
+        try:
+            reuses = sum(1 for line in log.read_text(encoding="utf-8").splitlines() if line.strip())
+        except OSError:
+            reuses = 0
+    outcomes: dict[str, int] = {}
+    rounds = oos = tolerated = conflicts = 0
+    for r in records:
+        outcomes[r.get("outcome", "?")] = outcomes.get(r.get("outcome", "?"), 0) + 1
+        rounds += int(r.get("rounds_used") or 0)
+        for s in r.get("finding_severities") or []:
+            if s == "out_of_scope":
+                oos += 1
+            if s == "tolerated":
+                tolerated += 1
+        if r.get("outcome") == "block" and any(
+            ("参决" in x or "协议违规" in x or "digest 不一致" in x)
+            for x in r.get("reasons") or []
+        ):
+            conflicts += 1
+    return {
+        "audits": len(records),
+        "reuses": reuses,
+        "repair_rounds_total": rounds,
+        "out_of_scope_findings": oos,
+        "tolerated_findings": tolerated,
+        "profile_conflict_blocks": conflicts,
+        "outcomes": outcomes,
+    }
 
 
 def _parse_time(value: Any) -> datetime | None:
@@ -156,6 +238,16 @@ def evaluate_control_result(
     # §12.3：重放已消费结果一律拒绝（不消费本次，防记录污染）。
     if _is_consumed(root, result.result_id):
         return done("unknown", f"结果 {result.result_id} 已消费：拒绝重放", consume=False)
+    # §7.3/§10.2：同幂等键已有有效结果即复用（一次编译，多次执行）。
+    cached = _find_cached(root, key)
+    if cached is not None and cached.get("outcome") in (
+        "pass", "pass_with_warnings", "block",
+    ):
+        _log_reuse(root, result, cached)
+        reused = [f"复用幂等结果 {cached.get('cached_result_id')}（本次未消耗审计调用）"]
+        reused.extend(str(x) for x in cached.get("reasons") or [])
+        return Evaluation(outcome=cached["outcome"], reasons=reused,
+                          idempotency_key=key, result_id=result.result_id)
     # §6.3：required 缺失 → not_run（未知不解释成通过）。
     required = set(frozen.profile.checks.required)
     checked = set(result.checked_dimensions)

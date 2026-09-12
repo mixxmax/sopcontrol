@@ -44,6 +44,7 @@ class CapabilityTicket(BaseModel):
     consumed_at: Optional[datetime] = None
     issued_by: str = "sopctl"
     effective_plan_digest: str = ""  # §9.4：能力授权绑定的冻结计划（空=未绑定，不改变旧行为）
+    phase: str = ""  # §10.4：阶段级授权归属阶段（空=单动作票；阶段票绑定 allowed_side_effects 集合）
 
 
 def _ticket_dir(root: Path, worktree_id: str) -> Path:
@@ -63,6 +64,7 @@ def issue_ticket(
     ttl_seconds: int = 900,
     issued_by: str = "sopctl",
     effective_plan_digest: str = "",
+    phase: str = "",
 ) -> CapabilityTicket:
     root = Path(root)
     scope = ProjectScope(root, mode="discovery")
@@ -81,6 +83,7 @@ def issue_ticket(
         expires_at=utcnow() + timedelta(seconds=int(ttl_seconds)),
         issued_by=issued_by,
         effective_plan_digest=effective_plan_digest,
+        phase=phase,
     )
     directory = _ticket_dir(root, ticket.worktree_id)
     directory.mkdir(parents=True, exist_ok=True)
@@ -143,6 +146,7 @@ def redeem_ticket(
     task_id: str = "",
     worktree_id: str = "",
     expected_plan_digest: str = "",
+    expected_phase: str = "",
     now: datetime | None = None,
 ) -> CapabilityTicket:
     """Verify and consume a ticket. Env vars alone cannot forge a valid ticket."""
@@ -178,9 +182,40 @@ def redeem_ticket(
         if expected_plan_digest and ticket.effective_plan_digest and \
                 ticket.effective_plan_digest != expected_plan_digest:
             raise TicketError("ticket plan digest mismatch: 授权不属于当前冻结计划")
+        if expected_phase and ticket.phase and ticket.phase != expected_phase:
+            raise TicketError("ticket phase mismatch: 阶段授权不可跨阶段使用")
         ticket.consumed_at = when
         _save_ticket(root_path, ticket)
         return ticket
+
+
+def phase_grant_fingerprint(*, phase: str, allowed_side_effects: list[str],
+                            task_id: str = "") -> str:
+    """阶段授权指纹（确定性；兑换方用同一参数重算）。"""
+    raw = json.dumps({"phase": phase, "side_effects": sorted(allowed_side_effects),
+                      "task_id": task_id}, ensure_ascii=False, sort_keys=True)
+    return "phase-" + content_hash_safe(raw)
+
+
+def issue_phase_grant(
+    root: Path, *, phase: str, allowed_side_effects: list[str],
+    task_id: str = "", effective_plan_digest: str = "",
+    ttl_seconds: int = 300, issued_by: str = "sopctl",
+) -> CapabilityTicket:
+    """§10.4：同一阶段低风险动作共用一张短期授权（高风险不可逆动作仍单独收紧）。"""
+    if not phase.strip():
+        raise TicketError("phase grant 需要命名阶段")
+    if not allowed_side_effects:
+        raise TicketError("phase grant 需要非空副作用集合")
+    return issue_ticket(
+        root, action=f"phase:{phase}",
+        input_fingerprint=phase_grant_fingerprint(
+            phase=phase, allowed_side_effects=list(allowed_side_effects),
+            task_id=task_id),
+        allowed_side_effects=list(allowed_side_effects), task_id=task_id,
+        ttl_seconds=ttl_seconds, issued_by=issued_by,
+        effective_plan_digest=effective_plan_digest, phase=phase,
+    )
 
 
 def ticket_public_view(ticket: CapabilityTicket) -> dict[str, Any]:
