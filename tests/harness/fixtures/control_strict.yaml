@@ -1,0 +1,12 @@
+# P2 金标准：过严 profile（全 block 维度，零修正轮）。
+profile_id: gold-strict
+scope: {project: current-project, task: TASK-GOLD, phase: audit}
+checks:
+  required: [jd_fit, factual_accuracy]
+  excluded: [style_polish]
+  modes: {jd_fit: block, factual_accuracy: block, style_polish: ignore}
+baseline: {source_ref: jd-snapshot, generation_mode: authoritative}
+tolerance: {reasonable_exaggeration: allowed, material_misstatement: block}
+repair: {policy: hard_errors_only, max_rounds: 0, recheck_unchanged_input: false,
+  stop_after_pass: true}
+budget: {max_audit_calls: 1, max_repair_calls: 0}

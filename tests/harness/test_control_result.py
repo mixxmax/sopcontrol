@@ -164,6 +164,7 @@ def test_cli_rc_mapping(tmp_path, capsys):
     capsys.readouterr()
 
     def run(res, name):
+        res.input_digest = f"in-{name}"  # 不同审计波次不同输入（同键会复用，见 §7.3）
         p = tmp_path / f"{name}.json"
         p.write_text(res.model_dump_json(), encoding="utf-8")
         rc = main(["control-result", "evaluate", "--file", str(p),

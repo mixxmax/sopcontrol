@@ -1,0 +1,12 @@
+# P2 金标准：过松 profile（容忍为主，允许 1 轮修正）。
+profile_id: gold-lenient
+scope: {project: current-project, task: TASK-GOLD, phase: audit}
+checks:
+  required: [jd_fit]
+  excluded: [style_polish, literal_baseline_rewrite]
+  modes: {jd_fit: required, style_polish: ignore, literal_baseline_rewrite: ignore}
+baseline: {source_ref: jd-snapshot, generation_mode: authoritative}
+tolerance: {reasonable_exaggeration: allowed, minor_wording_drift: report_only}
+repair: {policy: hard_errors_only, max_rounds: 1, recheck_unchanged_input: false,
+  stop_after_pass: true}
+budget: {max_audit_calls: 3, max_repair_calls: 1}

@@ -308,6 +308,27 @@ def cmd_doctor(args) -> int:
             problems.append("垂直役用要求已安装 pre-push 终态门（sopctl hook install）")
     print(f"pre-push 终态门: {state}")
 
+    try:
+        from .control_profile import list_frozen
+        from .control_result import control_costs
+
+        frozen = list_frozen(root)
+        costs = control_costs(root)
+        if frozen or costs["audits"]:
+            packs = ", ".join(f"{p.profile_id} r{p.revision} {p.digest[:13]}…" for p in frozen)
+            print(
+                f"动态控制: profile {len(frozen)} 个"
+                + (f"（{packs}）" if packs else "")
+                + f"；审计 {costs['audits']} 次/复用 {costs['reuses']} 次/"
+                + f"阻断 {costs['outcomes'].get('block', 0)}"
+            )
+            if costs["profile_conflict_blocks"]:
+                print(f"动态控制风险: profile 冲突阻断 {costs['profile_conflict_blocks']} 次")
+        else:
+            print("动态控制: 未使用（profile create/freeze 起配）")
+    except Exception as exc:
+        print(f"动态控制: 跳过（{type(exc).__name__}: {exc}）")
+
     inv = None
     snaps = []
     try:

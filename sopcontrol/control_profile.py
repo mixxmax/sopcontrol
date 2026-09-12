@@ -186,4 +186,22 @@ def load_frozen(root: Path | str, profile_id: str, revision: int) -> FrozenPlan:
     path = _profiles_dir(Path(root)) / f"{profile_id}.r{revision}.json"
     if not path.is_file():
         raise ProfileError(f"无此冻结 revision: {profile_id}.r{revision}")
-    return FrozenPlan.model_validate_json(path.read_text(encoding="utf-8"))
+    frozen = FrozenPlan.model_validate_json(path.read_text(encoding="utf-8"))
+    # 防篡改：内容重算 digest 必须与记录一致（§15.12/§12.3 旧 digest 不可复用）。
+    if plan_digest(frozen.profile, frozen.revision) != frozen.digest:
+        raise ProfileError(f"冻结文件被篡改: {path.name}（内容与 digest 不一致）")
+    return frozen
+
+
+def list_frozen(root: Path | str) -> list[FrozenPlan]:
+    """列出全部冻结 revision（坏文件跳过，只读）。"""
+    d = _profiles_dir(Path(root))
+    if not d.is_dir():
+        return []
+    out: list[FrozenPlan] = []
+    for path in sorted(d.glob("*.r*.json")):
+        try:
+            out.append(FrozenPlan.model_validate_json(path.read_text(encoding="utf-8")))
+        except Exception:
+            continue
+    return out
