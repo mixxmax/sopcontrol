@@ -101,7 +101,12 @@ def test_budgets_have_teeth():
     frozen = _frozen()
     res = _ok_result(frozen, result_id="b1")
     assert decide_control_result(res, frozen, _state(audits_used=2)).outcome == "block"
-    assert decide_control_result(res, frozen, _state(repair_rounds_used=2)).outcome == "block"
+    # 修正预算只在真需要修正（blocking）时咬合；干净结果不受影响
+    assert decide_control_result(res, frozen, _state(repair_rounds_used=2)).outcome == "pass"
+    blocking = _ok_result(frozen, result_id="b2", findings=[
+        {"dimension": "jd_fit", "severity": "blocking", "summary": "x"}])
+    assert decide_control_result(blocking, frozen,
+                                 _state(repair_rounds_used=2)).outcome == "block"
 
 
 def test_independence_proofs():
@@ -214,7 +219,10 @@ def test_run_override_evaluate_binds_composed_digest(tmp_path):
 
     frozen = _frozen()
     run = {"exclude_add": ["extra"]}
-    composed = compose_effective_plan(frozen, run)
+    from sopcontrol.capability import actor_snapshot
+
+    snap = actor_snapshot(None, current_model="exec-1")
+    composed = compose_effective_plan(frozen, run, actor_snapshot=dict(snap))
     accept_baseline(tmp_path, task_id="TASK-P", profile_id="pure", revision=1,
                     source_ref="jd", baseline_digest="base",
                     baseline_mode="authoritative")
@@ -269,12 +277,64 @@ def test_expired_profile_judged_at_decision_time():
     assert decide_control_result(res2, frozen_ok, _state()).outcome == "pass"
 
 
+def test_time_fail_closed_matrix():
+    frozen = _frozen()
+    # now 缺失 + 有过期时间 → unknown（不能证明未过期）
+    res = _ok_result(frozen)
+    st = _state()
+    st.now_iso = ""
+    object.__setattr__(frozen, "profile", normalize_profile(
+        {**BASE, "expires_at": (datetime.now(timezone.utc)).isoformat()}))
+    assert decide_control_result(res, frozen, st).outcome == "unknown"
+    # now 等于过期时刻 → 已过期
+    exp = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    frozen2_profile = normalize_profile({**BASE, "expires_at": exp})
+    frozen2 = _frozen_like(frozen2_profile)
+    res2 = _ok_result(frozen2)
+    st2 = _state()
+    st2.now_iso = exp
+    assert decide_control_result(res2, frozen2, st2).outcome == "unknown"
+    # 非法 expires 手工构造 → unknown（normalize 之外的防御）
+    bad = frozen2_profile.model_copy(update={"expires_at": "yesterday-ish"})
+    frozen3 = _frozen_like(bad)
+    res3 = _ok_result(frozen3)
+    assert decide_control_result(res3, frozen3, _state()).outcome == "unknown"
+
+
 def test_stop_when_max_rounds_in_gate():
     profile = normalize_profile({**BASE, "stop_when": ["pass", "max_rounds"]})
     frozen = _frozen_like(profile)
     res = _ok_result(frozen, result_id="s1", rounds_used=2)
     ev = decide_control_result(res, frozen, _state())
     assert ev.outcome == "block" and "停止条件" in ev.reasons[0]
+
+
+def test_round_boundary_matrix():
+    # round 0 / max 0 + blocking → 直接 block（无修正额度）
+    p0 = normalize_profile({**BASE, "repair": {"max_rounds": 0}})
+    f0 = _frozen_like(p0)
+    r0 = _ok_result(f0, result_id="b0", findings=[
+        {"dimension": "jd_fit", "severity": "blocking", "summary": "x"}])
+    assert decide_control_result(r0, f0, _state()).outcome == "block"
+    # round=max-1 + blocking → block 但给修复指引（还可修一次）
+    p1 = normalize_profile(BASE)
+    f1 = _frozen_like(p1)
+    r1 = _ok_result(f1, result_id="b1", rounds_used=0, findings=[
+        {"dimension": "jd_fit", "severity": "blocking", "summary": "x"}])
+    ev1 = decide_control_result(r1, f1, _state())
+    assert ev1.outcome == "block" and "修正后重跑" in ev1.next_action
+    # round=max + blocking → 终止（本轮 max_rounds=1，已用 1 轮）
+    r2 = _ok_result(f1, result_id="b2", rounds_used=1, findings=[
+        {"dimension": "jd_fit", "severity": "blocking", "summary": "x"}])
+    ev2 = decide_control_result(r2, f1, _state())
+    assert ev2.outcome == "block" and "无修正额度" in ev2.reasons[0]
+    # round=max+1 → 越界损坏态 block
+    r3 = _ok_result(f1, result_id="b3", rounds_used=2)
+    ev3 = decide_control_result(r3, f1, _state())
+    assert ev3.outcome == "block" and "越界" in ev3.reasons[0]
+    # 干净结果不受轮数门影响（修好了就通过）
+    r4 = _ok_result(f0, result_id="b4")
+    assert decide_control_result(r4, f0, _state()).outcome == "pass"
 
 
 def test_compose_merges_all_layers_tighten_only():
@@ -289,14 +349,20 @@ def test_compose_merges_all_layers_tighten_only():
         "repair": {"max_rounds": 2},
         "stop_when": ["pass"],
     })
-    task = normalize_profile({**BASE, "tolerance": {"reasonable_exaggeration": "report_only"}})
+    task = normalize_profile({
+        **BASE,
+        "tolerance": {"reasonable_exaggeration": "report_only"},
+        "checks": {"required": ["jd_fit", "factual_accuracy"],
+                   "excluded": [],
+                   "modes": {"jd_fit": "block", "factual_accuracy": "block"}},
+    })
     composed = compose_effective_plan(_frozen_like(task), None, base_profile=base)
     assert set(composed.profile.checks.required) == {"jd_fit", "factual_accuracy", "llmo"}
     assert composed.profile.checks.modes["jd_fit"] == "block"
     assert composed.profile.tolerance["reasonable_exaggeration"] == "report_only"
     assert composed.profile.budget.max_audit_calls == 2
     assert composed.profile.repair.max_rounds == 1
-    assert composed.layers["base_profile"] == "pure"
+    assert composed.layers["base"]["profile"] == "pure"
     # 放宽任一层即拒绝
     loose = dict(BASE)
     loose["budget"] = {"max_audit_calls": 99, "max_repair_calls": 1}

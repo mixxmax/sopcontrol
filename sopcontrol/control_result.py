@@ -115,7 +115,8 @@ def _is_consumed(root: Path, result_id: str) -> bool:
 
 
 def _mark_consumed(root: Path, result: ControlResult, outcome: Outcome,
-                   reasons: list[str], key: str, base_digest: str = "") -> None:
+                   reasons: list[str], key: str, base_digest: str = "",
+                   task_digest: str = "", actor_digest: str = "") -> None:
     from .scope import validate_identifier
 
     validate_identifier(result.result_id, kind="result id")
@@ -131,6 +132,8 @@ def _mark_consumed(root: Path, result: ControlResult, outcome: Outcome,
         "profile_revision": result.profile_revision,
         "plan_digest": result.effective_plan_digest,
         "base_digest": base_digest,
+        "task_digest": task_digest,
+        "actor_digest": actor_digest,
         "input_digest": result.input_digest,
         "rounds_used": result.rounds_used,
         "finding_severities": [f.severity for f in result.findings],
@@ -275,25 +278,33 @@ def decide_control_result(result: ControlResult, frozen: FrozenPlan,
     if scope_task and result.task_id != scope_task:
         return done("unknown", f"结果 task {result.task_id!r} 不属于当前任务 {scope_task!r}",
                     "用当前任务重跑检查并求值")
-    # 任务契约绑定（§9.2）：结果必须与 open 时声明一致。
+    # 任务契约绑定（§9.2/§13.1）：结果计划必须与 open 声明一致；组合计划比 task 层。
     if state.binding_digest:
+        task_layer = frozen.layers.get("task_digest", frozen.digest) \
+            if hasattr(frozen, "layers") else frozen.digest
         if (result.profile_id != state.binding_profile
                 or result.profile_revision != state.binding_revision
-                or result.effective_plan_digest != state.binding_digest):
-            return done("unknown", "结果与任务契约绑定（profile/revision/digest）不一致",
+                or task_layer != state.binding_digest):
+            return done("unknown", "结果计划 task 层与任务契约绑定不一致",
                         "按任务绑定的 revision 重新求值，或走新任务")
     # §15.12：旧 revision 结果不可静默用于新策略。
     if result.profile_revision != frozen.revision:
         return done("unknown",
                     f"结果 revision r{result.profile_revision} 非当前 r{frozen.revision}：已失效",
                     "用当前 revision 重新求值")
-    # §11.6：判定时刻 profile 已过期 → 结果失效（比较 now，不是结果创建时间，
-    # 否则过期后求值仍能通过）。
+    # §11.6/§7.2：过期 fail-closed——非法时间、无 now、相等即过期一律 unknown。
+    # 解析失败不得跳过检查（normalize 已拒非法配置，这里防手工构造）。
     expires = (frozen.profile.expires_at or "").strip()
     if expires:
         exp = _parse_time(expires)
         now = _parse_time(state.now_iso) if state.now_iso else None
-        if exp is not None and now is not None and now > exp:
+        if exp is None:
+            return done("unknown", "expires_at 无法解析为绝对时间：不能证明有效",
+                        "修正 profile expires_at 后重新冻结求值")
+        if now is None:
+            return done("unknown", "判定缺可信 now：不能证明未过期",
+                        "带可信时间重跑求值")
+        if now >= exp:
             return done("unknown", "profile 已过期：结果失效",
                         "更新 profile 有效期后重跑检查")
     # §6.4：独立性——自报不算数，需具名 + 非执行者本人 + 高等级需账本证据。
@@ -377,7 +388,8 @@ def decide_control_result(result: ControlResult, frozen: FrozenPlan,
         if f.dimension in excluded and f.severity == "blocking":
             return done("block", f"excluded 维度 {f.dimension} 带 blocking finding：协议违规",
                         "去掉 excluded 维度的 blocking 发现后重新求值")
-    # 预算（§10.6 有牙齿）：单结果轮数先行（更具体），再看跨结果累计。
+    # 预算（§8.1 计数约定：round 0=首次未耗轮）。
+    # 越界（已用>上限）恒 block；等于上限时只有 blocking 才 block（干净=修好了）。
     stop_when = set(frozen.profile.stop_when or ["pass"])
     if result.rounds_used > frozen.profile.repair.max_rounds:
         if "max_rounds" in stop_when:
@@ -386,15 +398,13 @@ def decide_control_result(result: ControlResult, frozen: FrozenPlan,
                         f"{frozen.profile.repair.max_rounds}）：不再修正",
                         "开新任务或接受现状")
         return done("block",
-                    f"修正轮数 {result.rounds_used} 超出上限 {frozen.profile.repair.max_rounds}",
-                    "本轮已无修正额度：接受现状或开新任务")
+                    f"修正轮数 {result.rounds_used} 已越界（上限 "
+                    f"{frozen.profile.repair.max_rounds}）：状态损坏",
+                    "开新任务")
     if state.audits_used >= frozen.profile.budget.max_audit_calls:
         return done("block",
                     f"审计预算耗尽（已用 {state.audits_used}/{frozen.profile.budget.max_audit_calls}）",
                     "放宽 budget 或开新任务")
-    if state.repair_rounds_used + result.rounds_used > frozen.profile.budget.max_repair_calls:
-        return done("block", "修正预算耗尽",
-                    "放宽 budget.max_repair_calls 或开新任务")
     # §6.3/§4.2：逐维度 mode + tolerance 映射后判定。
     downgrades: list[str] = []
     for f in result.findings:
@@ -405,6 +415,22 @@ def decide_control_result(result: ControlResult, frozen: FrozenPlan,
         if note:
             downgrades.append(note)
         if eff == "blocking":
+            # blocking 且轮数/预算到顶即终止（§8.2）；否则给一次声明内修复。
+            if result.rounds_used >= frozen.profile.repair.max_rounds:
+                if "max_rounds" in stop_when:
+                    return done("block",
+                                f"blocking finding：{f.dimension}（已达停止条件，不再修正）",
+                                "开新任务或接受现状")
+                return done("block",
+                            f"blocking finding：{f.dimension}（已用 "
+                            f"{result.rounds_used}轮/上限 "
+                            f"{frozen.profile.repair.max_rounds}，无修正额度）",
+                            "开新任务或接受现状")
+            if (state.repair_rounds_used + result.rounds_used
+                    >= frozen.profile.budget.max_repair_calls):
+                return done("block",
+                            f"blocking finding：{f.dimension}（修正预算耗尽）",
+                            "放宽 budget.max_repair_calls 或开新任务")
             if "block" in stop_when:
                 return done("block", f"blocking finding：{f.dimension}（已达停止条件，不再修正）",
                             "开新任务或接受现状")
@@ -450,9 +476,22 @@ def evaluate_control_result(
     from .control_profile import compose_effective_plan
 
     root = Path(root)
-    effective = compose_effective_plan(frozen, run_override) if run_override else frozen
+    now = datetime.now(timezone.utc)
+    # 单一组合点：无层时 digest 与冻结一致（存量不断），任一层进入分层 digest。
+    task = None
+    snap = None
+    if task_id:
+        from .capability import actor_snapshot_for_task
+        from .task import TaskStore as _TaskStore
+
+        try:
+            task = _TaskStore(root).load(task_id)
+        except Exception as exc:
+            raise ValueError(f"任务不存在: {task_id}（{exc}）") from exc
+        snap = actor_snapshot_for_task(root, task.contract.model_identity, now=now)
+    effective = compose_effective_plan(frozen, run_override, actor_snapshot=snap)
     base_digest = frozen.digest
-    # 幂等键绑定组合后计划：不同 override 即不同键（§7.3）。
+    # 幂等键绑定组合后计划：不同 override/actor 即不同键（§7.3）。
     keyed = result.model_copy(update={"effective_plan_digest": effective.digest})
     key = idempotency_key(keyed)
     records = _scan_consumed(root)
@@ -462,17 +501,12 @@ def evaluate_control_result(
     task_identity = ""
     binding_profile = binding_digest = ""
     binding_revision = 0
-    if task_id:
-        from .task import TaskStore
-
-        try:
-            task = TaskStore(root).load(task_id)
-        except Exception as exc:
-            raise ValueError(f"任务不存在: {task_id}（{exc}）") from exc
+    if task is not None:
         task_identity = task.contract.model_identity
         binding_profile = task.contract.control_profile_id
         binding_revision = task.contract.control_profile_revision
         binding_digest = task.contract.effective_plan_digest
+    actor_digest = (snap or {}).get("digest", "")
 
     accept_digest = accept_mode = ""
     accept_missing = False
@@ -513,12 +547,13 @@ def evaluate_control_result(
         binding_profile=binding_profile, binding_revision=binding_revision,
         binding_digest=binding_digest, evidence_ids=evidence_ids,
         audits_used=audits_used, repair_rounds_used=repair_rounds_used,
-        now_iso=datetime.now(timezone.utc).isoformat(),
+        now_iso=now.isoformat(),
     )
     ev = decide_control_result(result, effective, state)
     if not ev.reused and ev.outcome in ("pass", "pass_with_warnings", "block", "not_run"):
         _mark_consumed(root, result, ev.outcome, ev.reasons, key,
-                       base_digest=base_digest)
+                       base_digest=base_digest, task_digest=frozen.digest,
+                       actor_digest=actor_digest)
     if ev.reused:
         _log_reuse(root, result, cached or {})
     return ev
@@ -536,12 +571,23 @@ def check_task_profile_gate(root: Path | str, task: Any,
         return True, "未绑定动态 profile"
     want = (contract.control_profile_id, contract.control_profile_revision,
             contract.effective_plan_digest)
+    # 当前 actor 快照：capability 变化导致旧结果失效（§6.6.6）。
+    from datetime import datetime as _dt
+    from datetime import timezone as _tz
+
+    from .capability import actor_snapshot_for_task
+
+    snap_now = actor_snapshot_for_task(root, contract.model_identity,
+                                       now=_dt.now(_tz.utc))
+    snap_digest = (snap_now or {}).get("digest", "")
     best: dict[str, Any] | None = None
     for r in _scan_consumed(Path(root)):
         if (str(r.get("task_id")) != task.task_id
                 or str(r.get("profile_id")) != want[0]
                 or int(r.get("profile_revision") or 0) != want[1]
-                or str(r.get("plan_digest")) != want[2]):
+                or str(r.get("task_digest") or r.get("plan_digest")) != want[2]):
+            continue
+        if snap_digest and str(r.get("actor_digest") or "") != snap_digest:
             continue
         if best is None or str(r.get("at", "")) > str(best.get("at", "")):
             best = r

@@ -11,7 +11,9 @@ import json
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+_STRICT_MODEL = ConfigDict(extra="forbid")  # 未知字段直接拒绝（§15.1.14）
 
 FORMAT_VERSION = "1"
 
@@ -29,18 +31,24 @@ class ProfileError(ValueError):
 
 
 class ProfileScope(BaseModel):
+    model_config = _STRICT_MODEL
+
     project: str = "current-project"
     task: str = ""
     phase: str = ""
 
 
 class ProfileChecks(BaseModel):
+    model_config = _STRICT_MODEL
+
     required: list[str] = Field(default_factory=list)
     excluded: list[str] = Field(default_factory=list)
     modes: dict[str, CheckMode] = Field(default_factory=dict)
 
 
 class ProfileBaseline(BaseModel):
+    model_config = _STRICT_MODEL
+
     source_ref: str = ""
     generation_mode: BaselineMode = "authoritative"
     audit_mode: str = "compare_output_only"
@@ -51,6 +59,8 @@ class ProfileBaseline(BaseModel):
 
 
 class ProfileRepair(BaseModel):
+    model_config = _STRICT_MODEL
+
     policy: Literal["hard_errors_only"] = "hard_errors_only"
     max_rounds: int = 1
     recheck_unchanged_input: bool = False
@@ -64,11 +74,15 @@ _TOLERANCE_RANK = {"allowed": 0, "report_only": 1, "block": 2}
 
 
 class ProfileBudget(BaseModel):
+    model_config = _STRICT_MODEL
+
     max_audit_calls: int = 1
     max_repair_calls: int = 1
 
 
 class ControlProfile(BaseModel):
+    model_config = _STRICT_MODEL
+
     profile_id: str
     scope: ProfileScope = Field(default_factory=ProfileScope)
     checks: ProfileChecks = Field(default_factory=ProfileChecks)
@@ -82,6 +96,8 @@ class ControlProfile(BaseModel):
 
 class FrozenPlan(BaseModel):
     """冻结的 Effective Control Plan：revision 不可变，digest 绑定任务。"""
+
+    model_config = _STRICT_MODEL
 
     profile_id: str
     revision: int
@@ -99,6 +115,8 @@ class ComposedPlan(BaseModel):
     与 FrozenPlan 同构（profile_id/revision/digest/profile），decide() 可直接消费；
     layers 记录组合来源，digest 绑定组合后内容。
     """
+
+    model_config = _STRICT_MODEL
 
     profile_id: str
     revision: int
@@ -156,9 +174,27 @@ def _merge_all_fields(base: ControlProfile, task: ControlProfile) -> ControlProf
     if not set(task.stop_when or ["pass"]) >= set(base.stop_when or ["pass"]):
         raise ProfileError("task 不得减少 base 的 stop_when")
     data["stop_when"] = sorted(set(task.stop_when or ["pass"]))
-    # expires_at：取最早（先到期先生效）
-    data["expires_at"] = min(
-        (x for x in (base.expires_at, task.expires_at) if x), default=None)
+    # expires_at：取绝对时间最早者（先转 aware UTC 再比，不做字符串 min）。
+    earliest: str | None = None
+    earliest_dt = None
+    for raw in (base.expires_at, task.expires_at):
+        if not raw:
+            continue
+        normalized, err = normalize_expires_at(raw)
+        if err:
+            raise ProfileError(err)
+        from datetime import datetime as _dt
+
+        current = _dt.fromisoformat(normalized)
+        if earliest_dt is None or current < earliest_dt:
+            earliest_dt, earliest = current, normalized
+    data["expires_at"] = earliest
+    # scope：下层不得扩大上层（project/task/phase 逐项比对；current-project 为通配）
+    for field in ("project", "task", "phase"):
+        upper, lower = getattr(base.scope, field), getattr(task.scope, field)
+        if (upper and lower and upper != lower
+                and upper != "current-project" and lower != "current-project"):
+            raise ProfileError(f"task scope 扩大了 base scope.{field}（{upper}→{lower}）")
     # scope 归属 task 层（任务级配置本就声明作用域）
     return normalize_profile(data)
 
@@ -219,28 +255,49 @@ def compose_effective_plan(
     run_override: dict[str, Any] | None = None,
     *,
     base_profile: ControlProfile | None = None,
+    actor_snapshot: dict[str, Any] | None = None,
 ) -> ComposedPlan:
-    """组合有效计划并绑定 digest（含层信息，防旧结果复用）。"""
+    """组合有效计划并绑定 digest（含层信息，防旧结果复用）。
+
+    单一组合点：无 base/run/actor 层时 digest 与 plan_digest 完全一致
+    （存量绑定不断）；任一层存在即进入分层 digest。
+    """
     compiled = compile_effective_profile(
         task_frozen.profile, run_override, base_profile=base_profile)
+    actor = actor_snapshot or {}
+    if actor:
+        # actor 只收紧既有控制项（§4.1.4）：修复轮数取最小；其他 knobs 不进 profile。
+        try:
+            cap = max(0, int(actor.get("max_repairs", compiled.repair.max_rounds)))
+        except (ValueError, TypeError):
+            cap = compiled.repair.max_rounds
+        compiled.repair.max_rounds = min(compiled.repair.max_rounds, cap)
+        compiled = normalize_profile(compiled.model_dump(mode="json"))
     layers: dict[str, Any] = {
-        "task_revision": task_frozen.revision,
-        "task_digest": task_frozen.digest,
-        "base_profile": base_profile.profile_id if base_profile else "",
-        "base_digest": plan_digest(base_profile, task_frozen.revision) if base_profile else "",
-        "run_override": run_override or {},
+        "base": {"profile": base_profile.profile_id if base_profile else "",
+                 "digest": plan_digest(base_profile, task_frozen.revision) if base_profile else ""},
+        "task": {"revision": task_frozen.revision, "digest": task_frozen.digest},
+        "run": run_override or {},
+        "actor": actor,
     }
-    digest = "plan-" + hashlib.sha256(
-        (plan_digest(compiled, task_frozen.revision)
-         + json.dumps(layers, ensure_ascii=False, sort_keys=True)
-         ).encode("utf-8")).hexdigest()[:32]
+    if base_profile is None and not run_override and not actor:
+        digest = plan_digest(compiled, task_frozen.revision)
+    else:
+        digest = "plan-" + hashlib.sha256(
+            (plan_digest(compiled, task_frozen.revision)
+             + json.dumps(layers, ensure_ascii=False, sort_keys=True)
+             ).encode("utf-8")).hexdigest()[:32]
     return ComposedPlan(profile_id=task_frozen.profile_id,
                         revision=task_frozen.revision, digest=digest,
                         profile=compiled, layers=layers)
 
 
 def normalize_profile(data: dict[str, Any]) -> ControlProfile:
-    """归一化 + 冲突检查。非法直接 ProfileError（fail-closed）。"""
+    """归一化 + 冲突检查。非法直接 ProfileError（fail-closed）。
+
+    附带两项物化：required 无显式 mode 即 block（隐含约束显式化，下层据此比对，
+    不能因 modes 字典缺键而弱化）；expires_at 解析为 UTC aware ISO（非法/无时区即拒）。
+    """
     try:
         profile = ControlProfile.model_validate(data)
     except Exception as exc:
@@ -254,11 +311,19 @@ def normalize_profile(data: dict[str, Any]) -> ControlProfile:
     overlap = set(profile.checks.required) & set(profile.checks.excluded)
     if overlap:
         conflicts.append(f"required 与 excluded 重叠: {sorted(overlap)}")
+    for dim in profile.checks.required:
+        profile.checks.modes.setdefault(dim, "block")
     for name, mode in profile.checks.modes.items():
         if name in profile.checks.excluded and mode != "ignore":
             conflicts.append(f"excluded 检查 {name} 的 mode 必须为 ignore（现为 {mode}）")
         if name in profile.checks.required and mode == "ignore":
             conflicts.append(f"required 检查 {name} 的 mode 不能为 ignore")
+    if profile.expires_at:
+        normalized, err = normalize_expires_at(profile.expires_at)
+        if err:
+            conflicts.append(err)
+        else:
+            profile.expires_at = normalized
     if profile.repair.max_rounds < 0:
         conflicts.append("repair.max_rounds 不能为负")
     if profile.repair.max_rounds > SYSTEM_MAX_ROUNDS:
@@ -280,6 +345,25 @@ def normalize_profile(data: dict[str, Any]) -> ControlProfile:
     if conflicts:
         raise ProfileError("; ".join(conflicts))
     return profile
+
+
+def normalize_expires_at(value: str) -> tuple[str, str]:
+    """解析为 UTC aware ISO。返回 (normalized, error)，错误非空即非法。
+
+    非法、无时区、不可解析一律报错——调用方不得跳过过期检查（§7.2）。
+    """
+    from datetime import datetime, timezone
+
+    text = str(value or "").strip()
+    if not text:
+        return "", "expires_at 为空"
+    try:
+        dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return "", f"expires_at 非法: {text!r}"
+    if dt.tzinfo is None:
+        return "", f"expires_at 无时区（无法确定绝对时间）: {text!r}"
+    return dt.astimezone(timezone.utc).isoformat(), ""
 
 
 def _canonical(profile: ControlProfile, revision: int) -> str:
