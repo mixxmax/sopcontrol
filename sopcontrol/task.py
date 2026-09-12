@@ -795,27 +795,99 @@ def _reject(reason: str) -> TransitionDecision:
     return TransitionDecision(allowed=False, to_status=None, reason=reason, next_action="sopctl task show 查看当前状态与契约")
 
 
-def submit_input_digest_for(root: Path, changed_paths: list[str]) -> str:
-    """submit 改动内容摘要（§7.3 输入绑定）：路径排序 + 全量内容哈希。
+INPUT_DIGEST_SCHEMA = "input-digest/v1"
 
-    同大小不同内容必出不同摘要；缺失/不可读文件按路径标记（fail-closed 可见）。
+
+def _hash_file_chunks(path: Path, digest) -> None:
+    """分块读入（大文件不一次性进内存，§9.2.8）。"""
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(65536), b""):
+            digest.update(chunk)
+
+
+def _digest_walk(root: Path, rel: Path, parts: list[str], seen: set[str]) -> None:
+    """递归摘要：排序/POSIX 路径/类型/大小/内容；循环与逃逸显式处理。
+
+    seen 记录已摘要的解析后绝对路径（防循环）；符号链接按键规范到解析目标，
+    使 alias 与 target 内容等价；逃逸 root 直接失败。
+    """
+    import hashlib as _hashlib
+    import os as _os
+
+    root_abs = root.resolve()
+    target = root / rel
+    key = str(rel.as_posix())
+    if target.is_symlink():
+        try:
+            link_target = _os.readlink(target)
+        except OSError:
+            parts.append(f"{key}:unreadable-link")
+            return
+        try:
+            resolved = (target.parent / link_target).resolve()
+        except (OSError, RuntimeError, ValueError):
+            parts.append(f"{key}:symlink-loop")
+            return
+        try:
+            resolved.relative_to(root_abs)
+        except ValueError:
+            raise ValueError(f"输入路径逃逸 root：{key} -> {link_target}")
+        if str(resolved) in seen:
+            parts.append(f"{key}:cycle")
+            return
+        seen.add(str(resolved))
+        _digest_walk(root, resolved.relative_to(root_abs), parts, seen)
+        return
+    if key in seen:
+        parts.append(f"{key}:cycle")
+        return
+    seen.add(key)
+    if target.is_dir():
+        try:
+            children = sorted(p.name for p in target.iterdir())
+        except OSError:
+            parts.append(f"{key}:unreadable-dir")
+            return
+        if not children:
+            parts.append(f"{key}:empty-dir")
+            return
+        parts.append(f"{key}:dir:{len(children)}")
+        for name in children:
+            _digest_walk(root, rel / name, parts, seen)
+        return
+    if target.is_file():
+        size = target.stat().st_size
+        digest = _hashlib.sha256()
+        _hash_file_chunks(target, digest)
+        parts.append(f"{key}:file:{size}:{digest.hexdigest()[:16]}")
+        return
+    if target.exists() or target.is_symlink():
+        parts.append(f"{key}:special")
+        return
+    parts.append(f"{key}:missing")
+
+
+def submit_input_digest_for(root: Path, changed_paths: list[str]) -> str:
+    """submit 改动内容摘要（§7.3/§9 输入绑定）：固定 schema、稳定排序稳定编码。
+
+    文件记内容 hash（分块流式）；目录递归记全部条目；空目录与缺失可区分；
+    符号链接不跟随、逃逸即失败；绝对路径/mtime/inode/权限不入摘要。
     """
     import hashlib as _hashlib
 
+    from .worktree import resolves_inside
+
     root = Path(root)
-    parts: list[str] = []
+    parts: list[str] = [f"schema:{INPUT_DIGEST_SCHEMA}"]
     for rel in sorted(changed_paths or []):
         try:
-            p = (root / rel).resolve()
-            if p.is_file():
-                digest = _hashlib.sha256(p.read_bytes()).hexdigest()[:16]
-                parts.append(f"{rel}:{digest}")
-            elif p.exists():
-                parts.append(f"{rel}:nonfile")
-            else:
-                parts.append(f"{rel}:missing")
-        except OSError:
-            parts.append(f"{rel}:unreadable")
+            inside = resolves_inside(root, rel)
+        except (OSError, RuntimeError, ValueError):
+            parts.append(f"{rel}:unresolvable")
+            continue
+        if not inside:
+            raise ValueError(f"输入路径逃逸 root：{rel}")
+        _digest_walk(root, Path(rel), parts, set())
     return "in-" + _hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()[:32]
 
 

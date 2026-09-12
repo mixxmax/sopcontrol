@@ -50,6 +50,7 @@ class ControlResult(BaseModel):
     input_digest: str = ""
     baseline_digest: str = ""
     baseline_mode: str = ""  # 为空=结果未声明基线模式（不触发模式比对）
+    check_id: str = ""  # §9.3：本次结果对应的检查；入幂等键（同输入不同检查不复用）
     checked_dimensions: list[str] = Field(default_factory=list)
     excluded_dimensions: list[str] = Field(default_factory=list)
     findings: list[ResultFinding] = Field(default_factory=list)
@@ -87,13 +88,22 @@ class GateState(BaseModel):
     now_iso: str = ""
 
 
+IDEM_SCHEMA_VERSION = "1"
+
+
 def idempotency_key(result: ControlResult) -> str:
-    """§7.3：input + baseline + plan + 检查集合（同一键同策略只应有一个有效结果）。"""
+    """§7.3/§9.3：input + baseline + plan + check_id + schema（任一变化即新键）。
+
+    check_id 缺失时回落 checked 集合（旧结果兼容，行为不变）。
+    """
+    checks = sorted(result.checked_dimensions)
     raw = json.dumps({
+        "schema": IDEM_SCHEMA_VERSION,
         "input": result.input_digest,
         "baseline": result.baseline_digest,
         "plan": result.effective_plan_digest,
-        "checked": sorted(result.checked_dimensions),
+        "check": result.check_id,
+        "checked": checks,
     }, ensure_ascii=False, sort_keys=True)
     return "idem-" + hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
 
