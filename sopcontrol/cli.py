@@ -578,6 +578,8 @@ def build_parser() -> argparse.ArgumentParser:
     ev_p.add_argument("--profile", required=True, help="profile id")
     ev_p.add_argument("--revision", type=int, required=True, help="冻结 revision")
     ev_p.add_argument("--task", default="", help="sopctl 任务 id（执行者核验+契约绑定比对）")
+    ev_p.add_argument("--run-override", default="",
+                      help="运行期收紧覆盖 YAML/JSON（只收紧，有效组合参与 digest）")
     ev_p.add_argument("--path", default=".", help="项目根")
     ev_p.add_argument("--json", action="store_true", help="机器可读输出")
     ev_p.set_defaults(func=cmd_control_result_evaluate)
@@ -1087,7 +1089,7 @@ def cmd_profile_create(args) -> int:
         return 2
     try:
         profile = normalize_profile(data)
-    except ProfileError as exc:
+    except (ProfileError, ValueError) as exc:
         print(f"profile 非法: {exc}", file=sys.stderr)
         return 2
     path = save_draft(_profile_root(args), profile)
@@ -1101,7 +1103,10 @@ def cmd_profile_freeze(args) -> int:
 
     try:
         frozen = freeze_profile(_profile_root(args), args.profile_id)
-    except ProfileError as exc:
+    except (ProfileError, ValueError) as exc:
+        print(f"冻结失败: {exc}", file=sys.stderr)
+        return 2
+    except ValueError as exc:
         print(f"冻结失败: {exc}", file=sys.stderr)
         return 2
     print(f"已冻结: {frozen.profile_id}.r{frozen.revision} digest={frozen.digest}")
@@ -1115,11 +1120,16 @@ def cmd_profile_accept(args) -> int:
 
     try:
         frozen = load_frozen(args.path, args.profile_id, args.revision)
-    except ProfileError as exc:
+    except (ProfileError, ValueError) as exc:
         print(f"profile 非法: {exc}", file=sys.stderr)
         return 2
     if not args.digest:
         print("profile accept 需要 --digest（基线内容摘要）", file=sys.stderr)
+        return 2
+    want_mode = args.mode or frozen.profile.baseline.generation_mode
+    if want_mode != frozen.profile.baseline.generation_mode:
+        print(f"接受失败: 基线模式不可在接受时改变（计划 {frozen.profile.baseline.generation_mode}，"
+              f"要求 {want_mode}）——改模式必须冻结新 revision", file=sys.stderr)
         return 2
     try:
         record = accept_baseline(
@@ -1127,10 +1137,10 @@ def cmd_profile_accept(args) -> int:
             revision=args.revision,
             source_ref=args.source_ref or frozen.profile.baseline.source_ref,
             baseline_digest=args.digest,
-            baseline_mode=args.mode or frozen.profile.baseline.generation_mode,
+            baseline_mode=want_mode,
             accepted_by=args.by,
         )
-    except BaselineAcceptError as exc:
+    except (BaselineAcceptError, ValueError) as exc:
         print(f"接受失败: {exc}", file=sys.stderr)
         return 2
     print(f"基线已接受: {record.task_id} {record.profile_id}.r{record.profile_revision} "
@@ -1151,7 +1161,7 @@ def cmd_profile_show(args) -> int:
         else:
             profile, rev = load_draft(_profile_root(args), args.profile_id), 0
             digest = plan_digest(profile, rev)
-    except ProfileError as exc:
+    except (ProfileError, ValueError) as exc:
         print(f"profile 非法: {exc}", file=sys.stderr)
         return 2
     if getattr(args, "json", False):
@@ -1166,6 +1176,24 @@ def cmd_profile_show(args) -> int:
           f"repair≤{profile.repair.max_rounds}轮 "
           f"audit≤{profile.budget.max_audit_calls}/repair≤{profile.budget.max_repair_calls}")
     return 0
+
+
+def _load_run_override(path: str) -> dict | None:
+    """读运行期覆盖文件（YAML/JSON）；空路径返回 None；非法直接抛错。"""
+    if not path:
+        return None
+    import yaml
+
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = yaml.safe_load(fh)
+    except Exception as exc:
+        raise ValueError(f"run-override 解析失败: {exc}") from exc
+    if data is None:
+        return {}
+    if not isinstance(data, dict):
+        raise ValueError("run-override 顶层必须是映射")
+    return data
 
 
 def cmd_control_result_evaluate(args) -> int:
@@ -1183,7 +1211,7 @@ def cmd_control_result_evaluate(args) -> int:
         return 2
     try:
         frozen = load_frozen(args.path, args.profile, args.revision)
-    except ProfileError as exc:
+    except (ProfileError, ValueError) as exc:
         print(f"profile 非法: {exc}", file=sys.stderr)
         return 2
     from .control_lifecycle import check_baseline_accept
@@ -1196,7 +1224,9 @@ def cmd_control_result_evaluate(args) -> int:
         return 2
     try:
         ev = evaluate_control_result(args.path, result, frozen,
-                                     task_id=getattr(args, "task", "") or "")
+                                     task_id=getattr(args, "task", "") or "",
+                                     run_override=_load_run_override(
+                                         getattr(args, "run_override", "") or ""))
     except ValueError as exc:
         print(f"求值失败: {exc}", file=sys.stderr)
         return 2

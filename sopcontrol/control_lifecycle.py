@@ -44,6 +44,10 @@ def accept_baseline(
 ) -> BaselineAccept:
     """记录基线接受（§5.4）。同任务同 revision 只写一次；改 mode/digest 必须走新 revision。"""
     root = Path(root)
+    from .scope import validate_identifier
+
+    validate_identifier(task_id, kind="task id")
+    validate_identifier(profile_id, kind="profile id")
     record = BaselineAccept(
         task_id=task_id, profile_id=profile_id, profile_revision=revision,
         source_ref=source_ref, baseline_digest=baseline_digest,
@@ -65,6 +69,9 @@ def accept_baseline(
 
 
 def load_accept(root: Path | str, task_id: str, revision: int) -> BaselineAccept | None:
+    from .scope import validate_identifier
+
+    validate_identifier(task_id, kind="task id")
     path = _accepts_dir(Path(root)) / f"{task_id}.r{revision}.json"
     if not path.is_file():
         return None
@@ -93,8 +100,12 @@ def check_baseline_accept(root: Path | str, result: Any, frozen: Any) -> str | N
 def repair_allowed(
     profile: ControlProfile, finding: ResultFinding, *,
     prior_severity: str = "",
+    latest_outcome: str = "",
 ) -> tuple[bool, str]:
-    """§7.1/§7.2：只有 blocking 可修；tolerated 不得自行升级（四类显式变更才可重判）。"""
+    """§7.1/§7.2 + STOP_WHEN：只有 blocking 可修；tolerated 不得自行升级；
+    已达停止条件（latest_outcome ∈ stop_when）不再修正。"""
+    if latest_outcome and latest_outcome in set(profile.stop_when or ["pass"]):
+        return False, f"已达停止条件（{latest_outcome}）：不再修正"
     if finding.severity == "blocking":
         return True, "blocking finding 允许有限修正"
     if finding.severity == "tolerated" and not prior_severity:

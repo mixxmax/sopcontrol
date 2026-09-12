@@ -537,7 +537,9 @@ def cmd_task(args) -> int:
 
         store = TaskStore(root)
         gate_task = store.load(args.task_id)
-        gate_ok, gate_reason = check_task_profile_gate(root, gate_task)
+        gate_ok, gate_reason = check_task_profile_gate(
+            root, gate_task,
+            expected_input_digest=gate_task.submit_input_digest or "")
         if not gate_ok and gate_task.status.value == "verification_pending":
             from_status = gate_task.status.value
             decision = profile_gate_denial(gate_task, f"动态 profile 门未过：{gate_reason}")

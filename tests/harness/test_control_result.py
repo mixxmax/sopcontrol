@@ -130,9 +130,10 @@ def test_actor_change_does_not_relax_plan(tmp_path):
     weak = _result(result_id="res-w", effective_plan_digest=frozen.digest,
                    producer={"actor": "agent-b", "independence": "self_check"})
     assert evaluate_control_result(tmp_path, weak, frozen).outcome == "unknown"
+    # 无任务上下文的高等级自报不再直接通过（独立性必须可证伪）
     strong = _result(result_id="res-s", effective_plan_digest=frozen.digest,
                      producer={"actor": "agent-c", "independence": "separate_actor"})
-    assert evaluate_control_result(tmp_path, strong, frozen).outcome == "pass"
+    assert evaluate_control_result(tmp_path, strong, frozen).outcome == "unknown"
 
 
 # §12.3 反事实

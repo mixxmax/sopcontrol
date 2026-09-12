@@ -134,3 +134,24 @@ def test_cli_accept_and_evaluate_enforces_baseline(tmp_path, capsys):
     res2 = _result(frozen, result_id="cli-r2", baseline_digest="base2")
     p.write_text(res2.model_dump_json(), encoding="utf-8")
     assert run() == 2
+
+
+def test_repair_stops_at_stop_when(tmp_path):
+    frozen = _frozen(tmp_path)
+    blocking = ResultFinding(dimension="jd_fit", severity="blocking")
+    ok, _ = repair_allowed(frozen.profile, blocking)
+    assert ok is True
+    ok, why = repair_allowed(frozen.profile, blocking, latest_outcome="pass")
+    assert ok is False and "停止条件" in why
+
+
+def test_accept_mode_locked_to_plan(tmp_path, capsys):
+    _frozen(tmp_path)
+    rc = main(["profile", "accept", "run-life", "--revision", "1",
+               "--task", "TASK-7", "--digest", "base", "--mode", "verify",
+               "--path", str(tmp_path)])
+    assert rc == 2
+    assert "不可在接受时改变" in capsys.readouterr().err
+    assert main(["profile", "accept", "run-life", "--revision", "1",
+                 "--task", "TASK-7", "--digest", "base",
+                 "--path", str(tmp_path)]) == 0

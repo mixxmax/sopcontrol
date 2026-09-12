@@ -57,6 +57,12 @@ class ProfileRepair(BaseModel):
     stop_after_pass: bool = True
 
 
+StopWhen = Literal["pass", "pass_with_warnings", "max_rounds", "block"]
+
+_MODE_RANK = {"ignore": 0, "report_only": 1, "required": 2, "block": 3}
+_TOLERANCE_RANK = {"allowed": 0, "report_only": 1, "block": 2}
+
+
 class ProfileBudget(BaseModel):
     max_audit_calls: int = 1
     max_repair_calls: int = 1
@@ -71,6 +77,7 @@ class ControlProfile(BaseModel):
     repair: ProfileRepair = Field(default_factory=ProfileRepair)
     budget: ProfileBudget = Field(default_factory=ProfileBudget)
     expires_at: str | None = None
+    stop_when: list[StopWhen] = Field(default_factory=lambda: ["pass"])
 
 
 class FrozenPlan(BaseModel):
@@ -84,6 +91,102 @@ class FrozenPlan(BaseModel):
 
 def _profiles_dir(root: Path) -> Path:
     return Path(root) / ".sopcontrol-local" / "profiles"
+
+
+class ComposedPlan(BaseModel):
+    """有效计划组合（§8.1）：Base + Task + Run Override + digest。
+
+    与 FrozenPlan 同构（profile_id/revision/digest/profile），decide() 可直接消费；
+    layers 记录组合来源，digest 绑定组合后内容。
+    """
+
+    profile_id: str
+    revision: int
+    digest: str
+    profile: ControlProfile
+    layers: dict[str, Any] = Field(default_factory=dict)
+
+
+def compile_effective_profile(
+    task_profile: ControlProfile,
+    run_override: dict[str, Any] | None = None,
+    *,
+    base_profile: ControlProfile | None = None,
+) -> ControlProfile:
+    """编译有效 profile：只允许收紧（§8.1/§3.3），放宽即 ProfileError。"""
+    if base_profile is not None and base_profile.profile_id != task_profile.profile_id:
+        pass  # base 仅贡献 required 并集，不要求同 id
+    required = set(task_profile.checks.required)
+    excluded = set(task_profile.checks.excluded)
+    if base_profile is not None:
+        required |= set(base_profile.checks.required)
+        excluded |= set(base_profile.checks.excluded)
+    data = task_profile.model_dump(mode="json")
+    data["checks"]["required"] = sorted(required)
+    data["checks"]["excluded"] = sorted(excluded)
+    compiled = normalize_profile(data)
+    run = run_override or {}
+    unknown_keys = set(run) - {"exclude_add", "mode_tighten", "budget_cap",
+                               "repair_max_rounds", "tolerance_tighten"}
+    if unknown_keys:
+        raise ProfileError(f"run_override 未知键: {sorted(unknown_keys)}")
+    for dim in run.get("exclude_add") or []:
+        if dim in compiled.checks.required:
+            raise ProfileError(f"run 不得排除 required 检查: {dim}")
+        if dim not in compiled.checks.excluded:
+            compiled.checks.excluded.append(dim)
+    for dim, mode in (run.get("mode_tighten") or {}).items():
+        if mode not in _MODE_RANK:
+            raise ProfileError(f"run mode 非法: {dim}={mode}")
+        current = compiled.checks.modes.get(dim, "block" if dim in required else "required")
+        if _MODE_RANK[mode] < _MODE_RANK[current]:
+            raise ProfileError(f"run 不得放宽 {dim}（{current}→{mode}）")
+        compiled.checks.modes[dim] = mode  # type: ignore[assignment]
+    cap = run.get("budget_cap") or {}
+    for key in ("max_audit_calls", "max_repair_calls"):
+        if key in cap:
+            old = getattr(compiled.budget, key)
+            if int(cap[key]) > old:
+                raise ProfileError(f"run 不得放宽 budget.{key}（{old}→{cap[key]}）")
+            setattr(compiled.budget, key, int(cap[key]))
+    if "repair_max_rounds" in run:
+        if int(run["repair_max_rounds"]) > compiled.repair.max_rounds:
+            raise ProfileError("run 不得放宽 repair.max_rounds")
+        compiled.repair.max_rounds = int(run["repair_max_rounds"])
+    for category, level in (run.get("tolerance_tighten") or {}).items():
+        if level not in _TOLERANCE_RANK:
+            raise ProfileError(f"run tolerance 非法: {category}={level}")
+        old = (compiled.tolerance or {}).get(category, "allowed")
+        if old not in _TOLERANCE_RANK:
+            raise ProfileError(f"profile tolerance 非法: {category}={old}")
+        if _TOLERANCE_RANK[level] < _TOLERANCE_RANK[old]:
+            raise ProfileError(f"run 不得放宽 tolerance[{category}]（{old}→{level}）")
+        compiled.tolerance[category] = level
+    return normalize_profile(compiled.model_dump(mode="json"))
+
+
+def compose_effective_plan(
+    task_frozen: FrozenPlan,
+    run_override: dict[str, Any] | None = None,
+    *,
+    base_profile: ControlProfile | None = None,
+) -> ComposedPlan:
+    """组合有效计划并绑定 digest（含层信息，防旧结果复用）。"""
+    compiled = compile_effective_profile(
+        task_frozen.profile, run_override, base_profile=base_profile)
+    layers: dict[str, Any] = {
+        "task_revision": task_frozen.revision,
+        "task_digest": task_frozen.digest,
+        "base_profile": base_profile.profile_id if base_profile else "",
+        "run_override": run_override or {},
+    }
+    digest = "plan-" + hashlib.sha256(
+        (plan_digest(compiled, task_frozen.revision)
+         + json.dumps(layers, ensure_ascii=False, sort_keys=True)
+         ).encode("utf-8")).hexdigest()[:32]
+    return ComposedPlan(profile_id=task_frozen.profile_id,
+                        revision=task_frozen.revision, digest=digest,
+                        profile=compiled, layers=layers)
 
 
 def normalize_profile(data: dict[str, Any]) -> ControlProfile:
@@ -110,6 +213,14 @@ def normalize_profile(data: dict[str, Any]) -> ControlProfile:
         conflicts.append("repair.max_rounds 不能为负")
     if profile.repair.max_rounds > SYSTEM_MAX_ROUNDS:
         conflicts.append(f"repair.max_rounds 超出系统上限 {SYSTEM_MAX_ROUNDS}")
+    if not profile.stop_when:
+        conflicts.append("stop_when 不可为空（至少声明一个停止条件）")
+    for mode in profile.checks.modes.values():
+        if mode not in _MODE_RANK:
+            conflicts.append(f"未知 mode: {mode}")
+    for category, level in profile.tolerance.items():
+        if level not in _TOLERANCE_RANK:
+            conflicts.append(f"tolerance[{category}] 非法: {level}")
     if profile.budget.max_audit_calls < 0 or profile.budget.max_repair_calls < 0:
         conflicts.append("budget 调用数不能为负")
     if profile.budget.max_audit_calls > SYSTEM_MAX_AUDIT_CALLS:
@@ -148,6 +259,9 @@ def _revision_files(root: Path, profile_id: str) -> list[int]:
 
 def save_draft(root: Path | str, profile: ControlProfile) -> Path:
     """存草稿（可覆盖）；冻结后不可变。"""
+    from .scope import validate_identifier
+
+    validate_identifier(profile.profile_id, kind="profile id")
     d = _profiles_dir(Path(root))
     d.mkdir(parents=True, exist_ok=True)
     path = d / f"{profile.profile_id}.draft.json"
@@ -172,6 +286,9 @@ def load_draft(root: Path | str, profile_id: str) -> ControlProfile:
 
 def freeze_profile(root: Path | str, profile_id: str) -> FrozenPlan:
     """冻结新 revision（只增不改；同内容重复冻结产生新 revision 但同 digest 基）。"""
+    from .scope import validate_identifier
+
+    validate_identifier(profile_id, kind="profile id")
     root = Path(root)
     profile = load_draft(root, profile_id)
     revs = _revision_files(root, profile_id)
@@ -187,6 +304,9 @@ def freeze_profile(root: Path | str, profile_id: str) -> FrozenPlan:
 
 
 def load_frozen(root: Path | str, profile_id: str, revision: int) -> FrozenPlan:
+    from .scope import validate_identifier
+
+    validate_identifier(profile_id, kind="profile id")
     path = _profiles_dir(Path(root)) / f"{profile_id}.r{revision}.json"
     if not path.is_file():
         raise ProfileError(f"无此冻结 revision: {profile_id}.r{revision}")

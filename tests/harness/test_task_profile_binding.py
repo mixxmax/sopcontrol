@@ -96,3 +96,62 @@ def test_open_validates_binding_flags(tmp_path, capsys):
                "--allow", "sopcontrol/x.py", "--control-profile", "bind"])
     assert rc == 2
     assert "同时给" in capsys.readouterr().err
+
+
+def test_gate_rejects_stale_input(tmp_path):
+    from sopcontrol.control_result import check_task_profile_gate
+
+    frozen = _frozen(tmp_path)
+    task = _bound_task(digest=frozen.digest)
+    res = ControlResult.model_validate({
+        "result_id": "bind-in", "task_id": "TASK-B", "profile_id": "bind",
+        "profile_revision": 1, "effective_plan_digest": frozen.digest,
+        "input_digest": "in-old", "baseline_digest": "base",
+        "checked_dimensions": ["jd_fit"], "findings": [], "rounds_used": 0,
+        "producer": {"actor": "a", "independence": "self_check"},
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    assert evaluate_control_result(tmp_path, res, frozen).outcome == "pass"
+    task.submit_input_digest = "in-old"
+    ok, _ = check_task_profile_gate(tmp_path, task, expected_input_digest="in-old")
+    assert ok is True
+    ok, why = check_task_profile_gate(tmp_path, task, expected_input_digest="in-new")
+    assert ok is False and "内容已变" in why
+    # 无 submit 摘要的老任务跳过输入比对（兼容）
+    task.submit_input_digest = ""
+    ok, _ = check_task_profile_gate(tmp_path, task)
+    assert ok is True
+
+
+def test_verify_denied_without_passing_result_no_e4(tmp_path, capsys):
+    """绑定任务无动态结果 → verify 在 E4 前拒绝（快路径，不跑全量）。"""
+    import time as _time
+
+    from sopcontrol.control_profile import freeze_profile as _freeze
+    from sopcontrol.control_profile import normalize_profile as _norm
+    from sopcontrol.control_profile import save_draft as _save
+    from sopcontrol.task import Contract, TaskRecord, TaskStatus, TaskStore
+
+    _save(tmp_path, _norm(BASE))
+    frozen = _freeze(tmp_path, "bind")
+    (tmp_path / ".sopcontrol" / "tasks").mkdir(parents=True, exist_ok=True)
+    store = TaskStore(tmp_path)
+    task = TaskRecord(
+        task_id="TASK-1",
+        contract=Contract(objective="bound work", allowed_writes=["sopcontrol/x.py"],
+                          required_rules=["CTRL-001"], required_fields=["evidence"],
+                          control_profile_id="bind", control_profile_revision=1,
+                          effective_plan_digest=frozen.digest),
+        status=TaskStatus.verification_pending,
+        changed_paths=["sopcontrol/x.py"],
+        submit_input_digest="in-submitted",
+    )
+    store.save(task)
+    start = _time.time()
+    assert main(["task", "verify", "TASK-1", str(tmp_path)]) == 0
+    elapsed = _time.time() - start
+    out = capsys.readouterr().out
+    assert "动态 profile 门未过" in out
+    assert "repair_required" in out
+    assert elapsed < 120, "门控应在 E4（数分钟）之前拒绝"
+    assert store.load("TASK-1").status.value == "repair_required"

@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+import pytest
+
 from sopcontrol.control_profile import normalize_profile
 from sopcontrol.control_result import (
     ControlResult,
@@ -156,3 +158,97 @@ def test_all_outcomes_carry_next_action():
     for res in cases:
         ev = decide_control_result(res, frozen, _state())
         assert ev.next_action, ev.outcome
+
+
+def test_compose_tighten_only_and_deterministic():
+    from sopcontrol.control_profile import (
+        ProfileError,
+        compose_effective_plan,
+        normalize_profile,
+    )
+
+    base = normalize_profile({**BASE, "profile_id": "pure",
+                              "checks": {"required": ["jd_fit"],
+                                         "excluded": ["style"]}})
+    task = normalize_profile(BASE)
+    plain = compose_effective_plan(_frozen_like(task), None)
+    assert plain.digest
+    run = {"exclude_add": ["extra"], "mode_tighten": {"jd_fit": "block"},
+           "budget_cap": {"max_audit_calls": 1}, "repair_max_rounds": 1,
+           "tolerance_tighten": {}}
+    composed = compose_effective_plan(_frozen_like(task), run,
+                                      base_profile=base)
+    assert composed.digest != plain.digest
+    assert "extra" in composed.profile.checks.excluded
+    twin = compose_effective_plan(_frozen_like(task), dict(run),
+                                  base_profile=base)
+    assert twin.digest == composed.digest
+    with pytest.raises(ProfileError):
+        compose_effective_plan(_frozen_like(task), {"mode_tighten": {"jd_fit": "required"}})
+    with pytest.raises(ProfileError):
+        compose_effective_plan(_frozen_like(task), {"exclude_add": ["jd_fit"]})
+    with pytest.raises(ProfileError):
+        compose_effective_plan(_frozen_like(task), {"budget_cap": {"max_audit_calls": 99}})
+    with pytest.raises(ProfileError):
+        compose_effective_plan(_frozen_like(task), {"unknown_key": 1})
+
+
+def _frozen_like(profile):
+    from sopcontrol.control_profile import plan_digest
+
+    class F:
+        pass
+
+    f = F()
+    f.profile_id, f.revision = profile.profile_id, 1
+    f.digest = plan_digest(profile, 1)
+    f.profile = profile
+    return f
+
+
+def test_run_override_evaluate_binds_composed_digest(tmp_path):
+    from sopcontrol.control_lifecycle import accept_baseline
+    from sopcontrol.control_profile import compose_effective_plan
+    from sopcontrol.control_result import evaluate_control_result
+    from sopcontrol.task import Contract, TaskRecord, TaskStore
+
+    frozen = _frozen()
+    run = {"exclude_add": ["extra"]}
+    composed = compose_effective_plan(frozen, run)
+    accept_baseline(tmp_path, task_id="TASK-P", profile_id="pure", revision=1,
+                    source_ref="jd", baseline_digest="base",
+                    baseline_mode="authoritative")
+    (tmp_path / ".sopcontrol" / "tasks").mkdir(parents=True, exist_ok=True)
+    TaskStore(tmp_path).save(TaskRecord(
+        task_id="TASK-P",
+        contract=Contract(objective="o", allowed_writes=[], required_rules=[],
+                          model_identity="exec-1")))
+    res = _ok_result(frozen, result_id="o1",
+                     effective_plan_digest=composed.digest)
+    ev = evaluate_control_result(tmp_path, res, frozen, run_override=dict(run),
+                                 task_id="TASK-P")
+    assert ev.outcome == "pass"
+    stale = _ok_result(frozen, result_id="o2",
+                       effective_plan_digest=frozen.digest)
+    assert evaluate_control_result(tmp_path, stale, frozen,
+                                   run_override=dict(run),
+                                   task_id="TASK-P").outcome == "unknown"
+
+
+def test_identifier_traversal_rejected(tmp_path):
+    from sopcontrol.control_lifecycle import accept_baseline
+    from sopcontrol.control_profile import ProfileError, freeze_profile, save_draft
+
+    import pytest
+
+    evil = normalize_profile({**BASE, "profile_id": "../../escaped"})
+    with pytest.raises(ValueError):
+        save_draft(tmp_path, evil)
+    with pytest.raises(ValueError):
+        freeze_profile(tmp_path, "../../escaped")
+    with pytest.raises(ValueError):
+        accept_baseline(tmp_path, task_id="../../escaped", profile_id="pure",
+                        revision=1, source_ref="s", baseline_digest="b",
+                        baseline_mode="authoritative")
+    assert not (tmp_path / "escaped").exists()
+    assert not (tmp_path.parent / "escaped").exists()

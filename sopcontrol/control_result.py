@@ -115,7 +115,10 @@ def _is_consumed(root: Path, result_id: str) -> bool:
 
 
 def _mark_consumed(root: Path, result: ControlResult, outcome: Outcome,
-                   reasons: list[str], key: str) -> None:
+                   reasons: list[str], key: str, base_digest: str = "") -> None:
+    from .scope import validate_identifier
+
+    validate_identifier(result.result_id, kind="result id")
     d = _consumed_dir(root)
     d.mkdir(parents=True, exist_ok=True)
     path = d / f"{result.result_id}.json"
@@ -127,6 +130,8 @@ def _mark_consumed(root: Path, result: ControlResult, outcome: Outcome,
         "task_id": result.task_id, "profile_id": result.profile_id,
         "profile_revision": result.profile_revision,
         "plan_digest": result.effective_plan_digest,
+        "base_digest": base_digest,
+        "input_digest": result.input_digest,
         "rounds_used": result.rounds_used,
         "finding_severities": [f.severity for f in result.findings],
         "at": datetime.now(timezone.utc).isoformat(),
@@ -301,29 +306,29 @@ def decide_control_result(result: ControlResult, frozen: FrozenPlan,
     if got_rank > 0 and not result.producer.actor.strip():
         return done("unknown", "独立性声明要求具名执行者（actor 为空即自报）",
                     "以具名身份重跑检查并声明 producer.actor")
-    # 独立性实证：有任务上下文可比对执行者；或 profile 声明强制实证。
-    # 无上下文 + 未声明强制时沿用旧语义（只比 rank），否则自报无法证伪。
-    if bool(state.task_identity) or frozen.profile.baseline.require_proven_independence:
-        if (result.producer.independence == "separate_context"
-                and not result.producer.context_ref.strip()):
-            return done("unknown", "separate_context 要求 context_ref 独立上下文凭据",
-                        "补 context_ref 后重新求值")
-        if got_rank >= 2:
-            if state.task_identity and result.producer.actor == state.task_identity:
-                return done("unknown", "自报独立：生产者与任务执行者相同",
-                            "换另一执行者重跑检查")
-            if not state.task_identity and not result.producer.evidence_ref:
-                return done("unknown", "声明强制实证但无任务上下文、无账本证据",
-                            "绑定任务（--task）或补 producer.evidence_ref")
-            if result.producer.independence == "human_required" and (
-                    not result.producer.evidence_ref
-                    or result.producer.evidence_ref not in state.evidence_ids):
-                return done("unknown", "human_required 需要账本可验证据",
-                            "补 ledger 存在的 evidence_ref 后重新求值")
-            if (result.producer.evidence_ref
-                    and result.producer.evidence_ref not in state.evidence_ids):
-                return done("unknown", "独立性证据在账本中不存在：疑似伪造",
-                            "用真实 evidence id 重跑检查")
+    # 独立性实证（§6.4）：高独立性声明必须可证伪——具名 + 非执行者本人 +
+    # 高等级账本证据。无任务上下文不是豁免理由（自报在任何路径都不能作为凭据）。
+    if (result.producer.independence == "separate_context"
+            and not result.producer.context_ref.strip()):
+        return done("unknown", "separate_context 要求 context_ref 独立上下文凭据",
+                    "补 context_ref 后重新求值")
+    if got_rank >= 2:
+        if not state.task_identity and not result.producer.evidence_ref:
+            return done("unknown", "高独立性声明无任务上下文、无账本证据：无法证伪",
+                        "绑定任务（--task）或补 producer.evidence_ref 后重新求值",
+                        )
+        if state.task_identity and result.producer.actor == state.task_identity:
+            return done("unknown", "自报独立：生产者与任务执行者相同",
+                        "换另一执行者重跑检查")
+        if result.producer.independence == "human_required" and (
+                not result.producer.evidence_ref
+                or result.producer.evidence_ref not in state.evidence_ids):
+            return done("unknown", "human_required 需要账本可验证据",
+                        "补 ledger 存在的 evidence_ref 后重新求值")
+        if (result.producer.evidence_ref
+                and result.producer.evidence_ref not in state.evidence_ids):
+            return done("unknown", "独立性证据在账本中不存在：疑似伪造",
+                        "用真实 evidence id 重跑检查")
     # 基线接受（§5.4）：profile 声明 require_accept 且任务绑定时，无记录不得通过。
     # 状态由调用方显式传入——API 直调传不了接受记录即判 unknown，不存在绕过。
     if frozen.profile.baseline.require_accept and scope_task and result.task_id:
@@ -423,17 +428,23 @@ def _scan_consumed(root: Path) -> list[dict[str, Any]]:
 
 def evaluate_control_result(
     root: Path | str, result: ControlResult, frozen: FrozenPlan,
-    *, task_id: str = "",
+    *, task_id: str = "", run_override: dict[str, Any] | None = None,
 ) -> Evaluation:
     """I/O 外壳：加载显式状态 → 纯 decide() → 按 outcome 持久化。
 
     task_id 绑定 sopctl 任务时，执行者身份/契约绑定/账本证据一并进入 GateState；
     不传 task_id 即无任务上下文（旧行为兼容，独立性按无绑定语义）。
+    run_override 触发有效组合编译（只收紧），求值与绑定均按组合后 digest。
     """
     from .control_lifecycle import load_accept
+    from .control_profile import compose_effective_plan
 
     root = Path(root)
-    key = idempotency_key(result)
+    effective = compose_effective_plan(frozen, run_override) if run_override else frozen
+    base_digest = frozen.digest
+    # 幂等键绑定组合后计划：不同 override 即不同键（§7.3）。
+    keyed = result.model_copy(update={"effective_plan_digest": effective.digest})
+    key = idempotency_key(keyed)
     records = _scan_consumed(root)
     consumed_ids = {str(r.get("result_id")) for r in records}
     cached = _find_cached(root, key)
@@ -494,18 +505,21 @@ def evaluate_control_result(
         audits_used=audits_used, repair_rounds_used=repair_rounds_used,
         now_iso=datetime.now(timezone.utc).isoformat(),
     )
-    ev = decide_control_result(result, frozen, state)
+    ev = decide_control_result(result, effective, state)
     if not ev.reused and ev.outcome in ("pass", "pass_with_warnings", "block", "not_run"):
-        _mark_consumed(root, result, ev.outcome, ev.reasons, key)
+        _mark_consumed(root, result, ev.outcome, ev.reasons, key,
+                       base_digest=base_digest)
     if ev.reused:
         _log_reuse(root, result, cached or {})
     return ev
 
 
-def check_task_profile_gate(root: Path | str, task: Any) -> tuple[bool, str]:
+def check_task_profile_gate(root: Path | str, task: Any,
+                            *, expected_input_digest: str = "") -> tuple[bool, str]:
     """任务 verify 前门：契约绑定 profile 时，必须有同 digest 的通过消费记录。
 
-    未绑定返回 (True, 理由)；否则按消费账本判定。纯读，不写盘。
+    expected_input_digest 给出时，结果输入摘要必须一致——内容变了旧 pass
+    不能再开门（§7.3/§15.12）。未绑定返回 (True, 理由)；纯读，不写盘。
     """
     contract = task.contract
     if not contract.control_profile_id:
@@ -516,8 +530,11 @@ def check_task_profile_gate(root: Path | str, task: Any) -> tuple[bool, str]:
     for r in _scan_consumed(Path(root)):
         if (str(r.get("task_id")) != task.task_id
                 or str(r.get("profile_id")) != want[0]
-                or int(r.get("profile_revision") or 0) != want[1]
-                or str(r.get("plan_digest")) != want[2]):
+                or int(r.get("profile_revision") or 0) != want[1]):
+            continue
+        plan_ok = (str(r.get("plan_digest")) == want[2]
+                   or str(r.get("base_digest") or "") == want[2])
+        if not plan_ok:
             continue
         if best is None or str(r.get("at", "")) > str(best.get("at", "")):
             best = r
@@ -529,5 +546,9 @@ def check_task_profile_gate(root: Path | str, task: Any) -> tuple[bool, str]:
         return False, (
             f"任务 {task.task_id} 最新动态结果 {best.get('outcome')} 未通过："
             f"先修到通过再 verify")
+    if expected_input_digest and str(best.get("input_digest") or "") != expected_input_digest:
+        return False, (
+            f"任务 {task.task_id} 内容已变（输入摘要不一致）：旧动态结果失效，"
+            f"重跑检查后再 verify")
     return True, (f"动态结果 {best.get('result_id')} "
                   f"{best.get('outcome')}（digest 一致）")

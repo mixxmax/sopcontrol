@@ -95,6 +95,7 @@ class TaskRecord(BaseModel):
     status: TaskStatus = TaskStatus.contract_proposed
     repair_count: int = 0
     changed_paths: list[str] = Field(default_factory=list)
+    submit_input_digest: str = ""  # submit 时改动内容摘要；动态门比对输入是否变化
     revision: int = 1
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
@@ -794,6 +795,30 @@ def _reject(reason: str) -> TransitionDecision:
     return TransitionDecision(allowed=False, to_status=None, reason=reason, next_action="sopctl task show 查看当前状态与契约")
 
 
+def submit_input_digest_for(root: Path, changed_paths: list[str]) -> str:
+    """submit 改动内容摘要（§7.3 输入绑定）：路径排序 + 小文件内容哈希。
+
+    超过 256KB 的文件只取路径与大小（防大仓 submit 卡死）；缺失文件按路径计。
+    """
+    import hashlib as _hashlib
+
+    root = Path(root)
+    parts: list[str] = []
+    for rel in sorted(changed_paths or []):
+        try:
+            p = (root / rel).resolve()
+            if p.is_file() and p.stat().st_size <= 256 * 1024:
+                digest = _hashlib.sha256(p.read_bytes()).hexdigest()[:16]
+                parts.append(f"{rel}:{digest}")
+            elif p.exists():
+                parts.append(f"{rel}:large:{p.stat().st_size}")
+            else:
+                parts.append(f"{rel}:missing")
+        except OSError:
+            parts.append(f"{rel}:unreadable")
+    return "in-" + _hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()[:32]
+
+
 def profile_gate_denial(task: TaskRecord, reason: str) -> TransitionDecision:
     """动态 profile 门失败 → repair_required（预算耗尽则 failed_unverified 熔断）。
 
@@ -918,6 +943,7 @@ class TaskStore:
             task.repair_count = decision.repair_count if action == "verify" else task.repair_count
             if action == "submit":
                 task.changed_paths = list(changed_paths or [])
+                task.submit_input_digest = submit_input_digest_for(self.root, task.changed_paths)
             if (
                 decision.to_status in TERMINAL_FAILED
                 and not task.blocked_reason_code
