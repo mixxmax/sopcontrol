@@ -66,6 +66,37 @@ _SHELL_WRAPPERS = frozenset({"sh", "bash", "dash", "zsh"})
 _LOCAL_SURFACES = frozenset({"shell", "filesystem_read", "search", "filesystem_write"})
 
 
+def canonical_invocation(root: Path, integration_id: str,
+                           argv: list[str]) -> list[str]:
+    """规范调用（§10.1/§10.2）：已安装入口解为正式业务 token + 用户参数。
+
+    wrapper 路径、$0、解释器启动形式永不入指纹；未注册原样返回。
+    所有调用方（challenge/admit/run）必须经此构造指纹，单点一致。
+    """
+    argv = [str(a) for a in argv]
+    if not argv:
+        return []
+    try:
+        manifest = _load_manifest(Path(root))
+    except (OSError, ValueError):
+        manifest = {}
+    name = Path(argv[0]).name
+    candidates = [name]
+    for ext in (".py", ".js"):
+        if name.endswith(ext):
+            candidates.append(name[: -len(ext)])
+    for candidate in candidates:
+        entry = manifest.get(candidate)
+        if isinstance(entry, dict) and entry.get("command"):
+            return [str(c) for c in entry["command"]] + argv[1:]
+    return list(argv)
+
+
+def stable_run_id(operation_id_value: str) -> str:
+    """稳定 run_id：由 operation_id 确定性派生，重试不重生（§10.3.2）。"""
+    return "run-" + hashlib.sha256(operation_id_value.encode("utf-8")).hexdigest()[:12]
+
+
 def _program_side(argv: list[str]) -> str:
     """argv 首词程序名 → 副作用类；命中 sh 族 -c 则看内层首词。"""
     if not argv:
@@ -321,8 +352,9 @@ def challenge_admission(
     """
     root = Path(root)
     argv = [str(item) for item in argv]
-    fingerprint = canonical_fingerprint(integration_id, action, argv)
-    op_id = operation_id(integration_id, action, argv)
+    canonical = canonical_invocation(root, integration_id, argv)
+    fingerprint = canonical_fingerprint(integration_id, action, canonical)
+    op_id = operation_id(integration_id, action, canonical)
     ticket = challenge_ticket(
         root, integration_id=integration_id, action=action,
         input_fingerprint=fingerprint, side_effect=side_effect,
@@ -332,6 +364,8 @@ def challenge_admission(
     handoff_path, _ = _write_ticket_handoff(root, ticket, op_id)
     return {"ticket_id": ticket.ticket_id, "handoff": handoff_path,
             "input_fingerprint": fingerprint, "operation_id": op_id,
+            "run_id": stable_run_id(op_id),
+            "canonical_argv": canonical,
             "ticket": ticket_public_view(ticket)}
 
 
@@ -361,7 +395,11 @@ def admit_ticket(
         root = payload.get("root") or Path.cwd()
     root = Path(root)
     argv = [str(item) for item in argv]
-    fingerprint = canonical_fingerprint(integration_id, action, argv)
+    canonical = canonical_invocation(root, integration_id, argv)
+    fingerprint = canonical_fingerprint(integration_id, action, canonical)
+    expected_op = operation_id(integration_id, action, canonical)
+    if payload.get("operation_id") and payload.get("operation_id") != expected_op:
+        raise TicketError("operation 不一致：challenge 与 admit 规范载荷不同")
     ticket = redeem_ticket(
         root,
         ticket_id=str(payload.get("ticket_id") or ""),
@@ -380,7 +418,8 @@ def admit_ticket(
     except OSError:
         pass
     return {"admitted": True, "ticket_id": ticket.ticket_id,
-            "operation_id": str(payload.get("operation_id") or "")}
+            "operation_id": str(payload.get("operation_id") or ""),
+            "run_id": stable_run_id(str(payload.get("operation_id") or ticket.ticket_id))}
 
 
 def _ticket_consumed(root: Path, ticket_id: str) -> bool:
@@ -391,10 +430,31 @@ def _ticket_consumed(root: Path, ticket_id: str) -> bool:
 
 
 def _scrub(text: str, secrets_: list[str]) -> str:
-    """回执脱敏：已知 secret 精确替换（子进程可能回显 handoff 内容）。"""
+    """回执脱敏（§11.3）：完整 secret + JSON 转义 + URL 转义 + 长子串形态。
+
+    子进程可能以部分/转义/拼接形式回显；tails 短（≤400 字符），宁可过脱敏
+    不可漏。阈值 12 字符：短于此的片段误伤面不可接受。
+    """
+    import urllib.parse as _urlparse
+
+    variants: list[str] = []
     for secret in secrets_:
-        if secret:
-            text = text.replace(secret, "***")
+        if not secret:
+            continue
+        variants.append(secret)
+        try:
+            variants.append(json.dumps(secret)[1:-1])
+        except (ValueError, TypeError):
+            pass
+        variants.append(_urlparse.quote(secret, safe=""))
+        n = len(secret)
+        for width in (24, 16, 12):
+            if n >= width:
+                variants.extend(
+                    secret[i:i + width] for i in range(0, n - width + 1, width))
+    for variant in sorted(set(variants), key=len, reverse=True):
+        if variant:
+            text = text.replace(variant, "***")
     return text
 
 
@@ -457,11 +517,13 @@ def run_bridge(
     """
     root = Path(root)
     argv = [str(item) for item in argv]
+    # 规范调用先行：envelope/指纹/票据全按业务 token，执行仍用原始 argv。
+    canonical = canonical_invocation(root, integration_id, argv)
     envelope = build_control_envelope(
         root,
         integration_id=integration_id,
         action=action,
-        argv=argv,
+        argv=canonical,
         side_effect=side_effect,
         task_id=task_id,
     )
@@ -490,7 +552,7 @@ def run_bridge(
         receipt["error"] = error
         return receipt
 
-    surface, classified = classify_bridge_argv(integration_id, argv)
+    surface, classified = classify_bridge_argv(integration_id, canonical)
     if policy_pack:
         from .policy_pack import PackError, load_pack, match_breakers
 
@@ -498,7 +560,7 @@ def run_bridge(
             pack = load_pack(policy_pack)
         except PackError as exc:
             return _refuse(f"policy pack 非法: {exc}")
-        attrs = {"command": " ".join(argv), "integration": integration_id,
+        attrs = {"command": " ".join(canonical), "integration": integration_id,
                  "action": action}
         hits = match_breakers(pack, surface=surface, attrs=attrs)
         denied = [h for h in hits if h.decision == "deny"]
@@ -555,12 +617,13 @@ def run_bridge(
     receipt["side_effect"] = effective or "none"
     ticket_id = ""
     handoff_path = ""
+    scrub_secrets: list[str] = []
     if effective in TICKET_REQUIRED_SIDES:
         issued = challenge_admission(
             root,
             integration_id=integration_id,
             action=action,
-            argv=argv,
+            argv=canonical,
             side_effect=effective,
             task_id=task_id,
             ttl_seconds=ttl_seconds,
@@ -572,6 +635,15 @@ def run_bridge(
         receipt["challenge_count"] = 1
         receipt["ticket"] = issued["ticket"]
         receipt["ticket_handoff"] = handoff_path
+        receipt["run_id"] = issued["run_id"]
+        # §11.2：父进程在启动子进程前读出 secret 进脱敏上下文——admit 侧删除
+        # handoff 后仍可脱敏；顺序不可颠倒。
+        try:
+            payload = json.loads(Path(handoff_path).read_text(encoding="utf-8"))
+            if payload.get("secret"):
+                scrub_secrets.append(str(payload["secret"]))
+        except (OSError, ValueError):
+            pass
         receipt["redemption_point"] = "pending-child-admission"
 
     import os as _os
@@ -579,18 +651,12 @@ def run_bridge(
     env = dict(_os.environ)
     if handoff_path:
         env["SOPCTL_TICKET_FILE"] = handoff_path
-    scrub_secrets: list[str] = []
     try:
         proc = subprocess.run(argv, capture_output=True, text=True, timeout=600, env=env)
     finally:
+        # secret 已在 spawn 前读入脱敏上下文，此处只管删除（admit 成功时文件
+        # 可能已被子进程删除，忽略即可）。
         if handoff_path:
-            try:
-                # 脱敏用：子进程可能回显 handoff 内容，精确替换 secret（内存内，不落盘）。
-                payload = json.loads(Path(handoff_path).read_text(encoding="utf-8"))
-                if payload.get("secret"):
-                    scrub_secrets.append(str(payload["secret"]))
-            except (OSError, ValueError):
-                pass
             try:
                 Path(handoff_path).unlink()
             except OSError:

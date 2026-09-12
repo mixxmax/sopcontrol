@@ -45,6 +45,8 @@ class CapabilityTicket(BaseModel):
     issued_by: str = "sopctl"
     effective_plan_digest: str = ""  # §9.4：能力授权绑定的冻结计划（空=未绑定，不改变旧行为）
     phase: str = ""  # §10.4：阶段级授权归属阶段（空=单动作票；阶段票绑定 allowed_side_effects 集合）
+    operation: str = ""  # §12.1：绑定的稳定 operation（空=未绑定）
+    allowed_actions: list[str] = Field(default_factory=list)  # §12.1：允许的动作名集合（空=不限动作名，只验其他绑定）
 
 
 def _ticket_dir(root: Path, worktree_id: str) -> Path:
@@ -65,6 +67,8 @@ def issue_ticket(
     issued_by: str = "sopctl",
     effective_plan_digest: str = "",
     phase: str = "",
+    operation: str = "",
+    allowed_actions: list[str] | None = None,
 ) -> CapabilityTicket:
     root = Path(root)
     scope = ProjectScope(root, mode="discovery")
@@ -84,6 +88,8 @@ def issue_ticket(
         issued_by=issued_by,
         effective_plan_digest=effective_plan_digest,
         phase=phase,
+        operation=operation,
+        allowed_actions=list(allowed_actions) if allowed_actions is not None else [],
     )
     directory = _ticket_dir(root, ticket.worktree_id)
     directory.mkdir(parents=True, exist_ok=True)
@@ -147,6 +153,7 @@ def redeem_ticket(
     worktree_id: str = "",
     expected_plan_digest: str = "",
     expected_phase: str = "",
+    expected_operation: str = "",
     now: datetime | None = None,
 ) -> CapabilityTicket:
     """Verify and consume a ticket. Env vars alone cannot forge a valid ticket."""
@@ -179,30 +186,38 @@ def redeem_ticket(
             raise TicketError("ticket task_id mismatch")
         if side_effect and side_effect not in ticket.allowed_side_effects:
             raise TicketError(f"side effect not allowed: {side_effect}")
-        if expected_plan_digest and ticket.effective_plan_digest and \
-                ticket.effective_plan_digest != expected_plan_digest:
+        # §12.1：期待绑定存在时，ticket 缺失绑定也拒绝——空字段不是通配符。
+        if expected_plan_digest and ticket.effective_plan_digest != expected_plan_digest:
             raise TicketError("ticket plan digest mismatch: 授权不属于当前冻结计划")
-        if expected_phase and ticket.phase and ticket.phase != expected_phase:
+        if expected_phase and ticket.phase != expected_phase:
             raise TicketError("ticket phase mismatch: 阶段授权不可跨阶段使用")
+        if expected_operation and ticket.operation != expected_operation:
+            raise TicketError("ticket operation mismatch: 运行不一致")
+        if ticket.allowed_actions and action not in ticket.allowed_actions:
+            raise TicketError(f"action not allowed: {action}")
         ticket.consumed_at = when
         _save_ticket(root_path, ticket)
         return ticket
 
 
 def phase_grant_fingerprint(*, phase: str, allowed_side_effects: list[str],
-                            task_id: str = "") -> str:
+                            task_id: str = "", operation: str = "") -> str:
     """阶段授权指纹（确定性；兑换方用同一参数重算）。"""
     raw = json.dumps({"phase": phase, "side_effects": sorted(allowed_side_effects),
-                      "task_id": task_id}, ensure_ascii=False, sort_keys=True)
+                      "task_id": task_id, "operation": operation},
+                     ensure_ascii=False, sort_keys=True)
     return "phase-" + content_hash_safe(raw)
 
 
 def issue_phase_grant(
     root: Path, *, phase: str, allowed_side_effects: list[str],
     task_id: str = "", effective_plan_digest: str = "",
-    ttl_seconds: int = 300, issued_by: str = "sopctl",
+    operation: str = "", ttl_seconds: int = 300, issued_by: str = "sopctl",
 ) -> CapabilityTicket:
-    """§10.4：同一阶段低风险动作共用一张短期授权（高风险不可逆动作仍单独收紧）。"""
+    """§10.4/§12.2：同一 task/phase/plan/operation 签发阶段授权（短时，副作用集合限定）。
+
+    不得跨项目/跨任务/跨阶段/跨 operation 使用（兑换时逐项比对）。
+    """
     if not phase.strip():
         raise TicketError("phase grant 需要命名阶段")
     if not allowed_side_effects:
@@ -211,10 +226,11 @@ def issue_phase_grant(
         root, action=f"phase:{phase}",
         input_fingerprint=phase_grant_fingerprint(
             phase=phase, allowed_side_effects=list(allowed_side_effects),
-            task_id=task_id),
+            task_id=task_id, operation=operation),
         allowed_side_effects=list(allowed_side_effects), task_id=task_id,
         ttl_seconds=ttl_seconds, issued_by=issued_by,
         effective_plan_digest=effective_plan_digest, phase=phase,
+        operation=operation,
     )
 
 
