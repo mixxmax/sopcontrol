@@ -65,6 +65,8 @@ testpaths = ["tests"]
 [tool.coverage.run]
 branch = true
 source = ["sopcontrol", "plugins"]
+# 子进程并行数据：pytest-cov 在报告前自动合并（防 statement/branch 混合 DataError）
+parallel = true
 
 [tool.coverage.report]
 # fail_under applies to the combined statement+branch metric; branch execution

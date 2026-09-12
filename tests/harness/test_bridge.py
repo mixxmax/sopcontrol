@@ -1,6 +1,9 @@
-"""桥接 P0：ControlEnvelope 稳定 operation_id、挑战-重试-兑换-回执、只读免票、原子兑换。"""
+"""桥接 P0/P1：闭环 admission（签发-handoff-子进程兑换-消费后验）、fail-closed 分类、无 secret 回执。"""
 from __future__ import annotations
 
+import os
+import stat
+import sys
 import threading
 
 import pytest
@@ -11,6 +14,28 @@ from sopcontrol.bridge import (
     run_bridge,
 )
 from sopcontrol.tickets import ticket_public_view
+
+
+def _admit_child(path, *, real=("echo", "hi")):
+    """写一个合作 adapter 子进程：admit 后 exec 实参（指纹与 run argv 一致）。"""
+    path.write_text(
+        "#!/bin/sh\n"
+        '"$SOPCTL_ADMIT_PY" -m sopcontrol.cli bridge admit '
+        '--integration-id "$SOPCTL_ADMIT_I" --action "$SOPCTL_ADMIT_A" '
+        '--side-effect "$SOPCTL_ADMIT_S" -- "$0" "$@" || exit $?\n'
+        'exec "$@"\n',
+        encoding="utf-8",
+    )
+    path.chmod(0o755)
+    return [str(path), *real]
+
+
+def _admit_env(monkeypatch, *, integration="scan.cli", action="network.scan",
+               side_effect="network_request"):
+    monkeypatch.setenv("SOPCTL_ADMIT_PY", sys.executable)
+    monkeypatch.setenv("SOPCTL_ADMIT_I", integration)
+    monkeypatch.setenv("SOPCTL_ADMIT_A", action)
+    monkeypatch.setenv("SOPCTL_ADMIT_S", side_effect)
 
 
 def test_operation_id_and_fingerprint_are_stable_across_retries(tmp_path):
@@ -40,21 +65,36 @@ def test_readonly_action_runs_without_ticket(tmp_path):
     assert "hello" in receipt["stdout_tail"]
 
 
-def test_ticket_required_action_challenges_once_then_succeeds_on_retry(tmp_path):
+def test_ticket_required_action_challenges_once_then_succeeds_on_retry(tmp_path, monkeypatch):
+    """合作子进程在真实入口兑换后才算通过（闭环，非 bridge 自兑）。"""
+    _admit_env(monkeypatch)
+    child = tmp_path / "admit-child.sh"
     receipt = run_bridge(
         tmp_path,
         integration_id="scan.cli",
         action="network.scan",
-        argv=["curl", "--version"],
+        argv=_admit_child(child, real=("echo", "side-effect")),
         side_effect="network_request",
     )
 
     assert receipt["challenge_count"] == 1          # 无票第一次只产生一次挑战
-    assert receipt["executed"] is True              # 自动重试后真实执行
+    assert receipt["executed"] is True              # 子进程兑换后真实执行
     assert receipt["ticket"]["ticket_id"].startswith("tkt-")
     assert "secret" not in receipt["ticket"]        # 回执不含 secret
     assert receipt["operation_id"].startswith("op-")
-    assert receipt["redemption_point"].startswith("bridge ")
+    assert receipt["redemption_point"].startswith("child-admission")
+    assert "side-effect" in receipt["stdout_tail"]
+
+
+def test_opaque_child_without_admission_fails(tmp_path):
+    """复查核心：子进程不校验 handoff 即视为未通过（没有不兑也过）。"""
+    receipt = run_bridge(
+        tmp_path, integration_id="scan.cli", action="network.scan",
+        argv=["echo", "x"], side_effect="network_request",
+    )
+    assert receipt["executed"] is False
+    assert "admission 未兑换" in receipt["error"]
+    assert receipt["redemption_point"] == "none (admission missing)"
 
 
 def test_tampered_retry_is_rejected_and_ticket_not_consumed(tmp_path):
@@ -123,10 +163,23 @@ def test_concurrent_redemption_only_one_succeeds(tmp_path):
     assert results.count("rejected") == 7
 
 
-def test_secret_never_persists_in_public_view_or_receipt(tmp_path):
+def test_secret_never_persists_in_public_view_or_receipt(tmp_path, monkeypatch):
+    """子进程回显 handoff 文件内容，receipt tails 必须洗脱 secret。"""
+    _admit_env(monkeypatch)
+    child = tmp_path / "leaky-child.sh"
+    child.write_text(
+        "#!/bin/sh\n"
+        'cat "$SOPCTL_TICKET_FILE"\n'
+        '"$SOPCTL_ADMIT_PY" -m sopcontrol.cli bridge admit '
+        '--integration-id "$SOPCTL_ADMIT_I" --action "$SOPCTL_ADMIT_A" '
+        '--side-effect "$SOPCTL_ADMIT_S" -- "$0" "$@" || exit $?\n'
+        'exec "$@"\n',
+        encoding="utf-8",
+    )
+    child.chmod(0o755)
     receipt = run_bridge(
         tmp_path, integration_id="scan.cli", action="network.scan",
-        argv=["curl", "--version"], side_effect="network_request",
+        argv=[str(child), "echo", "x"], side_effect="network_request",
     )
 
     def _walk(o):
@@ -138,9 +191,11 @@ def test_secret_never_persists_in_public_view_or_receipt(tmp_path):
             for v in o:
                 yield from _walk(v)
 
+    assert receipt["executed"] is True
     assert "ticket_model" not in receipt  # 对象级剥离：打印过滤之外无残留
     list(_walk(receipt))
     assert receipt["ticket"].get("secret") is None
+    assert "tkt-" in receipt["stdout_tail"]  # ticket_id 可审计，secret 已洗
     # handoff 文件跑后删除，不留 secret 载体
     from pathlib import Path as _Path
 
@@ -207,11 +262,77 @@ def test_undeclared_side_effect_mismatch_or_unknown_refused(tmp_path):
     r2 = run_bridge(tmp_path, integration_id="scan.cli", action="network.scan",
                     argv=["echo", "x"], side_effect="teleport")
     assert r2["executed"] is False
-    # 只读动作未声明但触及 curl：自动进票据流程（fail-closed 分类生效）
+    # 只读动作未声明但触及 curl：自动进票据流程（fail-closed 分类生效），
+    # 但不透明子进程不兑换 → 后验失败（闭环，无不兑也过）。
     r3 = run_bridge(tmp_path, integration_id="scan.cli", action="scan",
                     argv=["curl", "--version"])
-    assert r3["executed"] is True and r3["challenge_count"] == 1
+    assert r3["executed"] is False and "admission 未兑换" in r3["error"]
+    assert r3["challenge_count"] == 1
     assert r3["side_effect"] == "network_request"
+
+
+def test_sh_dash_c_inner_command_classified(tmp_path, monkeypatch):
+    """`sh -c "curl …"` 看内层，不看 sh 壳（只读直行关闭）。"""
+    _admit_env(monkeypatch)
+    child = tmp_path / "inner.sh"
+    child.write_text("#!/bin/sh\nexec \"$@\"\n", encoding="utf-8")
+    child.chmod(0o755)
+    # 内层 curl → 票据类；不透明内层不兑换 → 拒绝
+    r = run_bridge(tmp_path, integration_id="scan.cli", action="scan",
+                   argv=["sh", "-c", "curl --version"])
+    assert r["executed"] is False
+    assert r["side_effect"] == "network_request"
+    # 内层 echo → 本地只读直行
+    r2 = run_bridge(tmp_path, integration_id="scan.cli", action="scan",
+                    argv=["sh", "-c", "echo inner-hi"])
+    assert r2["executed"] is True and "inner-hi" in r2["stdout_tail"]
+
+
+def test_launcher_shell_quoting_no_expansion(tmp_path):
+    """$(...) 反引号等不得被 shell 展开（shlex 引号）。"""
+    import subprocess as _subprocess
+
+    from sopcontrol.bridge import install_wrapper
+
+    pwn = tmp_path / "pwned"
+    install_wrapper(tmp_path, integration_id="scan.cli",
+                    command=["echo", "$(touch {})".format(pwn), "`id`"],
+                    name="quote-test")
+    launcher = tmp_path / ".sopcontrol-local" / "bin" / "quote-test"
+    proc = _subprocess.run([str(launcher)], capture_output=True, text=True, timeout=30)
+    assert proc.returncode == 0
+    assert not pwn.exists()
+    assert "$(touch" in proc.stdout
+
+
+def test_challenge_admit_cli_roundtrip(tmp_path, monkeypatch, capsys):
+    import json as _json
+
+    from sopcontrol.cli import main
+
+    monkeypatch.chdir(tmp_path)
+    rc = main(["bridge", "challenge", "--action", "network.scan",
+               "--integration-id", "scan.cli", "--side-effect", "network_request",
+               "--", "curl", "--version"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    issued = _json.loads(out[out.index("{"):])
+    assert issued["ticket_id"].startswith("tkt-")
+    assert "secret" not in _json.dumps(issued)
+    handoff = issued["handoff"]
+    monkeypatch.setenv("SOPCTL_TICKET_FILE", handoff)
+    rc = main(["bridge", "admit", "--action", "network.scan",
+               "--integration-id", "scan.cli", "--side-effect", "network_request",
+               "--", "curl", "--version"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    admitted = _json.loads(out[out.index("{"):])
+    assert admitted["admitted"] is True
+    # 票据已消费：再兑拒绝（单次性）
+    rc = main(["bridge", "admit", "--action", "network.scan",
+               "--integration-id", "scan.cli", "--side-effect", "network_request",
+               "--", "curl", "--version"])
+    assert rc == 1
 
 
 def test_identifier_traversal_rejected_and_preexisting_restored(tmp_path):

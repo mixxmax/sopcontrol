@@ -478,6 +478,8 @@ def build_parser() -> argparse.ArgumentParser:
     run_p.add_argument("--task-id", default="")
     run_p.add_argument("--policy-pack", default="",
                        help="外部 Policy Pack 目录（deny 拒行、ask 强制走票）")
+    run_p.add_argument("--plan-digest", default="", help="绑定的冻结计划 digest")
+    run_p.add_argument("--phase", default="", help="阶段级授权归属阶段")
     run_p.add_argument(
         "command", nargs=argparse.REMAINDER,
         help="原始命令与参数（用 -- 分隔）",
@@ -491,6 +493,8 @@ def build_parser() -> argparse.ArgumentParser:
     inst_p.add_argument("--name", default="", help="安装名（默认 integration-id 派生）")
     inst_p.add_argument("--lang", default="sh", choices=["sh", "python", "node"],
                         help="入口模板语言（默认 sh）")
+    inst_p.add_argument("--plan-digest", default="", help="绑定的冻结计划 digest")
+    inst_p.add_argument("--phase", default="", help="阶段级授权归属阶段")
     inst_p.add_argument("command", nargs=argparse.REMAINDER, help="原始命令与参数（用 -- 分隔）")
     inst_p.set_defaults(func=cmd_bridge_install)
     rm_p = bridge_sub.add_parser("remove", help="按回滚清单移除 launcher/scaffold")
@@ -499,6 +503,30 @@ def build_parser() -> argparse.ArgumentParser:
     ls_p = bridge_sub.add_parser("list", help="列出已安装的 bridge 入口")
     ls_p.add_argument("--json", action="store_true", help="机器可读输出")
     ls_p.set_defaults(func=cmd_bridge_list)
+    ch_p = bridge_sub.add_parser("challenge", help="签发挑战票据并落 handoff（不兑换不执行）")
+    ch_p.add_argument("--action", required=True)
+    ch_p.add_argument("--integration-id", required=True)
+    ch_p.add_argument("--side-effect", required=True)
+    ch_p.add_argument("--task-id", default="")
+    ch_p.add_argument("--plan-digest", default="")
+    ch_p.add_argument("--phase", default="")
+    ch_p.add_argument("--format", default="json", choices=["json", "export"],
+                      help="export 只打印 export SOPCTL_TICKET_FILE=…（供 wrapper eval）")
+    ch_p.add_argument("command", nargs=argparse.REMAINDER, help="待执行命令（算指纹用）")
+    ch_p.set_defaults(func=cmd_bridge_challenge)
+    ad_p = bridge_sub.add_parser("admit", help="在真实入口兑换 handoff 票据（只兑一次）")
+    ad_p.add_argument("--action", required=True)
+    ad_p.add_argument("--integration-id", required=True)
+    ad_p.add_argument("--side-effect", required=True)
+    ad_p.add_argument("--task-id", default="")
+    ad_p.add_argument("--plan-digest", default="")
+    ad_p.add_argument("--phase", default="")
+    ad_p.add_argument("--ticket-file", default="",
+                      help="handoff 文件（默认 $SOPCTL_TICKET_FILE）")
+    ad_p.add_argument("--root", default="",
+                      help="签发根（默认取 handoff 内记录；cwd 不同时必须一致）")
+    ad_p.add_argument("command", nargs=argparse.REMAINDER, help="待执行命令（算指纹用）")
+    ad_p.set_defaults(func=cmd_bridge_admit)
     pack = sub.add_parser(
         "pack",
         help="外部 Policy Pack + 版本化连接器包（纯数据校验与展示，不执行包代码）",
@@ -866,6 +894,8 @@ def cmd_bridge(args) -> int:
         side_effect=args.side_effect or "",
         task_id=args.task_id or "",
         policy_pack=getattr(args, "policy_pack", "") or "",
+        effective_plan_digest=getattr(args, "plan_digest", "") or "",
+        phase=getattr(args, "phase", "") or "",
     )
     printable = {k: v for k, v in receipt.items() if k != "ticket_model"}
     print(_json.dumps(printable, ensure_ascii=False, indent=2, default=str))
@@ -877,6 +907,68 @@ def _strip_dashes(command: list[str]) -> list[str]:
     while command and command[0] == "--":
         command.pop(0)
     return command
+
+
+def cmd_bridge_challenge(args) -> int:
+    """bridge challenge：签发 + handoff（不兑换不执行），打印对接信息。"""
+    import json as _json
+
+    from .bridge import challenge_admission
+
+    from pathlib import Path as _Path
+
+    command = _strip_dashes(list(args.command))
+    if not command:
+        print("错误: challenge 需要命令（算指纹用）", file=sys.stderr)
+        return 2
+    issued = challenge_admission(
+        _Path.cwd(), integration_id=args.integration_id, action=args.action,
+        argv=command, side_effect=args.side_effect,
+        task_id=args.task_id or "",
+        effective_plan_digest=getattr(args, "plan_digest", "") or "",
+        phase=getattr(args, "phase", "") or "",
+    )
+    if getattr(args, "format", "json") == "export":
+        import shlex as _shlex
+
+        print(f"export SOPCTL_TICKET_FILE={_shlex.quote(issued['handoff'])}")
+        return 0
+    print(_json.dumps(issued, ensure_ascii=False, indent=2, default=str))
+    return 0
+
+
+def cmd_bridge_admit(args) -> int:
+    """bridge admit：在真实入口兑换（secret 只从 handoff 文件读）。"""
+    import json as _json
+    import os as _os
+
+    from .bridge import admit_ticket
+    from .tickets import TicketError
+
+    from pathlib import Path as _Path
+
+    command = _strip_dashes(list(args.command))
+    if not command:
+        print("错误: admit 需要命令（算指纹用）", file=sys.stderr)
+        return 2
+    ticket_file = args.ticket_file or _os.environ.get("SOPCTL_TICKET_FILE", "")
+    if not ticket_file:
+        print("错误: 无 handoff 票据（SOPCTL_TICKET_FILE 未设置）", file=sys.stderr)
+        return 2
+    try:
+        result = admit_ticket(
+            getattr(args, "root", "") or None, ticket_file=ticket_file,
+            integration_id=args.integration_id, action=args.action,
+            argv=command, side_effect=args.side_effect,
+            task_id=args.task_id or "",
+            expected_plan_digest=getattr(args, "plan_digest", "") or "",
+            expected_phase=getattr(args, "phase", "") or "",
+        )
+    except TicketError as exc:
+        print(f"admit 拒绝: {exc}", file=sys.stderr)
+        return 1
+    print(_json.dumps(result, ensure_ascii=False, indent=2, default=str))
+    return 0
 
 
 def cmd_bridge_install(args) -> int:
@@ -898,6 +990,8 @@ def cmd_bridge_install(args) -> int:
         root, name=name, lang=args.lang, integration_id=args.integration_id,
         action=args.action, command=command,
         side_effect=args.side_effect or "", task_id=args.task_id or "",
+        plan_digest=getattr(args, "plan_digest", "") or "",
+        phase=getattr(args, "phase", "") or "",
     )
     print(_json.dumps(installed, ensure_ascii=False, indent=2, default=str))
     return 0

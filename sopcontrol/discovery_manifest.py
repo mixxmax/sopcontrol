@@ -21,6 +21,8 @@ _SKIP_DIRS = {".git", ".venv", "node_modules", "__pycache__", ".sopcontrol-local
 
 CandidateKind = Literal["cli", "config", "hook", "harness", "adapter_scaffold", "gap"]
 Confidence = Literal["structural", "lexical"]
+ConnectionWay = Literal["direct_install", "bridge_candidate", "config_snippet",
+                        "scaffold_confirm", "gap"]
 
 
 class IntegrationCandidate(BaseModel):
@@ -43,7 +45,7 @@ class DiscoveryManifest(BaseModel):
 
 class ConnectionPlan(BaseModel):
     entry_id: str
-    way: str  # direct_install | bridge_candidate | config_snippet | scaffold_confirm | gap
+    way: ConnectionWay  # direct_install | bridge_candidate | config_snippet | scaffold_confirm | gap
     rationale: str = ""
     safe_auto: bool = False
     next_command: str = ""

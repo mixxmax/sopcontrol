@@ -1,13 +1,15 @@
-"""Bridge P2：三语言入口模板（python/node/sh adapter scaffold）。
+"""Bridge P2：三语言正式入口模板（admit+exec，真实 admission 点）。
 
-Level 2/3 轻连接：生成的脚本只做一件事——运行时解析 sopctl，
-把原命令经 `sopctl bridge run` 透传（Ticket/回执由 Bridge 负责）。
-不改业务源码、不含 secret、退出码直传；安装位置只在
-.sopcontrol-local/bin，回滚走 bridge-rollback.json（bridge.remove_wrapper）。
+已安装入口即用户确认的正式入口：先 `bridge admit` 兑换（指纹绑定实参），
+再 exec 真实命令。无父 run 时自己先 `bridge challenge`；有父 run（环境带
+SOPCTL_TICKET_FILE）则直接兑换父票据，父 run 后验消费。
+只读无票据类入口保持直接 exec。不改业务源码、不含 secret、退出码直传；
+安装位置只在 .sopcontrol-local/bin，回滚走 bridge-rollback.json。
 """
 from __future__ import annotations
 
 import json
+import shlex
 from pathlib import Path
 from typing import Any
 
@@ -18,19 +20,19 @@ LANGS = ("sh", "python", "node")
 _EXT = {"sh": "", "python": ".py", "node": ".js"}
 
 
-def bridge_run_args(
-    *, integration_id: str, action: str, command: list[str],
-    side_effect: str = "", task_id: str = "",
-) -> list[str]:
-    """待透传的 bridge run 参数（不含二进制，由模板运行时解析）。"""
-    args = ["bridge", "run", "--action", action,
-            "--integration-id", integration_id]
+def _admit_flags(*, integration_id: str, action: str, side_effect: str = "",
+                 task_id: str = "", plan_digest: str = "",
+                 phase: str = "") -> list[str]:
+    flags = ["--integration-id", integration_id, "--action", action]
     if side_effect:
-        args += ["--side-effect", side_effect]
+        flags += ["--side-effect", side_effect]
     if task_id:
-        args += ["--task-id", task_id]
-    args += ["--", *[str(c) for c in command]]
-    return args
+        flags += ["--task-id", task_id]
+    if plan_digest:
+        flags += ["--plan-digest", plan_digest]
+    if phase:
+        flags += ["--phase", phase]
+    return flags
 
 
 _SH_RESOLVER = """\
@@ -50,25 +52,51 @@ if [ -z "$BIN" ]; then echo "sopctl not found (SOPCTL_BIN/.venv/PATH)" >&2; exit
 """
 
 
-def render_scaffold(*, lang: str, bridge_args: list[str]) -> str:
-    """渲染单文件 scaffold（无 secret、无网络、无业务逻辑）。"""
+def render_scaffold(*, lang: str, integration_id: str, action: str,
+                    command: list[str], side_effect: str = "",
+                    task_id: str = "", plan_digest: str = "",
+                    phase: str = "") -> str:
+    """渲染单文件正式入口（无 secret、无网络、无业务逻辑）。"""
     if lang not in LANGS:
         raise ValueError(f"unsupported lang {lang!r} (want one of {LANGS})")
-    argv_json = json.dumps(list(bridge_args), ensure_ascii=False)
+    command = [str(c) for c in command]
+    if not command:
+        raise ValueError("scaffold 需要非空原始命令")
+    flags = _admit_flags(integration_id=integration_id, action=action,
+                         side_effect=side_effect, task_id=task_id,
+                         plan_digest=plan_digest, phase=phase)
     if lang == "sh":
+        q = " ".join(shlex.quote(p) for p in command)
+        f = " ".join(shlex.quote(p) for p in flags)
+        if not side_effect:
+            return (
+                "#!/bin/sh\n"
+                "# sopcontrol bridge entry — readonly passthrough "
+                "(remove via sopctl bridge remove)\n"
+                f"exec {q} \"$@\"\n"
+            )
         return (
             "#!/bin/sh\n"
-            "# sopcontrol bridge scaffold — remove via sopctl bridge remove\n"
+            "# sopcontrol bridge entry — formal admission point "
+            "(remove via sopctl bridge remove)\n"
             f"{_SH_RESOLVER}"
-            f"exec $BIN { ' '.join(json.dumps(p) for p in bridge_args) } \"$@\"\n"
+            'if [ -z "${SOPCTL_TICKET_FILE:-}" ]; then\n'
+            f"  eval $($BIN bridge challenge {f} --format export -- {q} \"$@\") || exit $?\n"
+            "fi\n"
+            f"$BIN bridge admit {f} -- {q} \"$@\" || exit $?\n"
+            f"exec {q} \"$@\"\n"
         )
     if lang == "python":
         return (
             "#!/usr/bin/env python3\n"
-            '"""sopcontrol bridge scaffold — remove via sopctl bridge remove."""\n'
-            "import os\nimport shutil\nimport subprocess\nimport sys\n"
+            '"""sopcontrol bridge entry — formal admission point."""\n'
+            "import json\nimport os\nimport shutil\nimport subprocess\nimport sys\n"
             "from pathlib import Path\n\n"
-            f"BRIDGE_ARGS = {argv_json}\n\n"
+            f"INTEGRATION = {json.dumps(integration_id)}\n"
+            f"ACTION = {json.dumps(action)}\n"
+            f"COMMAND = {json.dumps(command)}\n"
+            f"FLAGS = {json.dumps(flags)}\n"
+            f"NEEDS_TICKET = {json.dumps(bool(side_effect))}\n\n"
             "def _resolve():\n"
             '    explicit = os.environ.get("SOPCTL_BIN", "").strip()\n'
             "    if explicit and os.access(explicit, os.X_OK):\n"
@@ -84,17 +112,37 @@ def render_scaffold(*, lang: str, bridge_args: list[str]) -> str:
             "    if venv_py.is_file():\n"
             "        return [str(venv_py), '-m', 'sopcontrol.cli']\n"
             "    return [sys.executable, '-m', 'sopcontrol.cli']\n\n"
+            "def _run(bin_, *args):\n"
+            "    proc = subprocess.run(bin_ + list(args), capture_output=True, text=True)\n"
+            "    return proc\n\n"
             "if __name__ == '__main__':\n"
-            "    proc = subprocess.run(_resolve() + BRIDGE_ARGS + sys.argv[1:])\n"
-            "    sys.exit(proc.returncode)\n"
+            "    _bin = _resolve()\n"
+            "    _user = sys.argv[1:]\n"
+            "    if NEEDS_TICKET and not os.environ.get('SOPCTL_TICKET_FILE'):\n"
+            "        ch = _run(_bin, 'bridge', 'challenge', *FLAGS, '--format', 'json',\n"
+            "                '--', *(COMMAND + _user))\n"
+            "        if ch.returncode != 0:\n"
+            "            sys.stderr.write(ch.stderr[-500:])\n"
+            "            sys.exit(ch.returncode or 1)\n"
+            "        os.environ['SOPCTL_TICKET_FILE'] = json.loads(ch.stdout)['handoff']\n"
+            "    if NEEDS_TICKET:\n"
+            "        ad = _run(_bin, 'bridge', 'admit', *FLAGS, '--', *(COMMAND + _user))\n"
+            "        if ad.returncode != 0:\n"
+            "            sys.stderr.write((ad.stdout + ad.stderr)[-500:])\n"
+            "            sys.exit(ad.returncode or 1)\n"
+            "    os.execvp(COMMAND[0], COMMAND + _user)\n"
         )
     return (
         "#!/usr/bin/env node\n"
-        "// sopcontrol bridge scaffold — remove via sopctl bridge remove.\n"
+        "// sopcontrol bridge entry — formal admission point.\n"
         "import { spawnSync } from 'node:child_process';\n"
         "import { existsSync } from 'node:fs';\n"
         "import path from 'node:path';\n"
-        f"const BRIDGE_ARGS = {argv_json};\n"
+        f"const INTEGRATION = {json.dumps(integration_id)};\n"
+        f"const ACTION = {json.dumps(action)};\n"
+        f"const COMMAND = {json.dumps(command)};\n"
+        f"const FLAGS = {json.dumps(flags)};\n"
+        f"const NEEDS_TICKET = {json.dumps(bool(side_effect))};\n"
         "function resolve() {\n"
         "  const bin = (process.env.SOPCTL_BIN || '').trim();\n"
         "  if (bin && existsSync(bin)) return [bin];\n"
@@ -103,8 +151,22 @@ def render_scaffold(*, lang: str, bridge_args: list[str]) -> str:
         "  if (existsSync(venvBin)) return [venvBin];\n"
         "  return ['sopctl'];\n"
         "}\n"
-        "const argv = resolve().concat(BRIDGE_ARGS, process.argv.slice(2));\n"
-        "const r = spawnSync(argv[0], argv.slice(1), { stdio: 'inherit' });\n"
+        "const user = process.argv.slice(2);\n"
+        "const bin = resolve();\n"
+        "function run(...args) {\n"
+        "  return spawnSync(bin[0], bin.slice(1).concat(args), { encoding: 'utf8' });\n"
+        "}\n"
+        "if (NEEDS_TICKET && !process.env.SOPCTL_TICKET_FILE) {\n"
+        "  const ch = run('bridge', 'challenge', ...FLAGS, '--format', 'json',\n"
+        "               '--', ...COMMAND, ...user);\n"
+        "  if (ch.status !== 0) { process.stderr.write(String(ch.stderr).slice(-500)); process.exit(ch.status ?? 1); }\n"
+        "  process.env.SOPCTL_TICKET_FILE = JSON.parse(ch.stdout).handoff;\n"
+        "}\n"
+        "if (NEEDS_TICKET) {\n"
+        "  const ad = run('bridge', 'admit', ...FLAGS, '--', ...COMMAND, ...user);\n"
+        "  if (ad.status !== 0) { process.stderr.write(String(ad.stdout + ad.stderr).slice(-500)); process.exit(ad.status ?? 1); }\n"
+        "}\n"
+        "const r = spawnSync(COMMAND[0], COMMAND.slice(1).concat(user), { stdio: 'inherit' });\n"
         "process.exit(r.status ?? 1);\n"
     )
 
@@ -112,8 +174,9 @@ def render_scaffold(*, lang: str, bridge_args: list[str]) -> str:
 def install_scaffold(
     root: Path, *, name: str, lang: str, integration_id: str, action: str,
     command: list[str], side_effect: str = "", task_id: str = "",
+    plan_digest: str = "", phase: str = "",
 ) -> dict[str, Any]:
-    """写入 scaffold 文件并登记回滚清单；返回 {name, file, rollback}。"""
+    """写入正式入口文件并登记回滚清单；返回 {name, file, rollback}。"""
     root = Path(root)
     if lang not in LANGS:
         raise ValueError(f"unsupported lang {lang!r} (want one of {LANGS})")
@@ -125,18 +188,20 @@ def install_scaffold(
     bin_dir.mkdir(parents=True, exist_ok=True)
     target = bin_dir / (name + _EXT[lang])
     existed = target.exists()
-    args = bridge_run_args(
-        integration_id=integration_id, action=action, command=command,
-        side_effect=side_effect, task_id=task_id,
-    )
-    target.write_text(render_scaffold(lang=lang, bridge_args=args), encoding="utf-8")
+    target.write_text(render_scaffold(
+        lang=lang, integration_id=integration_id, action=action,
+        command=[str(c) for c in command], side_effect=side_effect,
+        task_id=task_id, plan_digest=plan_digest, phase=phase), encoding="utf-8")
     target.chmod(0o755)
     manifest = _load_manifest(root)
     manifest[name] = {
         "integration_id": integration_id,
         "action": action,
         "lang": lang,
-        "command": list(command),
+        "command": [str(c) for c in command],
+        "side_effect": side_effect,
+        "plan_digest": plan_digest,
+        "phase": phase,
         "files": [str(target)],
         "existed_before": existed,
     }

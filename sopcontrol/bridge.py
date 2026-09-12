@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import secrets
+import shlex
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -58,21 +59,37 @@ _PROGRAM_TO_SIDE = {
     "playwright": "browser_session",
 }
 
+# sh 族 -c 包裹：看内层命令，不看 sh 壳（`sh -c "curl …"` 按 network 处理）。
+_SHELL_WRAPPERS = frozenset({"sh", "bash", "dash", "zsh"})
+
 # 本地低风险面：无票可执行（调用方自己的机器；非沙箱承诺）。
 _LOCAL_SURFACES = frozenset({"shell", "filesystem_read", "search", "filesystem_write"})
 
 
+def _program_side(argv: list[str]) -> str:
+    """argv 首词程序名 → 副作用类；命中 sh 族 -c 则看内层首词。"""
+    if not argv:
+        return ""
+    prog = str(argv[0]).split("/")[-1].lower()
+    if prog in _SHELL_WRAPPERS:
+        parts = [str(a) for a in argv[1:4]]
+        if "-c" in parts:
+            inner = parts[parts.index("-c") + 1].strip().split() if "-c" in parts[:-1] else []
+            if inner:
+                return _PROGRAM_TO_SIDE.get(inner[0].split("/")[-1].lower(), "")
+            return ""
+    return _PROGRAM_TO_SIDE.get(prog, "")
+
+
 def classify_bridge_argv(integration_id: str, argv: list[str]) -> tuple[str, str]:
-    """自动分类：先看 argv 首词程序名，再回落 envelope（Bash 壳只能看到 shell）。
+    """自动分类：先看 argv 首词程序名（sh -c 看内层），再回落 envelope。
 
     返回 (surface, side_effect|\"\")；都看不出返回 (\"unknown\", \"\")。
     """
-    if argv:
-        prog = str(argv[0]).split("/")[-1].lower()
-        if prog in _PROGRAM_TO_SIDE:
-            side = _PROGRAM_TO_SIDE[prog]
-            surface = next((s for s, v in _SURFACE_TO_SIDE.items() if v == side), "unknown")
-            return surface, side
+    side = _program_side([str(a) for a in argv])
+    if side:
+        surface = next((s for s, v in _SURFACE_TO_SIDE.items() if v == side), "unknown")
+        return surface, side
     command = " ".join(str(item) for item in argv)
     envelope = build_envelope(
         {"tool_name": "Bash", "tool_input": {"command": command}},
@@ -149,6 +166,7 @@ def install_wrapper(
     launcher = bin_dir / name
     existed = launcher.exists()
     prev_backup: str | None = None
+    prev_mode: int | None = None
     if existed:
         # 预存内容备份：remove 时恢复而不是删除（覆盖不等于拥有）。
         backup_dir = root / ".sopcontrol-local" / "bridge-rollback"
@@ -156,9 +174,8 @@ def install_wrapper(
         prev_path = backup_dir / f"{name}.prev"
         prev_path.write_bytes(launcher.read_bytes())
         try:
-            import stat as _stat
-
-            prev_path.chmod(launcher.stat().st_mode & 0o7777)
+            prev_mode = launcher.stat().st_mode & 0o7777
+            prev_path.chmod(prev_mode)
         except OSError:
             pass
         prev_backup = str(prev_path)
@@ -166,7 +183,7 @@ def install_wrapper(
         "#!/bin/sh\n"
         "# sopcontrol bridge launcher — remove via sopctl bridge remove\n"
         "exec "
-        + " ".join(json.dumps(part) for part in command)
+        + " ".join(shlex.quote(str(part)) for part in command)
         + ' "$@"\n',
         encoding="utf-8",
     )
@@ -178,6 +195,7 @@ def install_wrapper(
         "files": [str(launcher)],
         "existed_before": existed,
         "prev_backup": prev_backup,
+        "prev_mode": prev_mode,
     }
     rollback = _save_manifest(root, manifest)
     return {"name": name, "launcher": str(launcher), "rollback": str(rollback)}
@@ -194,12 +212,16 @@ def remove_wrapper(root: Path, *, name: str) -> dict[str, Any]:
     removed = False
     restored = False
     prev_backup = (existed_before or {}).get("prev_backup")
+    prev_mode = (existed_before or {}).get("prev_mode")
     if prev_backup:
         try:
             prev_path = Path(prev_backup)
             if prev_path.is_file():
                 launcher.write_bytes(prev_path.read_bytes())
-                launcher.chmod(0o755)
+                try:
+                    launcher.chmod(int(prev_mode) if prev_mode else 0o755)
+                except (OSError, ValueError, TypeError):
+                    launcher.chmod(0o755)
                 restored = True
         except OSError:
             restored = False
@@ -254,6 +276,8 @@ def challenge_ticket(
     side_effect: str,
     task_id: str = "",
     ttl_seconds: int = 900,
+    effective_plan_digest: str = "",
+    phase: str = "",
 ) -> Any:
     """§4.2：签发挑战票据（供 Bridge 内存持有，用户不手工复制）。"""
     return issue_ticket(
@@ -264,7 +288,104 @@ def challenge_ticket(
         task_id=task_id,
         ttl_seconds=ttl_seconds,
         issued_by=f"bridge:{integration_id}",
+        effective_plan_digest=effective_plan_digest,
+        phase=phase,
     )
+
+
+def challenge_admission(
+    root: Path,
+    *,
+    integration_id: str,
+    action: str,
+    argv: list[str],
+    side_effect: str,
+    task_id: str = "",
+    ttl_seconds: int = 900,
+    effective_plan_digest: str = "",
+    phase: str = "",
+) -> dict[str, Any]:
+    """签发 + 落 handoff（不兑换、不执行）：兑换只能发生在 admission 点。
+
+    返回 {ticket_id, handoff, fingerprint, operation_id}（无 secret 对象；
+    secret 只在 0600 handoff 文件内）。
+    """
+    root = Path(root)
+    argv = [str(item) for item in argv]
+    fingerprint = canonical_fingerprint(integration_id, action, argv)
+    op_id = operation_id(integration_id, action, argv)
+    ticket = challenge_ticket(
+        root, integration_id=integration_id, action=action,
+        input_fingerprint=fingerprint, side_effect=side_effect,
+        task_id=task_id, ttl_seconds=ttl_seconds,
+        effective_plan_digest=effective_plan_digest, phase=phase,
+    )
+    handoff_path, _ = _write_ticket_handoff(root, ticket, op_id)
+    return {"ticket_id": ticket.ticket_id, "handoff": handoff_path,
+            "input_fingerprint": fingerprint, "operation_id": op_id,
+            "ticket": ticket_public_view(ticket)}
+
+
+def admit_ticket(
+    root: Path | str | None,
+    *,
+    ticket_file: str,
+    integration_id: str,
+    action: str,
+    argv: list[str],
+    side_effect: str,
+    task_id: str = "",
+    expected_plan_digest: str = "",
+    expected_phase: str = "",
+) -> dict[str, Any]:
+    """在真实 admission 点兑换（合作 adapter/已安装入口调用；只兑一次）。
+
+    票据 id+secret 只从 0600 handoff 文件读，不经 argv/环境传 secret。
+    指纹由 (integration, action, argv) 重算——输入被改即拒。
+    root 为空时取 handoff 内记录的签发根（子进程 cwd 可能与签发根不同）。
+    """
+    try:
+        payload = json.loads(Path(ticket_file).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise TicketError(f"handoff 票据不可读: {exc}")
+    if root is None or str(root) == "":
+        root = payload.get("root") or Path.cwd()
+    root = Path(root)
+    argv = [str(item) for item in argv]
+    fingerprint = canonical_fingerprint(integration_id, action, argv)
+    ticket = redeem_ticket(
+        root,
+        ticket_id=str(payload.get("ticket_id") or ""),
+        secret=str(payload.get("secret") or ""),
+        action=action,
+        input_fingerprint=fingerprint,
+        side_effect=side_effect,
+        task_id=task_id,
+        worktree_id=str(payload.get("worktree_id") or ""),
+        expected_plan_digest=expected_plan_digest,
+        expected_phase=expected_phase,
+    )
+    return {"admitted": True, "ticket_id": ticket.ticket_id,
+            "operation_id": str(payload.get("operation_id") or "")}
+
+
+def _ticket_consumed(root: Path, ticket_id: str) -> bool:
+    """后验：票据是否已被兑换（run 的消费后验用，只读）。"""
+    from .tickets import _load_ticket
+
+    try:
+        ticket = _load_ticket(root, ticket_id)
+    except TicketError:
+        return False
+    return ticket.consumed_at is not None
+
+
+def _scrub(text: str, secrets_: list[str]) -> str:
+    """回执脱敏：已知 secret 精确替换（子进程可能回显 handoff 内容）。"""
+    for secret in secrets_:
+        if secret:
+            text = text.replace(secret, "***")
+    return text
 
 
 def _write_ticket_handoff(root: Path, ticket: Any, operation_id: str) -> tuple[str, str]:
@@ -285,6 +406,8 @@ def _write_ticket_handoff(root: Path, ticket: Any, operation_id: str) -> tuple[s
         "action": ticket.action,
         "input_fingerprint": ticket.input_fingerprint,
         "operation_id": operation_id,
+        "root": str(root),
+        "worktree_id": ticket.worktree_id,
     }, ensure_ascii=False), encoding="utf-8")
     _os.chmod(path, _stat.S_IRUSR | _stat.S_IWUSR)
     return str(path), ticket.ticket_id
@@ -300,14 +423,15 @@ def run_bridge(
     task_id: str = "",
     ttl_seconds: int = 900,
     policy_pack: str = "",
+    effective_plan_digest: str = "",
+    phase: str = "",
 ) -> dict[str, Any]:
-    """§4.1 挑战-重试-兑换-回执的最小闭环（进程内 admission point）。
+    """§4.1 挑战-handoff-执行-消费后验的闭环（兑换只发生在 admission 点）。
 
-    副作用判定 fail-closed：显式 side_effect 必须与 envelope 自动分类一致；
-    未声明且非只读动作按分类决定（高影响进票据流程，未知分类直接拒绝）；
-    READ_ONLY_ACTIONS 只读动作用分类低风险才免票直行。
-    票据经 0600 handoff 文件递子进程（跑后删除）；receipt 永不含 secret；
-    redemption_point 如实标注兑换位置（不透明子进程由 bridge 代兑并明示）。
+    副作用判定 fail-closed（见分类逻辑）；票据由子进程 adapter 经 handoff
+    在真实入口兑换（`bridge admit`），bridge 只签发、递送、后验消费——
+    子进程不兑换即视为未通过（executed=false），不存在"不校验也通过"。
+    回执做 secret 洗脱；redemption_point 如实标注。
     """
     root = Path(root)
     argv = [str(item) for item in argv]
@@ -407,66 +531,61 @@ def run_bridge(
             effective = classified
 
     receipt["side_effect"] = effective or "none"
-    ticket_model = None
+    ticket_id = ""
     handoff_path = ""
     if effective in TICKET_REQUIRED_SIDES:
-        ticket_model = challenge_ticket(
+        issued = challenge_admission(
             root,
             integration_id=integration_id,
             action=action,
-            input_fingerprint=envelope["input_fingerprint"],
+            argv=argv,
             side_effect=effective,
             task_id=task_id,
             ttl_seconds=ttl_seconds,
+            effective_plan_digest=effective_plan_digest,
+            phase=phase,
         )
+        ticket_id = issued["ticket_id"]
+        handoff_path = issued["handoff"]
         receipt["challenge_count"] = 1
-        receipt["ticket"] = ticket_public_view(ticket_model)
-        try:
-            redeem_ticket(
-                root,
-                ticket_id=ticket_model.ticket_id,
-                secret=ticket_model.secret,
-                action=action,
-                input_fingerprint=envelope["input_fingerprint"],
-                side_effect=effective,
-                task_id=task_id,
-                worktree_id=ticket_model.worktree_id,
-            )
-        except TicketError as exc:
-            receipt["executed"] = False
-            receipt["error"] = f"ticket redemption failed: {exc}"
-            return receipt
-        # 不透明子进程由 bridge 代兑（明示）；handoff 文件供合作 adapter 在真实
-        # 入口凭 verify_ticket_for_admission 自证；secret 永不进 receipt/日志。
-        receipt["redemption_point"] = "bridge (opaque subprocess; adapters verify via handoff)"
-        handoff_path, _ = _write_ticket_handoff(root, ticket_model, envelope["operation_id"])
+        receipt["ticket"] = issued["ticket"]
         receipt["ticket_handoff"] = handoff_path
+        receipt["redemption_point"] = "pending-child-admission"
 
     import os as _os
 
     env = dict(_os.environ)
     if handoff_path:
         env["SOPCTL_TICKET_FILE"] = handoff_path
+    scrub_secrets: list[str] = []
     try:
         proc = subprocess.run(argv, capture_output=True, text=True, timeout=600, env=env)
     finally:
         if handoff_path:
             try:
+                # 脱敏用：子进程可能回显 handoff 内容，精确替换 secret（内存内，不落盘）。
+                payload = json.loads(Path(handoff_path).read_text(encoding="utf-8"))
+                if payload.get("secret"):
+                    scrub_secrets.append(str(payload["secret"]))
+            except (OSError, ValueError):
+                pass
+            try:
                 Path(handoff_path).unlink()
             except OSError:
                 pass
             receipt["ticket_handoff"] += " (removed after run)"
-    receipt["executed"] = True
-    receipt["exit_code"] = proc.returncode
-    receipt["stdout_tail"] = proc.stdout[-400:]
-    receipt["stderr_tail"] = proc.stderr[-400:]
-    return receipt
-
-    proc = subprocess.run(argv, capture_output=True, text=True, timeout=600)
-    receipt["executed"] = True
-    receipt["exit_code"] = proc.returncode
-    receipt["stdout_tail"] = proc.stdout[-400:]
-    receipt["stderr_tail"] = proc.stderr[-400:]
-    if ticket_model is not None:
-        receipt["ticket_model"] = ticket_model
+    if ticket_id and not _ticket_consumed(root, ticket_id):
+        receipt["executed"] = False
+        receipt["error"] = (
+            "admission 未兑换：子进程未在真实入口兑换票据——"
+            "业务入口未受控。合作 adapter 应经 SOPCTL_TICKET_FILE 调用 "
+            "sopctl bridge admit；裸命令请先 sopctl bridge install 生成入口")
+        receipt["redemption_point"] = "none (admission missing)"
+    else:
+        if ticket_id:
+            receipt["redemption_point"] = f"child-admission ({ticket_id})"
+        receipt["executed"] = True
+        receipt["exit_code"] = proc.returncode
+    receipt["stdout_tail"] = _scrub(proc.stdout[-400:], scrub_secrets)
+    receipt["stderr_tail"] = _scrub(proc.stderr[-400:], scrub_secrets)
     return receipt
