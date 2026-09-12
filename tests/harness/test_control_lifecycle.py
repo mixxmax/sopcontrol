@@ -107,7 +107,7 @@ def test_profile_impact_analysis(tmp_path):
         "modes": {"jd_fit": "report_only"}}})
     impact = profile_impact(old, new)
     assert impact["added_required"] == ["llmo"]
-    assert impact["mode_changes"] == ["jd_fit"]
+    assert impact["mode_changes"] == ["jd_fit", "llmo"]  # llmo 新增即 block 生效
     assert impact["must_recheck"] == ["jd_fit", "llmo"]
 
 
