@@ -215,17 +215,13 @@ def test_unified_fingerprint_matches_action_envelope(tmp_path):
         harness="bridge",
         task_id="scan.cli",
     )
-    basis = {
-        "surface": envelope.surface,
-        "operation": envelope.operation,
-        "target": envelope.target,
-        "integration_id": "scan.cli",
-        "action": "network.scan",
-    }
+    from sopcontrol.bridge import canonical_payload
+    basis = canonical_payload("scan.cli", "network.scan", argv)
     import json as _json
     import hashlib as _hashlib
+    base_no_ids = {k: v for k, v in basis.items() if k not in ("operation_id", "run_id")}
     expected = "sha256:" + _hashlib.sha256(
-        _json.dumps(basis, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        _json.dumps(base_no_ids, ensure_ascii=False, sort_keys=True).encode("utf-8")
     ).hexdigest()
 
     assert canonical_fingerprint("scan.cli", "network.scan", argv) == expected
@@ -372,3 +368,15 @@ def test_admission_verification_for_handoff_ticket(tmp_path):
         verify_ticket_for_admission(
             tmp_path, ticket_id=t.ticket_id, secret="wrong",
             action="network.scan", input_fingerprint="fp-9")
+
+
+def test_b8_doctor_mse_section(capsys):
+    # B8：doctor输出MSE四行只读节，不改变退出码语义
+    from sopcontrol.cli_core import cmd_doctor
+    class A:
+        path = "."
+        full = False
+        vertical = False
+    assert cmd_doctor(A()) == 0
+    out = capsys.readouterr().out
+    assert "MSE 缺算子 surface" in out and "MSE 冻结计划" in out
