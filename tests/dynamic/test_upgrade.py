@@ -432,3 +432,20 @@ def test_wp_h_stage_missing_source_dir(project):
     import sopcontrol.upgrade as up
     bad = up.stage_runtime(project, version="9.9.9", source=project)
     assert bad["ok"] is False and "源缺失" in bad["error"]
+
+
+def test_probe_dev_fallback_rejects_bogus_path(project):
+    """探针连带：旧回滚点不存在→rollback 拒绝，保持当前版本。"""
+    from sopcontrol.upgrade import init_binding, save_binding
+    import sopcontrol.upgrade as up
+    _add_dynamic_rule(project, "DR-PB")
+    binding = init_binding(project)
+    binding.core_version = "0.2.9"
+    save_binding(project, binding)
+    assert up.sync(project, target_version="0.3.0", assume_yes=True)["switched"] is True
+    b = load_binding(project)
+    b.previous_runtime_path = str(project / "不存在")
+    save_binding(project, b)
+    rb = up.rollback(project)
+    assert rb["rolled_back"] is False
+    assert load_binding(project).core_version == "0.3.0"

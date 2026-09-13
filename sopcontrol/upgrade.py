@@ -538,14 +538,20 @@ def rollback(root: Path) -> dict[str, Any]:
                 return {"rolled_back": False,
                         "note": f"旧 runtime 版本探针不一致（期望 {previous_version}，实际 {probed}）：保持当前版本"}
         else:
-            import subprocess as _sp, sys as _sys
+            import subprocess as _sp, sys as _sys, tempfile as _tf
             _home = _prev.parent if _prev.name in ("sopcontrol", "plugins") else _prev
-            _pr = _sp.run([_sys.executable, "-c",
-                           "import sopcontrol; print(sopcontrol.__version__)"],
-                          capture_output=True, text=True, timeout=60,
-                          env={**__import__("os").environ, "PYTHONPATH": str(_home)})
+            # 先断言路径下真有包：editable 安装下裸 import 恒真，不足为据。
+            _pkg = _prev if (_prev / "__init__.py").is_file() else _home / "sopcontrol"
+            if not (_pkg / "__init__.py").is_file():
+                raise RuntimeError(f"旧 runtime 路径下无 sopcontrol 包: {_prev}")
+            # cwd 锁空目录：只认 PYTHONPATH，否则蹭调用方 cwd 永真（测试抓到）。
+            with _tf.TemporaryDirectory() as _cd:
+                _pr = _sp.run([_sys.executable, "-c",
+                               "import sopcontrol; print(sopcontrol.__version__)"],
+                              capture_output=True, text=True, timeout=60, cwd=_cd,
+                              env={**__import__("os").environ, "PYTHONPATH": str(_home)})
             if _pr.returncode != 0:
-                raise RuntimeError(_pr.stderr.strip()[:200])
+                raise RuntimeError(_pr.stderr.strip()[:200] or "旧 runtime 不可导入")
     except Exception as exc:
         return {"rolled_back": False,
                 "note": f"旧 runtime 已不可启动，保持当前版本：{exc}"}
