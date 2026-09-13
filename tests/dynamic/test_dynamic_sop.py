@@ -550,3 +550,27 @@ def test_wp_h_session_id_reuses_file(project):
     f.parent.mkdir(parents=True, exist_ok=True)
     f.write_text("sess-pinned", encoding="utf-8")
     assert current_session_id(project) == "sess-pinned"
+
+
+def test_p0a_candidate_never_reaches_runtime_directly(project):
+    """P0-A：候选在箱内，不进 Registry，不影响选择与门控。"""
+    from sopcontrol.dynamic_sop import list_dynamic_candidates
+    rules_before = Registry(project / ".sopcontrol" / "rules" / "registry.yaml").load()
+    sel_before, _, _ = select_rules(rules_before, {"action": "a", "phase": "p"})
+    _o, cand, _ = observe_utterance(project, quote="以后纠正先台账后评分", source_ref="p0a")
+    assert cand is not None
+    assert len(list_dynamic_candidates(project)) >= 1
+    rules_after = Registry(project / ".sopcontrol" / "rules" / "registry.yaml").load()
+    assert [r.rule_id for r in rules_after] == [r.rule_id for r in rules_before]
+    sel_after, _, _ = select_rules(rules_after, {"action": "a", "phase": "p"})
+    assert [r.rule_id for r in sel_after] == [r.rule_id for r in sel_before]
+
+
+def test_p0a_dynamic_subcommands_stable(capsys):
+    """P0-A：CLI 子命令快照——删/改旧命令语义会 loud 失败。"""
+    with pytest.raises(SystemExit):
+        main(["dynamic", "--help"])
+    out = capsys.readouterr().out
+    for cmd in ("observe", "list", "confirm", "once-only", "select", "compile",
+                "session-new", "once-only-clean"):
+        assert cmd in out, cmd

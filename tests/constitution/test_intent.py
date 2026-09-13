@@ -99,3 +99,25 @@ def test_implement_utterance_clears_discuss(tmp_path):
     assert load_session_intent(root).intent == "discuss_only"
     process_conversation(root, "可以改了，开始实现")
     assert load_session_intent(root).intent == "unknown"
+
+
+def test_p0a_discuss_never_upgrades_to_rule(tmp_path):
+    """P0-A：讨论不升级——process_conversation 纯讨论零候选零规则。"""
+    from sopcontrol.intent import process_conversation
+    from sopcontrol.registry import Registry
+    assert main(["init", str(tmp_path)]) == 0
+    before = len(Registry(tmp_path / ".sopcontrol" / "rules" / "registry.yaml").load())
+    out = process_conversation(tmp_path, "我们先讨论一下方案吧\n目前只是看看，还没定")
+    assert out["candidates_added"] == 0
+    assert len(Registry(tmp_path / ".sopcontrol" / "rules" / "registry.yaml").load()) == before
+
+
+def test_p0a_permanent_intent_only_yields_candidates(tmp_path):
+    """P0-A：永久意图只生成候选，不直接写规则。"""
+    from sopcontrol.intent import process_conversation
+    from sopcontrol.registry import Registry
+    assert main(["init", str(tmp_path)]) == 0
+    before = len(Registry(tmp_path / ".sopcontrol" / "rules" / "registry.yaml").load())
+    out = process_conversation(tmp_path, "以后必须先台账后评分")
+    assert out["candidates_added"] >= 1
+    assert len(Registry(tmp_path / ".sopcontrol" / "rules" / "registry.yaml").load()) == before
