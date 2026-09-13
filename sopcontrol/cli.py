@@ -18,6 +18,10 @@ from .cli_rules import *
 from .cli_candidate import *
 from .cli_attach import *
 from .cli_coverage import *
+from .cli_surface import *
+from .bridge import MseBlocked
+from .cli_logic import *
+from .cli_dynamic import *
 from .cli_enter import *
 from .cli_effect import *
 from .cli_product import *
@@ -480,6 +484,22 @@ def build_parser() -> argparse.ArgumentParser:
                        help="外部 Policy Pack 目录（deny 拒行、ask 强制走票）")
     run_p.add_argument("--plan-digest", default="", help="绑定的冻结计划 digest")
     run_p.add_argument("--phase", default="", help="阶段级授权归属阶段")
+    run_p.add_argument("--capability-binding", default="",
+                       help="能力绑定上下文（贯穿 challenge/ticket/admit/receipt）")
+    run_p.add_argument(
+        "--plan-id", default="",
+        help="MSE：绑定冻结计划（加载其 goal/operators/policy 快照做昂贵步前置判定）",
+    )
+    run_p.add_argument(
+        "--mse-json", default="",
+        help="MSE 上下文 JSON：goal_digest/plan_step_id/operator_id/input_set_digest/"
+             "correction_revision/strategy_fingerprint/new_objects/"
+             "output_set_digest/output_cardinality/produced_fields/produced_predicates",
+    )
+    run_p.add_argument(
+        "--mse-new-objects", type=int, default=None,
+        help="MSE：本次执行实际新增有效对象数（未测量则省略，不得伪造 0）",
+    )
     run_p.add_argument(
         "command", nargs=argparse.REMAINDER,
         help="原始命令与参数（用 -- 分隔）",
@@ -495,6 +515,7 @@ def build_parser() -> argparse.ArgumentParser:
                         help="入口模板语言（默认 sh）")
     inst_p.add_argument("--plan-digest", default="", help="绑定的冻结计划 digest")
     inst_p.add_argument("--phase", default="", help="阶段级授权归属阶段")
+    inst_p.add_argument("--capability-binding", default="", help="能力绑定上下文（写入入口 flags）")
     inst_p.add_argument("command", nargs=argparse.REMAINDER, help="原始命令与参数（用 -- 分隔）")
     inst_p.set_defaults(func=cmd_bridge_install)
     rm_p = bridge_sub.add_parser("remove", help="按回滚清单移除 launcher/scaffold")
@@ -510,6 +531,11 @@ def build_parser() -> argparse.ArgumentParser:
     ch_p.add_argument("--task-id", default="")
     ch_p.add_argument("--plan-digest", default="")
     ch_p.add_argument("--phase", default="")
+    ch_p.add_argument("--capability-binding", default="", help="能力绑定上下文（写入票据与 handoff）")
+    ch_p.add_argument("--plan-id", default="",
+                      help="MSE：绑定冻结计划（昂贵步前置判定；block 模式下阻断签发）")
+    ch_p.add_argument("--mse-json", default="",
+                      help="MSE 上下文 JSON（plan_step_id/operator_id/input_set_digest 等）")
     ch_p.add_argument("--format", default="json", choices=["json", "export"],
                       help="export 只打印 export SOPCTL_TICKET_FILE=…（供 wrapper eval）")
     ch_p.add_argument("command", nargs=argparse.REMAINDER, help="待执行命令（算指纹用）")
@@ -521,6 +547,7 @@ def build_parser() -> argparse.ArgumentParser:
     ad_p.add_argument("--task-id", default="")
     ad_p.add_argument("--plan-digest", default="")
     ad_p.add_argument("--phase", default="")
+    ad_p.add_argument("--capability-binding", default="", help="能力绑定上下文（与签发时不一致即拒绝）")
     ad_p.add_argument("--ticket-file", default="",
                       help="handoff 文件（默认 $SOPCTL_TICKET_FILE）")
     ad_p.add_argument("--root", default="",
@@ -682,6 +709,141 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--expected", required=True)
     p.add_argument("--scope", default="project")
     p.set_defaults(func=cmd_candidate)
+
+    dynamic = sub.add_parser(
+        "dynamic", help="动态 SOP：原话捕获 → 候选 → 确认（永久保存，无 TTL）")
+    dynamic_sub = dynamic.add_subparsers(dest="sub", required=True)
+    p = dynamic_sub.add_parser("observe", help="捕获用户原话为候选（不打断工作）")
+    p.add_argument("--quote", required=True, help="用户原话（逐字保留）")
+    p.add_argument("--source-ref", required=True, help="出处引用（会话/文档）")
+    p.add_argument("--action", default="", help="上下文：动作")
+    p.add_argument("--phase", default="", help="上下文：阶段")
+    p.add_argument("--product", default="", help="上下文：产品")
+    p.add_argument("--suggested", default="", help="模型结构化建议 JSON（无权威）")
+    p.add_argument("path", nargs="?", default=".")
+    p.set_defaults(func=cmd_dynamic)
+    p = dynamic_sub.add_parser("list", help="列出动态 SOP 候选")
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_dynamic)
+    p = dynamic_sub.add_parser("confirm", help="确认卡片：四选一")
+    p.add_argument("candidate_id")
+    p.add_argument("--decision", required=True,
+                   choices=["keep_longterm", "edit_keep_longterm", "once_only", "not_a_rule"])
+    p.add_argument("--statement", default="", help="edit：修改后的规则陈述")
+    p.add_argument("--rule-id", default="", help="指定规则 id（默认 DR-<hash>）")
+    p.add_argument("--activation", default="", help="激活选择器 JSON（actions/phases/...）")
+    p.add_argument("--flexibility", default="", help="弹性 JSON（lower_bound/max_correction_rounds/...）")
+    p.add_argument("path", nargs="?", default=".")
+    p.set_defaults(func=cmd_dynamic)
+    p = dynamic_sub.add_parser("once-only", help="查看会话级临时指令（不进永久空间）")
+    p.add_argument("path", nargs="?", default=".")
+    p.set_defaults(func=cmd_dynamic)
+    p = dynamic_sub.add_parser("select", help="按上下文选择动态规则（JSON：selected/not_applicable/unproven）")
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--action", default="")
+    p.add_argument("--phase", default="")
+    p.add_argument("--product", default="")
+    p.add_argument("--artifact-kind", default="")
+    p.add_argument("--actor", default="")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_dynamic)
+
+    sync_p = sub.add_parser("sync", help="一体化升级：语义 diff + 影子验证 + 原子切换")
+    sync_p.add_argument("path", nargs="?", default=".")
+    sync_p.add_argument("--target-version", default="", help="目标版本（默认当前安装）")
+    sync_p.add_argument("--yes", action="store_true", help="确认语义变化（major/语义 diff 时必需）")
+    sync_p.set_defaults(func=cmd_sync)
+    rb_p = sub.add_parser("rollback", help="回滚到上一可回滚 runtime（规则数据不动）")
+    rb_p.add_argument("path", nargs="?", default=".")
+    rb_p.set_defaults(func=cmd_rollback)
+
+    logic = sub.add_parser(
+        "logic", help="MSE：目标/操作契约、计划判定、沿袭与成本（纯判定，无模型调用）")
+    logic_sub = logic.add_subparsers(dest="sub", required=True)
+    p = logic_sub.add_parser("goal", help="校验 GoalContract 声明")
+    p.add_argument("file", help="GoalContract YAML 文件")
+    p.add_argument("path", nargs="?", default=".")
+    p.set_defaults(func=cmd_logic)
+    p = logic_sub.add_parser("operator", help="操作契约：validate/candidates/accept")
+    operator_sub = p.add_subparsers(dest="operator_action", required=True)
+    q = operator_sub.add_parser("validate", help="校验 operator 声明 YAML")
+    q.add_argument("file", help="单契约或含 operators 列表的 YAML")
+    q.add_argument("path", nargs="?", default=".")
+    q.set_defaults(func=cmd_logic)
+    q = operator_sub.add_parser("candidates", help="列出生成的 operator 候选（无授权力）")
+    q.add_argument("path", nargs="?", default=".")
+    q.set_defaults(func=cmd_logic)
+    q = operator_sub.add_parser("accept", help="显式确认候选（必须提供完整契约 YAML）")
+    q.add_argument("suggested_operator_id")
+    q.add_argument("file", help="完整 OperatorContract YAML（SOP Control 不发明业务依赖）")
+    q.add_argument("path", nargs="?", default=".")
+    q.set_defaults(func=cmd_logic)
+    p = logic_sub.add_parser("plan", help="判定执行计划（check/freeze）")
+    p.add_argument("file", help="ExecutionPlan YAML 文件")
+    p.add_argument("--goal", default="", help="GoalContract YAML（缺省按 unbound 最小目标）")
+    p.add_argument("--declaration", default="", help="产品声明 YAML（提供 operators/gates）")
+    p.add_argument("--mode", default="observe", choices=["observe", "warn", "block"])
+    p.add_argument("--freeze", action="store_true", help="非 block 时冻结计划与判定")
+    p.add_argument("path", nargs="?", default=".")
+    p.set_defaults(func=cmd_logic)
+    p = logic_sub.add_parser("lineage", help="沿袭 show/trace/verify")
+    lineage_sub = p.add_subparsers(dest="lineage_sub", required=True)
+    q = lineage_sub.add_parser("show", help="显示集合沿袭摘要")
+    q.add_argument("set_id")
+    q.add_argument("path", nargs="?", default=".")
+    q.set_defaults(func=cmd_logic)
+    q = lineage_sub.add_parser("trace", help="沿 parent 链向上追全部集合")
+    q.add_argument("set_id")
+    q.add_argument("path", nargs="?", default=".")
+    q.set_defaults(func=cmd_logic)
+    q = lineage_sub.add_parser("verify", help="校验沿袭不变量（谓词证明/基数/过期）")
+    q.add_argument("set_id")
+    q.add_argument("path", nargs="?", default=".")
+    q.set_defaults(func=cmd_logic)
+    p = logic_sub.add_parser("costs", help="任务成本账目（receipt 聚合）")
+    p.add_argument("task_id")
+    p.add_argument("path", nargs="?", default=".")
+    p.set_defaults(func=cmd_logic)
+
+    surface = sub.add_parser(
+        "surface",
+        help="Surface Inventory：执行表面发现/覆盖/候选（无授权力；accept 显式定型）",
+    )
+    surface_sub = surface.add_subparsers(dest="sub", required=True)
+    p = surface_sub.add_parser("refresh", help="增量发现执行表面（digest 未变不重扫）")
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--force", action="store_true", help="忽略缓存强制重扫")
+    p.set_defaults(func=cmd_surface)
+    p = surface_sub.add_parser("list", help="列出 surface 记录")
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--status", choices=["observed", "mapped", "governed", "candidate",
+                                        "ambiguous", "gap", "waived", "retired", "blocked"])
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_surface)
+    p = surface_sub.add_parser("show", help="显示单条 surface 及其可解释 diff")
+    p.add_argument("surface_id")
+    p.add_argument("path", nargs="?", default=".")
+    p.set_defaults(func=cmd_surface)
+    p = surface_sub.add_parser("coverage", help="覆盖三数字 + 高影响未覆盖（§8.2）")
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_surface)
+    p = surface_sub.add_parser(
+        "accept",
+        help="显式定型：candidate→governed（经 Registry 正规生命周期产生规则 revision）",
+    )
+    p.add_argument("surface_id", help="surface id（sopctl surface list 查看）")
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--rule-id", default="", help="指定规则 id（默认 SURF-<hash>）")
+    p.add_argument("--statement", default="", help="规则陈述（默认由 surface 语义生成）")
+    p.add_argument("--modality", default="MUST", choices=["MUST", "MUST_NOT", "SHOULD", "MAY"])
+    p.set_defaults(func=cmd_surface)
+    p = surface_sub.add_parser("waive", help="显式豁免：必须给出可追溯理由")
+    p.add_argument("surface_id", help="surface id（sopctl surface list 查看）")
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--reason", required=True)
+    p.set_defaults(func=cmd_surface)
 
     p = sub.add_parser(
         "bootstrap",
@@ -888,6 +1050,19 @@ def cmd_bridge(args) -> int:
     command = list(args.command)
     while command and command[0] == "--":
         command.pop(0)
+    mse = {}
+    raw_mse = getattr(args, "mse_json", "") or ""
+    if raw_mse:
+        try:
+            parsed = _json.loads(raw_mse)
+            if not isinstance(parsed, dict):
+                raise ValueError("必须是 JSON 映射")
+            mse = parsed
+        except ValueError as exc:
+            print(f"错误: --mse-json 非法: {exc}", file=sys.stderr)
+            return 2
+    if getattr(args, "mse_new_objects", None) is not None:
+        mse["new_objects"] = args.mse_new_objects
     receipt = run_bridge(
         root,
         integration_id=args.integration_id,
@@ -898,9 +1073,14 @@ def cmd_bridge(args) -> int:
         policy_pack=getattr(args, "policy_pack", "") or "",
         effective_plan_digest=getattr(args, "plan_digest", "") or "",
         phase=getattr(args, "phase", "") or "",
+        capability_binding=getattr(args, "capability_binding", "") or "",
+        mse=mse,
+        plan_id=getattr(args, "plan_id", "") or "",
     )
     printable = {k: v for k, v in receipt.items() if k != "ticket_model"}
     print(_json.dumps(printable, ensure_ascii=False, indent=2, default=str))
+    if receipt.get("logic", {}).get("outcome") == "block":
+        return 1
     return 0 if receipt.get("executed") else 1
 
 
@@ -923,13 +1103,32 @@ def cmd_bridge_challenge(args) -> int:
     if not command:
         print("错误: challenge 需要命令（算指纹用）", file=sys.stderr)
         return 2
-    issued = challenge_admission(
-        _Path.cwd(), integration_id=args.integration_id, action=args.action,
-        argv=command, side_effect=args.side_effect,
-        task_id=args.task_id or "",
-        effective_plan_digest=getattr(args, "plan_digest", "") or "",
-        phase=getattr(args, "phase", "") or "",
-    )
+    mse = {}
+    raw_mse = getattr(args, "mse_json", "") or ""
+    if raw_mse:
+        try:
+            parsed = _json.loads(raw_mse)
+            if not isinstance(parsed, dict):
+                raise ValueError("必须是 JSON 映射")
+            mse = parsed
+        except ValueError as exc:
+            print(f"错误: --mse-json 非法: {exc}", file=sys.stderr)
+            return 2
+    try:
+        issued = challenge_admission(
+            _Path.cwd(), integration_id=args.integration_id, action=args.action,
+            argv=command, side_effect=args.side_effect,
+            task_id=args.task_id or "",
+            effective_plan_digest=getattr(args, "plan_digest", "") or "",
+            phase=getattr(args, "phase", "") or "",
+            capability_binding=getattr(args, "capability_binding", "") or "",
+            mse=mse,
+            plan_id=getattr(args, "plan_id", "") or "",
+        )
+    except MseBlocked as exc:
+        print(_json.dumps({"blocked": True, "logic": exc.evaluation},
+                          ensure_ascii=False, indent=2, default=str))
+        return 1
     if getattr(args, "format", "json") == "export":
         import shlex as _shlex
 
@@ -965,6 +1164,7 @@ def cmd_bridge_admit(args) -> int:
             task_id=args.task_id or "",
             expected_plan_digest=getattr(args, "plan_digest", "") or "",
             expected_phase=getattr(args, "phase", "") or "",
+            capability_binding=getattr(args, "capability_binding", "") or "",
         )
     except TicketError as exc:
         print(f"admit 拒绝: {exc}", file=sys.stderr)
@@ -994,6 +1194,7 @@ def cmd_bridge_install(args) -> int:
         side_effect=args.side_effect or "", task_id=args.task_id or "",
         plan_digest=getattr(args, "plan_digest", "") or "",
         phase=getattr(args, "phase", "") or "",
+        capability_binding=getattr(args, "capability_binding", "") or "",
     )
     print(_json.dumps(installed, ensure_ascii=False, indent=2, default=str))
     return 0
