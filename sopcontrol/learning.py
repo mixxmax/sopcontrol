@@ -546,3 +546,61 @@ def decide_proposal(root: Path | str, proposal: LearningProposal,
     _rewrite_proposal(root, decided)
     result["status"] = decided.status
     return result
+
+
+# ---------------------------------------------------------------------------
+# P1-E：宿主通知 Adapter（结构化接口 + CLI/JSON 可测实现）
+# ---------------------------------------------------------------------------
+
+class NotifyPayload(BaseModel):
+    """提醒内容：只读快照，不含可执行指令。"""
+    model_config = _STRICT
+
+    proposal_id: str
+    statement: str
+    scope_summary: str = ""
+    route_hint: str = "defer"
+    actions: list[str] = Field(
+        default_factory=lambda: ["control", "document", "once_only", "defer", "reject"])
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class NotifyAdapter:
+    """最小结构化通知接口。"""
+    name: str = "base"
+
+    def notify(self, root: Path | str, payload: NotifyPayload) -> dict[str, Any]:
+        raise NotImplementedError
+
+
+class CliJsonAdapter(NotifyAdapter):
+    """CLI/JSON 实现：本地 outbox 追加（可测）。不是弹窗——无真实宿主不断言送达。"""
+    name: str = "cli-json"
+
+    def notify(self, root: Path | str, payload: NotifyPayload) -> dict[str, Any]:
+        import json
+        root = Path(root)
+        d = root / ".sopcontrol-local" / "learning"
+        d.mkdir(parents=True, exist_ok=True)
+        path = d / "notifications.jsonl"
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(payload.model_dump_json() + "\n")
+        return {"adapter": self.name, "delivered_to_ui": False,
+                "outbox": str(path),
+                "note": "已入本地待办；无真实宿主 UI，未声称弹窗"}
+
+
+class HostUiAdapter(NotifyAdapter):
+    """真实宿主 UI 位：无可接入宿主，标 UNPROVEN。"""
+    name: str = "host-ui-unproven"
+
+    def notify(self, root: Path | str, payload: NotifyPayload) -> dict[str, Any]:
+        raise RuntimeError("UNPROVEN：无真实宿主可接入，弹窗能力未证明")
+
+
+def payload_from_proposal(proposal: LearningProposal, *,
+                          route_hint: str = "defer") -> NotifyPayload:
+    return NotifyPayload(proposal_id=proposal.proposal_id,
+                         statement=proposal.statement,
+                         scope_summary=proposal.scope_summary,
+                         route_hint=route_hint)

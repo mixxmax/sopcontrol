@@ -263,3 +263,19 @@ def test_p1d_document_both_once_only_defer_reject(project):
     with _pt.raises(ValueError, match="已定案"):
         decide_proposal(project, done, ProposalDecision(proposal_id=done.proposal_id, route="reject"))
     assert list_proposals(project, status="proposed") == []  # 被拒 control 未落盘
+
+
+def test_p1e_cli_json_outbox_and_unproven_host(project):
+    from sopcontrol.learning import (CliJsonAdapter, HostUiAdapter,
+                                     LearningProposal, NotifyPayload,
+                                     payload_from_proposal)
+    import pytest as _pt
+    p = LearningProposal(window_id="w", statement="先台账", scope_summary="筛选",
+                         non_goals=["n"])
+    payload = payload_from_proposal(p, route_hint="suggest")
+    assert payload.actions == ["control", "document", "once_only", "defer", "reject"]
+    out = CliJsonAdapter().notify(project, payload)
+    assert out["delivered_to_ui"] is False  # 不冒充送达
+    assert "先台账" in (project / ".sopcontrol-local" / "learning" / "notifications.jsonl").read_text(encoding="utf-8")
+    with _pt.raises(RuntimeError, match="UNPROVEN"):
+        HostUiAdapter().notify(project, payload)
