@@ -242,3 +242,81 @@ def aggregate_window(events: list[LearningEvent], window: LearningWindow,
     return EvidenceBundle(window_id=window.window_id, events=kept, topics=topics,
                           conflicts=conflicts, related_rule_ids=sorted(set(related)),
                           pruned_count=pruned)
+
+
+# ---------------------------------------------------------------------------
+# P1-B：确定性触发器（纯函数；阈值集中一处）
+# ---------------------------------------------------------------------------
+
+_HIGH_SIGNALS = ("以后必须", "以后不得", "永久", "always must", "must never")
+_MID_SIGNALS = ("纠正", "更正", "应该", "不应该", "不要", "改为", "必须", "范围")
+_LOW_SIGNALS = ("也许", "可能", "考虑", "顺便")
+
+
+class TriggerConfig(BaseModel):
+    """P1-B：全部阈值集中在此，行为可测。"""
+    model_config = _STRICT
+
+    repeat_escalation: int = 2          # 同一主题出现 N 次→升级
+    high_immediate: bool = True         # 高价值信号可在自然边界立即提炼
+    once_only_never_permanent: bool = True
+    dedupe_popups: bool = True          # 同一指纹不重复弹窗
+
+
+class TriggerDecision(BaseModel):
+    model_config = _STRICT
+
+    fire: bool = False
+    level: str = "none"  # none/defer/suggest/immediate
+    reason: str = ""
+    fingerprint: str = ""
+    forces_permanent: bool = False  # 恒 False：触发器永不强制（§5.4）
+
+
+def _signal_level(text: str) -> str:
+    t = str(text)
+    if any(s in t for s in _HIGH_SIGNALS):
+        return "high"
+    if any(s in t for s in _MID_SIGNALS):
+        return "mid"
+    if any(s in t for s in _LOW_SIGNALS):
+        return "low"
+    return "none"
+
+
+def evaluate_trigger(bundle: EvidenceBundle, *,
+                     config: TriggerConfig | None = None,
+                     seen_fingerprints: set[str] | None = None,
+                     has_conflict: bool = False) -> TriggerDecision:
+    """P1-B：普通聊天不触发；一次纠正延后；重复升级；同指纹不重弹；冲突不强制。"""
+    config = config or TriggerConfig()
+    seen = seen_fingerprints or set()
+    texts = " ".join(e.text for e in bundle.events)
+    if not texts.strip():
+        return TriggerDecision(fire=False, level="none", reason="空窗口")
+    if config.once_only_never_permanent and all(
+            "仅本次" in e.text or "只针对这次" in e.text for e in bundle.events):
+        return TriggerDecision(fire=False, level="none", reason="仅本次不进入永久")
+    level = _signal_level(texts)
+    if level == "none":
+        return TriggerDecision(fire=False, level="none", reason="普通聊天无信号")
+    if has_conflict or bundle.conflicts:
+        fp = "trig-" + content_hash({"w": bundle.window_id, "t": "conflict"})[:16]
+        return TriggerDecision(fire=True, level="suggest",
+                               reason="冲突提案只建议，不强制", fingerprint=fp,
+                               forces_permanent=False)
+    reps = max((len(bundle.topics), 1))
+    count = len(bundle.events)
+    fp = "trig-" + content_hash(
+        {"w": bundle.window_id, "topics": sorted(bundle.topics)})[:16]
+    if config.dedupe_popups and fp in seen:
+        return TriggerDecision(fire=False, level="none",
+                               reason="同一指纹已提醒过", fingerprint=fp)
+    if level == "high" and config.high_immediate:
+        return TriggerDecision(fire=True, level="immediate",
+                               reason="高价值信号", fingerprint=fp)
+    if level == "mid" and count >= config.repeat_escalation:
+        return TriggerDecision(fire=True, level="suggest",
+                               reason=f"重复纠正升级（{count} 次）", fingerprint=fp)
+    return TriggerDecision(fire=False, level="defer",
+                           reason="一次纠正延后到阶段边界", fingerprint=fp)

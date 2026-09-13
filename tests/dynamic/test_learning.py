@@ -110,3 +110,50 @@ def test_p1a_empty_and_desensitize(project):
     assert b.pruned_count == 1 and len(b.events) == 1
     assert "a@b.com" not in b.events[0].text and "abc123" not in b.events[0].text
     assert "sk-live-abc" not in b.events[0].text
+
+
+def _bundle(texts, task="T"):
+    from sopcontrol.learning import aggregate_window, open_window
+    w = open_window(task_id=task)
+    evs = [LearningEvent(kind="utterance", text=t, task_id=task) for t in texts]
+    return aggregate_window(evs, w)
+
+
+def test_p1b_ordinary_chat_never_fires():
+    from sopcontrol.learning import evaluate_trigger
+    d = evaluate_trigger(_bundle(["今天天气不错", "这个方案看看"]))
+    assert d.fire is False and d.level == "none"
+
+
+def test_p1b_single_correction_deferred():
+    from sopcontrol.learning import evaluate_trigger
+    d = evaluate_trigger(_bundle(["这个地方纠正一下应该先台账"]))
+    assert d.fire is False and d.level == "defer"
+
+
+def test_p1b_repeated_correction_escalates():
+    from sopcontrol.learning import evaluate_trigger
+    d = evaluate_trigger(_bundle(["纠正：应该先台账", "再次纠正：应该先台账"]))
+    assert d.fire is True and d.level == "suggest"
+
+
+def test_p1b_once_only_never_permanent():
+    from sopcontrol.learning import evaluate_trigger
+    d = evaluate_trigger(_bundle(["仅本次跳过检查", "只针对这次特事特办"]))
+    assert d.fire is False
+
+
+def test_p1b_same_fingerprint_no_repeat_popup():
+    from sopcontrol.learning import evaluate_trigger
+    b = _bundle(["以后必须先台账后评分"])
+    first = evaluate_trigger(b)
+    assert first.fire is True and first.level == "immediate"
+    second = evaluate_trigger(b, seen_fingerprints={first.fingerprint})
+    assert second.fire is False
+
+
+def test_p1b_conflict_never_forced():
+    from sopcontrol.learning import evaluate_trigger
+    b = _bundle(["以后必须先台账", "以后不得先台账"])
+    d = evaluate_trigger(b)
+    assert d.fire is True and d.level == "suggest" and d.forces_permanent is False
