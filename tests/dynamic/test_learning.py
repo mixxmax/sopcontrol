@@ -335,3 +335,27 @@ def test_p2b_doc_preserves_user_content_and_sop(tmp_path):
         bad = tmp_path / "bad.md"
         bad.write_text("<!-- sopcontrol:v1 -->\n<!-- learn:begin -->\nx\n<!-- learn:end -->\n<!-- /sopcontrol:v1 -->\n", encoding="utf-8")
         _lm.write_doc_section(bad, ["y"])
+
+
+def test_p2c_budget_degrades_never_blocks():
+    from sopcontrol.learning import (LearningBudget, LearningMetrics, check_budget)
+    ok, _ = check_budget(LearningMetrics(events=3, windows=1))
+    assert ok is True
+    ok, why = check_budget(LearningMetrics(events=200, windows=1))
+    assert ok is False and "事件超限" in why
+    ok, why = check_budget(LearningMetrics(events=1, windows=5))
+    assert ok is False and "窗口超限" in why
+    ok, why = check_budget(LearningMetrics(events=1, windows=1, distills=3))
+    assert ok is False and "提炼调用超限" in why
+    assert LearningBudget().max_proposals_per_window == 3
+
+
+def test_p2c_diagnose_read_only(project):
+    from sopcontrol.learning import (LearningProposal, learning_diagnose,
+                                     save_proposals)
+    d0 = learning_diagnose(project)
+    assert d0["proposals_total"] == 0 and d0["llm_tokens"] == 0
+    save_proposals(project, [LearningProposal(window_id="w", statement="s",
+                                              scope_summary="sc", non_goals=["n"])])
+    d1 = learning_diagnose(project)
+    assert d1["proposals_total"] == 1 and d1["decision_rate"] == 0.0

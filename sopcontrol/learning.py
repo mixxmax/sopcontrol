@@ -734,3 +734,67 @@ def external_change_to_proposal_input(doc_path: Path | str,
                                   LEARN_SECTION_START, LEARN_SECTION_END)
     return {"statement": section.strip()[:500], "source_ref": f"doc:{path}",
             "scope_summary": "", "non_goals": ["待补充"]}
+
+
+# ---------------------------------------------------------------------------
+# P2-C：成本、降级与可观测性（学习永不阻塞无关任务）
+# ---------------------------------------------------------------------------
+
+class LearningBudget(BaseModel):
+    """P2-C：调用预算（纯数据；超限即降级，不抛错、不阻断）。"""
+    model_config = _STRICT
+
+    max_events_per_task: int = 200
+    max_windows_per_task: int = 5
+    max_distills_per_window: int = 3
+    max_proposals_per_window: int = 3
+
+
+class LearningMetrics(BaseModel):
+    """P2-C §13.5 度量（计数器；token 项恒零——本层无模型调用）。"""
+    model_config = _STRICT
+
+    events: int = 0
+    windows: int = 0
+    distills: int = 0
+    distill_fallbacks: int = 0
+    proposals: int = 0
+    notifies: int = 0
+    decisions: dict[str, int] = Field(default_factory=dict)
+    llm_tokens_in: int = 0
+    llm_tokens_out: int = 0
+
+
+def check_budget(metrics: LearningMetrics,
+                 budget: LearningBudget | None = None) -> tuple[bool, str]:
+    """超限→(False, 原因)；调用方降级跳过，绝不抛。"""
+    budget = budget or LearningBudget()
+    if metrics.events >= budget.max_events_per_task:
+        return False, f"事件超限（{metrics.events}≥{budget.max_events_per_task}）：跳过本轮提炼"
+    if metrics.windows >= budget.max_windows_per_task:
+        return False, f"窗口超限（{metrics.windows}≥{budget.max_windows_per_task}）：不再开窗"
+    if metrics.distills >= budget.max_distills_per_window * max(metrics.windows, 1):
+        return False, "提炼调用超限：本窗口不再调用 Distiller"
+    return True, ""
+
+
+def learning_diagnose(root: Path | str) -> dict[str, Any]:
+    """诊断命令数据：提案状态分布/outbox 深度/预算态。只读，不改判定。"""
+    root = Path(root)
+    proposals = list_proposals(root)
+    by_status: dict[str, int] = {}
+    for p in proposals:
+        by_status[p.status] = by_status.get(p.status, 0) + 1
+    outbox = root / ".sopcontrol-local" / "learning" / "notifications.jsonl"
+    depth = 0
+    if outbox.is_file():
+        depth = sum(1 for line in outbox.read_text(encoding="utf-8").splitlines()
+                    if line.strip())
+    decided = sum(by_status.get(s, 0) for s in ("confirmed", "deferred", "rejected"))
+    total = len(proposals)
+    return {"proposals_total": total, "by_status": by_status,
+            "notify_outbox_depth": depth,
+            "popup_rate": "UNPROVEN（无真实宿主）",
+            "decision_rate": (decided / total if total else 0.0),
+            "llm_tokens": 0,
+            "note": "学习为本地低流量路径；超限只降级跳过，不阻塞任务"}
