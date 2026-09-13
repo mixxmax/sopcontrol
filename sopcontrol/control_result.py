@@ -13,7 +13,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from .control_profile import FrozenPlan
+from .control_profile import ControlProfile, FrozenPlan
 
 Outcome = Literal["pass", "pass_with_warnings", "block", "not_run", "unknown"]
 FindingSeverity = Literal["blocking", "tolerated", "advisory", "out_of_scope"]
@@ -44,6 +44,9 @@ class ResultProducer(BaseModel):
 class ControlResult(BaseModel):
     result_id: str
     task_id: str = ""
+    phase: str = ""
+    operation_id: str = ""
+    run_id: str = ""
     profile_id: str = ""
     profile_revision: int = 0
     effective_plan_digest: str = ""
@@ -58,7 +61,12 @@ class ControlResult(BaseModel):
     rounds_used: int = 0
     stop_reason: str = ""
     producer: ResultProducer = Field(default_factory=ResultProducer)
+    postconditions: list[str] = Field(default_factory=list)  # B6：结果证据中已满足的后置条件 id（空=未声明）
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    # §11.1（WP-5）：check_id 是检查的显式身份，绝不允许从 checked_dimensions
+    # 或其他字段自动猜测填充。缺失/空白由 decide_control_result / idempotency_key
+    # 拒绝（unknown / ValueError），不得伪造成可被后续阶段接受的结果。
 
 
 class Evaluation(BaseModel):
@@ -85,25 +93,32 @@ class GateState(BaseModel):
     evidence_ids: set[str] = Field(default_factory=set)
     audits_used: int = 0
     repair_rounds_used: int = 0
+    task_already_passed: bool = False
     now_iso: str = ""
+    expected_phase: str = ""
+    expected_operation_id: str = ""
+    expected_run_id: str = ""
+    expected_required_postconditions: list[str] = Field(default_factory=list)  # B6：期望的后置条件（空=不绑定，保兼容）
 
 
 IDEM_SCHEMA_VERSION = "1"
 
 
 def idempotency_key(result: ControlResult) -> str:
-    """§7.3/§9.3：input + baseline + plan + check_id + schema（任一变化即新键）。
-
-    check_id 缺失时回落 checked 集合（旧结果兼容，行为不变）。
-    """
-    checks = sorted(result.checked_dimensions)
+    """§7.3/§9.3：input + baseline + plan + check_id + task + phase + op + schema。"""
+    if not (result.check_id and str(result.check_id).strip()):
+        raise ValueError("check_id 不能为空")
     raw = json.dumps({
         "schema": IDEM_SCHEMA_VERSION,
+        "task_id": result.task_id,
+        "phase": result.phase,
+        "operation_id": result.operation_id or result.run_id,
+        "run_id": result.run_id,
         "input": result.input_digest,
         "baseline": result.baseline_digest,
         "plan": result.effective_plan_digest,
         "check": result.check_id,
-        "checked": checks,
+        "checked": sorted(result.checked_dimensions),
     }, ensure_ascii=False, sort_keys=True)
     return "idem-" + hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
 
@@ -225,11 +240,17 @@ def control_costs(root: Path | str) -> dict[str, Any]:
 
 def _parse_time(value: Any) -> datetime | None:
     if isinstance(value, datetime):
-        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        if value.tzinfo is None:
+            return None
+        return value.astimezone(timezone.utc)
     try:
-        text = str(value or "")
-        dt = datetime.fromisoformat(text.replace("Z", "+00:00")) if text else None
-        return dt if dt is None or dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+        text = str(value or "").strip()
+        if not text:
+            return None
+        dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            return None
+        return dt.astimezone(timezone.utc)
     except ValueError:
         return None
 
@@ -267,6 +288,22 @@ def decide_control_result(result: ControlResult, frozen: FrozenPlan,
     优先序固定：协议违规 > 缺失 > 阻断 > 警告 > 通过。I/O（消费/复用/账本）
     由调用方按返回 outcome 执行，本函数只裁决。
     """
+    if not (result.check_id and str(result.check_id).strip()):
+        return Evaluation(
+            outcome="unknown",
+            reasons=["check_id 不能为空：结果必须明确绑定具体检查项"],
+            next_action="指定 check_id 后重跑检查并求值",
+            idempotency_key="",
+            result_id=result.result_id,
+        )
+    if not (result.effective_plan_digest and str(result.effective_plan_digest).strip()):
+        return Evaluation(
+            outcome="unknown",
+            reasons=["effective_plan_digest 不能为空：结果必须绑定具体生效计划"],
+            next_action="指定 effective_plan_digest 后重跑求值",
+            idempotency_key="",
+            result_id=result.result_id,
+        )
     key = idempotency_key(result)
     reasons: list[str] = []
 
@@ -288,10 +325,27 @@ def decide_control_result(result: ControlResult, frozen: FrozenPlan,
     if scope_task and result.task_id != scope_task:
         return done("unknown", f"结果 task {result.task_id!r} 不属于当前任务 {scope_task!r}",
                     "用当前任务重跑检查并求值")
+    # phase 与 operation/run 绑定检查
+    if state.expected_phase and result.phase != state.expected_phase:
+        return done("unknown", f"结果 phase {result.phase!r} 与预期 phase {state.expected_phase!r} 不一致",
+                    "核对 phase 后重新求值")
+    scope_phase = frozen.profile.scope.phase
+    if scope_phase:
+        if not result.phase or result.phase != scope_phase:
+            return done("unknown", f"结果缺少或不匹配计划 scope phase {scope_phase!r}（实际为 {result.phase!r}）",
+                        "在计划对应的 phase 中求值")
+    if state.expected_operation_id and result.operation_id != state.expected_operation_id:
+        return done("unknown",
+                    f"结果 operation_id {result.operation_id!r} 与预期 operation_id {state.expected_operation_id!r} 不一致",
+                    "核对 operation 后重新求值")
+    if state.expected_run_id and result.run_id != state.expected_run_id:
+        return done("unknown", f"结果 run_id {result.run_id!r} 与预期 run_id {state.expected_run_id!r} 不一致",
+                    "核对 run 后重新求值")
     # 任务契约绑定（§9.2/§13.1）：结果计划必须与 open 声明一致；组合计划比 task 层。
     if state.binding_digest:
-        task_layer = frozen.layers.get("task_digest", frozen.digest) \
-            if hasattr(frozen, "layers") else frozen.digest
+        from .control_profile import extract_task_digest
+
+        task_layer = extract_task_digest(frozen)
         if (result.profile_id != state.binding_profile
                 or result.profile_revision != state.binding_revision
                 or task_layer != state.binding_digest):
@@ -309,10 +363,10 @@ def decide_control_result(result: ControlResult, frozen: FrozenPlan,
         exp = _parse_time(expires)
         now = _parse_time(state.now_iso) if state.now_iso else None
         if exp is None:
-            return done("unknown", "expires_at 无法解析为绝对时间：不能证明有效",
+            return done("unknown", "expires_at 无法解析为绝对时间或缺少时区：不能证明有效",
                         "修正 profile expires_at 后重新冻结求值")
         if now is None:
-            return done("unknown", "判定缺可信 now：不能证明未过期",
+            return done("unknown", "判定缺可信 now 或 now 缺少时区：不能证明未过期",
                         "带可信时间重跑求值")
         if now >= exp:
             return done("unknown", "profile 已过期：结果失效",
@@ -372,8 +426,9 @@ def decide_control_result(result: ControlResult, frozen: FrozenPlan,
         return done("unknown", f"结果 {result.result_id} 已消费：拒绝重放",
                     "用新 result_id 重新执行检查")
     # §7.3/§10.2：同幂等键已有有效结果即复用（一次编译，多次执行）。
+    # recheck_unchanged_input=True 表示更严格：即使输入未变也强制重检，不复用缓存
     cached = state.cached
-    if cached is not None and cached.get("outcome") in (
+    if not frozen.profile.repair.recheck_unchanged_input and cached is not None and cached.get("outcome") in (
         "pass", "pass_with_warnings", "block",
     ):
         reused = [f"复用幂等结果 {cached.get('cached_result_id')}（本次未消耗审计调用）"]
@@ -381,6 +436,10 @@ def decide_control_result(result: ControlResult, frozen: FrozenPlan,
         return Evaluation(outcome=cached["outcome"], reasons=reused,
                           next_action="复用既有结论，无需动作", reused=True,
                           idempotency_key=key, result_id=result.result_id)
+    # stop_after_pass：通过后停止，不再接受后续修正或调用
+    if frozen.profile.repair.stop_after_pass and state.task_already_passed:
+        return done("block", "已达停止条件 stop_after_pass：任务此前已通过，不再接受额外修正或调用",
+                    "开新任务或接受现状")
     # §6.3：required 缺失 → not_run（未知不解释成通过）。
     required = set(frozen.profile.checks.required)
     checked = set(result.checked_dimensions)
@@ -398,6 +457,13 @@ def decide_control_result(result: ControlResult, frozen: FrozenPlan,
         if f.dimension in excluded and f.severity == "blocking":
             return done("block", f"excluded 维度 {f.dimension} 带 blocking finding：协议违规",
                         "去掉 excluded 维度的 blocking 发现后重新求值")
+    # B6：后置条件门——仅非空时比对；空=不绑定，存量结果不受影响。
+    if state.expected_required_postconditions:
+        missing_post = [p for p in state.expected_required_postconditions
+                        if p not in set(result.postconditions)]
+        if missing_post:
+            return done("unknown", f"后置条件缺失: {missing_post}",
+                        "补满足后置条件后重新求值")
     # 预算（§8.1 计数约定：round 0=首次未耗轮）。
     # 越界（已用>上限）恒 block；等于上限时只有 blocking 才 block（干净=修好了）。
     stop_when = set(frozen.profile.stop_when or ["pass"])
@@ -475,6 +541,8 @@ def _scan_consumed(root: Path) -> list[dict[str, Any]]:
 def evaluate_control_result(
     root: Path | str, result: ControlResult, frozen: FrozenPlan,
     *, task_id: str = "", run_override: dict[str, Any] | None = None,
+    base_profile: ControlProfile | None = None,
+    actor_snapshot: dict[str, Any] | None = None,
 ) -> Evaluation:
     """I/O 外壳：加载显式状态 → 纯 decide() → 按 outcome 持久化。
 
@@ -489,8 +557,8 @@ def evaluate_control_result(
     now = datetime.now(timezone.utc)
     # 单一组合点：无层时 digest 与冻结一致（存量不断），任一层进入分层 digest。
     task = None
-    snap = None
-    if task_id:
+    snap = actor_snapshot
+    if task_id and snap is None:
         from .capability import actor_snapshot_for_task
         from .task import TaskStore as _TaskStore
 
@@ -499,9 +567,19 @@ def evaluate_control_result(
         except Exception as exc:
             raise ValueError(f"任务不存在: {task_id}（{exc}）") from exc
         snap = actor_snapshot_for_task(root, task.contract.model_identity, now=now)
-    effective = compose_effective_plan(frozen, run_override, actor_snapshot=snap)
+    effective = compose_effective_plan(
+        frozen, run_override, base_profile=base_profile, actor_snapshot=snap
+    )
     base_digest = frozen.digest
     # 幂等键绑定组合后计划：不同 override/actor 即不同键（§7.3）。
+    if not (result.check_id and str(result.check_id).strip()):
+        return Evaluation(
+            outcome="unknown",
+            reasons=["check_id 不能为空：结果必须明确绑定具体检查项"],
+            next_action="指定 check_id 后重跑检查并求值",
+            idempotency_key="",
+            result_id=result.result_id,
+        )
     keyed = result.model_copy(update={"effective_plan_digest": effective.digest})
     key = idempotency_key(keyed)
     records = _scan_consumed(root)
@@ -549,23 +627,46 @@ def evaluate_control_result(
               and int(r.get("profile_revision") or 0) == result.profile_revision]
     audits_used = len(scoped)
     repair_rounds_used = sum(int(r.get("rounds_used") or 0) for r in scoped)
+    task_already_passed = any(
+        str(r.get("outcome")) in ("pass", "pass_with_warnings") for r in scoped
+    )
 
+    # B6 接线：任务契约绑定 execution_plan_digest（B4）时，从冻结计划取
+    # required_postconditions；未绑定或文件缺失即空=不绑定（保兼容）。
+    expected_post: list[str] = []
+    _plan_ref = (getattr(task.contract, "execution_plan_digest", "") or "") if task is not None else ""
+    if _plan_ref:
+        try:
+            import json as _json
+            _pf = root / ".sopcontrol-local" / "logic" / "plans" / f"{_plan_ref}.json"
+            if _pf.is_file():
+                _pd = _json.loads(_pf.read_text(encoding="utf-8"))
+                _plan = _pd.get("plan") or {}
+                _req = _plan.get("required_postconditions") or []
+                expected_post = [str(x) for x in _req]
+        except Exception:
+            expected_post = []
     state = GateState(
         consumed_ids=consumed_ids, cached=cached,
+        expected_required_postconditions=expected_post,
         accept_digest=accept_digest, accept_mode=accept_mode,
         accept_missing=accept_missing, task_identity=task_identity,
         binding_profile=binding_profile, binding_revision=binding_revision,
         binding_digest=binding_digest, evidence_ids=evidence_ids,
         audits_used=audits_used, repair_rounds_used=repair_rounds_used,
+        task_already_passed=task_already_passed,
         now_iso=now.isoformat(),
     )
     ev = decide_control_result(result, effective, state)
     if not ev.reused and ev.outcome in ("pass", "pass_with_warnings", "block", "not_run"):
+        from .control_profile import extract_task_digest
+
         _mark_consumed(root, result, ev.outcome, ev.reasons, key,
-                       base_digest=base_digest, task_digest=frozen.digest,
+                       base_digest=base_digest,
+                       task_digest=extract_task_digest(effective),
                        actor_digest=actor_digest)
     if ev.reused:
-        _log_reuse(root, result, cached or {})
+        _log_reuse(root, keyed, cached or {})
     return ev
 
 
@@ -579,6 +680,8 @@ def check_task_profile_gate(root: Path | str, task: Any,
     contract = task.contract
     if not contract.control_profile_id:
         return True, "未绑定动态 profile"
+    if not (contract.effective_plan_digest and contract.effective_plan_digest.strip()):
+        return False, f"任务 {task.task_id} 绑定 profile 但缺少 effective_plan_digest"
     want = (contract.control_profile_id, contract.control_profile_revision,
             contract.effective_plan_digest)
     # 当前 actor 快照：capability 变化导致旧结果失效（§6.6.6）。
@@ -595,7 +698,7 @@ def check_task_profile_gate(root: Path | str, task: Any,
         if (str(r.get("task_id")) != task.task_id
                 or str(r.get("profile_id")) != want[0]
                 or int(r.get("profile_revision") or 0) != want[1]
-                or str(r.get("task_digest") or r.get("plan_digest")) != want[2]):
+                or str(r.get("plan_digest") or "") != want[2]):
             continue
         if snap_digest and str(r.get("actor_digest") or "") != snap_digest:
             continue

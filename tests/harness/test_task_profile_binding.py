@@ -615,3 +615,28 @@ def test_b4_goal_plan_digest_binding(tmp_path):
     assert pack0["goal_digest"] == "" and pack0["execution_plan_digest"] == ""
     # CLI wiring：Contract缺省空=未绑定，不引入新门槛
     assert t0.contract.goal_digest == "" and t0.contract.execution_plan_digest == ""
+
+
+def test_b6_postconditions_gate():
+    # B6：空=不绑定（存量行为不变）；非空缺项→unknown；齐备→不阻断此门
+    from sopcontrol.control_result import ControlResult, GateState, decide_control_result
+    from sopcontrol.control_profile import freeze_profile, normalize_profile
+    import tempfile
+    from pathlib import Path
+    from datetime import datetime, timezone
+    prof = normalize_profile(BASE)
+    with tempfile.TemporaryDirectory() as td:
+        from sopcontrol.control_profile import save_draft
+        save_draft(Path(td), prof)
+        frozen = freeze_profile(Path(td), "bind")
+        mk = lambda pc: ControlResult.model_validate({
+            "result_id": "b6", "task_id": "TASK-B", "phase": "audit", "profile_id": "bind",
+            "profile_revision": frozen.revision, "effective_plan_digest": frozen.digest,
+            "input_digest": "in", "baseline_digest": "base",
+            "check_id": "jd_fit", "checked_dimensions": ["jd_fit"], "findings": [], "rounds_used": 0,
+            "producer": {"actor": "a", "independence": "self_check"},
+            "created_at": datetime.now(timezone.utc).isoformat(), "postconditions": pc})
+        assert decide_control_result(mk([]), frozen, GateState()).outcome == "pass"
+        st = GateState(expected_required_postconditions=["p1"])
+        assert decide_control_result(mk([]), frozen, st).outcome == "unknown"
+        assert decide_control_result(mk(["p1"]), frozen, st).outcome == "pass"
