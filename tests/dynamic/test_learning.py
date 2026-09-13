@@ -77,3 +77,36 @@ def test_proposal_decision_split_from_rule_status():
     assert p.status == "proposed"
     d = ProposalDecision(proposal_id=p.proposal_id, route="control")
     assert d.route == "control" and p.status == "proposed"  # 决定不动规则态
+
+
+def test_p1a_scattered_corrections_merge_to_one_topic():
+    from sopcontrol.learning import aggregate_window, open_window
+    w = open_window(task_id="T", phase="audit", product="p")
+    texts = ["以后必须先台账后评分", "记住先台账，后评分再说",
+             "评分之前先做台账", "评分前必须先台账"]
+    evs = [LearningEvent(kind="utterance", text=t, task_id="T",
+                         scope={"product": "p", "phase": "audit"}) for t in texts]
+    b = aggregate_window(evs, w)
+    assert len(b.topics) == 1 and b.pruned_count == 0
+    assert b.conflicts == []  # 同向纠正无冲突
+
+
+def test_p1a_opposing_markers_flag_conflict():
+    from sopcontrol.learning import aggregate_window, open_window
+    w = open_window(task_id="T")
+    evs = [LearningEvent(kind="utterance", text="以后必须先台账", task_id="T"),
+           LearningEvent(kind="utterance", text="以后不得先台账", task_id="T")]
+    b = aggregate_window(evs, w)
+    assert len(b.conflicts) == 1 and "对立" in b.conflicts[0]
+
+
+def test_p1a_empty_and_desensitize(project):
+    from sopcontrol.learning import aggregate_window, open_window
+    w = open_window(task_id="T")
+    evs = [LearningEvent(kind="utterance", text="  ", task_id="T"),
+           LearningEvent(kind="utterance", text="联系 a@b.com 拿 sk-live-abc 密码 secret=abc123",
+                         task_id="T")]
+    b = aggregate_window(evs, w)
+    assert b.pruned_count == 1 and len(b.events) == 1
+    assert "a@b.com" not in b.events[0].text and "abc123" not in b.events[0].text
+    assert "sk-live-abc" not in b.events[0].text

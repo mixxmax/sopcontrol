@@ -77,6 +77,8 @@ class EvidenceBundle(BaseModel):
     window_id: str = ""
     events: list[LearningEvent] = Field(default_factory=list)
     topics: list[str] = Field(default_factory=list)
+    conflicts: list[str] = Field(default_factory=list)  # P1-A：同组对立表达
+    related_rule_ids: list[str] = Field(default_factory=list)  # P1-A：关联的现存规则
     pruned_count: int = 0  # 脱敏/裁剪掉的数量（如实计数）
     built_at: datetime = Field(default_factory=utcnow)
 
@@ -171,3 +173,72 @@ def load_legacy_rules(root: Path | str) -> list[Any]:
     """P0-B：旧规则可加载（只读，供关联）。"""
     from .registry import Registry
     return Registry(Path(root) / ".sopcontrol" / "rules" / "registry.yaml").load()
+
+
+# ---------------------------------------------------------------------------
+# P1-A：窗口级聚合器（纯函数）
+# ---------------------------------------------------------------------------
+
+_OPPOSE_MARKERS = (("必须", "不得"), ("必须", "禁止"), ("必须", "不要"),
+                   ("应该", "不应该"), ("要", "别"))
+
+
+def _loose(text: str) -> str:
+    import re
+    import unicodedata
+    t = unicodedata.normalize("NFKC", str(text)).casefold()
+    t = "".join(ch for ch in t if not unicodedata.category(ch).startswith("P"))
+    return re.sub(r"\s+", " ", t).strip()
+
+
+def _desensitize(text: str, limit: int = 200) -> str:
+    import re
+    t = re.sub(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", "<email>", text)
+    t = re.sub(r"sk-\S+|(?:secret|token|password)\s*[:=]\s*\S+", "<redacted>", t,
+               flags=re.IGNORECASE)
+    return t[:limit]
+
+
+def aggregate_window(events: list[LearningEvent], window: LearningWindow,
+                     *, existing_rules: list[Any] | None = None) -> EvidenceBundle:
+    """P1-A：收集→脱敏裁剪→按主题/动作/目标归并→同义去重→冲突检测→关联旧规则。
+
+    分散的多条纠正归并为一个主题（不是每条原话复制成候选）。
+    """
+    in_window = [e for e in events
+                 if (not window.event_ids or e.event_id in set(window.event_ids))
+                 and (not window.task_id or e.task_id in ("", window.task_id))]
+    kept: list[LearningEvent] = []
+    pruned = 0
+    for e in in_window:
+        if not e.text.strip():
+            pruned += 1
+            continue
+        kept.append(e.model_copy(update={"text": _desensitize(e.text)}))
+    groups: dict[tuple, list[LearningEvent]] = {}
+    for e in kept:
+        key = (e.scope.get("product", ""), e.scope.get("action", ""),
+               e.scope.get("phase", ""))
+        groups.setdefault(key, []).append(e)
+    topics: list[str] = []
+    conflicts: list[str] = []
+    for key, members in sorted(groups.items()):
+        seen: dict[str, LearningEvent] = {}
+        for m in members:
+            seen.setdefault(_loose(m.text), m)
+        uniq = sorted(seen, key=len)
+        topics.append(" / ".join(u[:60] for u in uniq[:3]))
+        texts = " ".join(seen)
+        for must, must_not in _OPPOSE_MARKERS:
+            if must in texts and must_not in texts:
+                conflicts.append(f"{'/'.join(k for k in key if k) or '通用'}: "
+                                 f"“{must}”与“{must_not}”对立")
+    related: list[str] = []
+    for rule in existing_rules or []:
+        rstmt = _loose(str(getattr(rule, "statement", "")))
+        if rstmt and any(rstmt[:24] in _loose(e.text) or _loose(e.text)[:24] in rstmt
+                         for e in kept):
+            related.append(str(getattr(rule, "rule_id", "")))
+    return EvidenceBundle(window_id=window.window_id, events=kept, topics=topics,
+                          conflicts=conflicts, related_rule_ids=sorted(set(related)),
+                          pruned_count=pruned)
