@@ -748,6 +748,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--actor", default="")
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_dynamic)
+    p = dynamic_sub.add_parser("compile", help="编译已确认规则并记录证据（JSON）")
+    p.add_argument("rule_id")
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_dynamic)
 
     sync_p = sub.add_parser("sync", help="一体化升级：语义 diff + 影子验证 + 原子切换")
     sync_p.add_argument("path", nargs="?", default=".")

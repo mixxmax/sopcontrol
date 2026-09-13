@@ -89,6 +89,21 @@ def cmd_dynamic(args) -> int:
         print(json.dumps(items, ensure_ascii=False, indent=2))
         return 0
 
+    if args.sub == "compile":
+        from .dynamic_sop import compile_rule
+
+        try:
+            result = compile_rule(root, args.rule_id, actor="user")
+        except ValueError as exc:
+            print(f"错误: {exc}", file=sys.stderr)
+            return 2
+        if getattr(args, "json", False):
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0
+        print(f"已编译 {result['rule_id']} → {result['rule_status']} "
+              f"digest={result['compile_digest']}")
+        return 0
+
     if args.sub == "select":
         from .dynamic_sop import select_rules
         from .registry import Registry

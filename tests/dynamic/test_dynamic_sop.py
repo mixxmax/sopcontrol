@@ -66,13 +66,14 @@ def test_confirm_keep_longterm_creates_permanent_rule(project):
         flexibility={"max_correction_rounds": 1,
                      "lower_bound": "必须核对 JD 贴合与明显事实错误"})
     assert result["permanent"] is True
-    assert result["rule_status"] == "compiled"
+    assert result["rule_status"] == "accepted"  # 确认只保证 accepted，不冒充 compiled
     rules = Registry(project / ".sopcontrol" / "rules" / "registry.yaml").load()
     rule = next(r for r in rules if r.rule_id == result["rule_id"])
     assert rule.rule_class == "dynamic_sop"
     assert rule.source.type == "user_conversation"  # 原话出处保留
     assert rule.flexibility.max_correction_rounds == 1
     assert rule.activation.actions == ["materials.audit"]
+    assert rule.compiled_at is None  # 未编译即无编译证据
 
 
 def test_dynamic_sop_survives_reload_and_no_ttl(project):
@@ -256,3 +257,116 @@ def test_dynamic_cli_flow_end_to_end(project, capsys, monkeypatch):
                  "--activation", json.dumps({"actions": ["materials.audit"]})]) == 0
     result = json.loads(capsys.readouterr().out)
     assert result["permanent"] is True
+
+
+def _confirmed_rule(project):
+    _o, cand, _ = observe_utterance(
+        project, quote="审计不扩展到风格", source_ref="conv-9",
+        context={"action": "materials.audit"})
+    result = confirm_candidate(
+        project, cand.candidate_id, "keep_longterm",
+        activation={"actions": ["materials.audit"]})
+    assert result["rule_status"] == "accepted"
+    return result["rule_id"]
+
+
+def test_compile_rule_records_evidence(project):
+    """编译产生可验证证据：digest 可重算，状态机推进到 compiled。"""
+    from sopcontrol.dynamic_sop import compile_rule
+
+    rid = _confirmed_rule(project)
+    receipt = compile_rule(project, rid, actor="user")
+    assert receipt["rule_status"] == "compiled"
+    assert receipt["compile_digest"]
+    rules = Registry(project / ".sopcontrol" / "rules" / "registry.yaml").load()
+    rule = next(r for r in rules if r.rule_id == rid)
+    assert rule.status == RuleStatus.compiled
+    assert rule.compiled_at is not None
+    assert rule.compile_digest == receipt["compile_digest"]
+
+
+def test_compile_requires_accepted_status(project):
+    """proposed 直接编译必须失败（跳过确认链）。"""
+    from sopcontrol.dynamic_sop import compile_rule
+
+    _o, cand, _ = observe_utterance(
+        project, quote="提单前先对一遍台账", source_ref="s9")
+    rules = Registry(project / ".sopcontrol" / "rules" / "registry.yaml").load()
+    assert len(rules) == 0  # 未确认：永久空间零增长
+    from sopcontrol.registry import Registry as _Registry
+
+    with pytest.raises(Exception):
+        compile_rule(project, "DR-NONEXISTENT")
+
+
+def test_profile_expiry_does_not_retire_rule(project):
+    """ControlProfile 过期 ≠ Rule 过期：永久规则不受运行实例期限影响。"""
+    from sopcontrol.control_profile import ControlProfile
+
+    rid = _confirmed_rule(project)
+    expired = ControlProfile(profile_id="p", scope={"task": "T"},
+                             checks={"required": [], "excluded": []},
+                             expires_at="2020-01-01T00:00:00+00:00")
+    assert expired.expires_at is not None
+    rules = Registry(project / ".sopcontrol" / "rules" / "registry.yaml").load()
+    rule = next(r for r in rules if r.rule_id == rid)
+    from sopcontrol.model import rule_is_effective
+    from datetime import datetime, timezone
+
+    assert rule_is_effective(rule, at=datetime.now(timezone.utc)) is True
+    assert rule.status in (RuleStatus.accepted, RuleStatus.compiled)
+
+
+def test_rule_stable_across_version_switch(project):
+    """版本切换（重载/重存）不改变规则身份与语义字段。"""
+    rid = _confirmed_rule(project)
+    reg_path = project / ".sopcontrol" / "rules" / "registry.yaml"
+    before = Registry(reg_path).load()
+    rule = next(r for r in before if r.rule_id == rid)
+    snapshot = (rule.rule_id, rule.statement, rule.source.ref,
+                rule.activation.actions, rule.flexibility.max_correction_rounds)
+    after = Registry(reg_path).load()
+    rule2 = next(r for r in after if r.rule_id == rid)
+    assert (rule2.rule_id, rule2.statement, rule2.source.ref,
+            rule2.activation.actions,
+            rule2.flexibility.max_correction_rounds) == snapshot
+
+
+def test_only_explicit_retire_ends_rule(project):
+    """直接改 deprecated/superseded 必须失败；只能走显式退役流。"""
+    from sopcontrol.registry import Registry as _Registry
+
+    from sopcontrol.model import RuleStatus as _RS
+
+    rid = _confirmed_rule(project)
+    reg = _Registry(project / ".sopcontrol" / "rules" / "registry.yaml")
+    with pytest.raises(Exception):
+        reg.transition(rid, _RS.deprecated)
+    with pytest.raises(Exception):
+        reg.transition(rid, _RS.superseded)
+    assert reg.load()[0].status == RuleStatus.accepted
+
+
+def test_no_verified_enforced_vocabulary(project):
+    """RuleStatus 词汇表里就没有 verified/enforced——无法冒充，更无法显示。"""
+    from sopcontrol.model import RuleStatus as _RS
+
+    assert not hasattr(_RS, "verified") and not hasattr(_RS, "enforced")
+    with pytest.raises(ValueError):
+        _RS("verified")
+
+
+def test_dynamic_compile_cli(project, capsys, monkeypatch):
+    """compile 走正式 CLI（JSON）。"""
+    from sopcontrol.dynamic_sop import compile_rule
+
+    monkeypatch.chdir(project)
+    _o, cand, _ = observe_utterance(
+        project, quote="审计不扩展到风格", source_ref="conv-10",
+        context={"action": "materials.audit"})
+    result = confirm_candidate(
+        project, cand.candidate_id, "keep_longterm",
+        activation={"actions": ["materials.audit"]})
+    assert main(["dynamic", "compile", result["rule_id"], "--json"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["rule_status"] == "compiled" and out["compile_digest"]

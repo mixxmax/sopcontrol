@@ -209,17 +209,16 @@ def confirm_candidate(
             registry.add(rule)
         else:
             rid = existing.rule_id
-        # 生命周期：proposed → accepted → compiled（active 等价态）
-        for target in (RuleStatus.accepted, RuleStatus.compiled):
-            current = next(r for r in registry.load() if r.rule_id == rid)
-            if current.status == target:
-                continue
-            registry.transition(rid, target)
+        # 生命周期：确认只保证 accepted；compiled 必须另走 compile_rule（§6.1）。
+        current = next(r for r in registry.load() if r.rule_id == rid)
+        if current.status != RuleStatus.accepted:
+            registry.transition(rid, RuleStatus.accepted)
         store.triage(candidate_id, "triaged")
         final = next(r for r in registry.load() if r.rule_id == rid)
         return {"decision": decision, "rule_id": rid,
                 "rule_status": final.status.value, "permanent": True,
-                "note": "动态 SOP 已永久保存；无 TTL，仅显式生命周期可改变"}
+                "note": "动态 SOP 已永久保存并接受；无 TTL，仅显式生命周期可改变。"
+                        "执行前需 compile（证据见 rule.compile_digest）"}
     if decision == "once_only":
         # 仅本次：会话级记录，绝不进入永久规则空间（§2.3）
         path = _once_only_path(root)
@@ -238,6 +237,58 @@ def confirm_candidate(
 
 def source_ref_of(record: Any) -> str:
     return record.sources[0].ref if getattr(record, "sources", None) else "unknown"
+
+
+def compile_rule(root: Path | str, rule_id: str, *,
+                 actor: str = "user") -> dict[str, Any]:
+    """§6.1：把 accepted 规则编译为可执行态，留下可验证证据。
+
+    编译检查（机器可判定，不碰业务语义）：
+    - 规则存在且状态为 accepted（跳过确认链即拒绝）；
+    - statement 非空，modality/activation/flexibility 结构合法；
+    - 计算规范摘要并记录（digest 可重算，见测试）。
+    成功后迁移到 compiled。confirmed 之外的旧 compiled 不受影响。
+    """
+    from .registry import Registry
+
+    root = Path(root)
+    registry = Registry(root / ".sopcontrol" / "rules" / "registry.yaml")
+    rules = registry.load()
+    rule = next((r for r in rules if r.rule_id == rule_id), None)
+    if rule is None:
+        raise ValueError(f"规则不存在: {rule_id}")
+    if rule.status != RuleStatus.accepted:
+        raise ValueError(
+            f"只有 accepted 规则可编译（当前 {rule.status.value}）："
+            f"先确认再编译，不得跳过确认链")
+    if not rule.statement.strip():
+        raise ValueError("规则陈述为空：无法编译")
+    digest = "compile-" + content_hash({
+        "rule_id": rule.rule_id,
+        "statement": " ".join(rule.statement.split()),
+        "modality": rule.modality.value,
+        "activation": rule.activation.model_dump(mode="json"),
+        "flexibility": rule.flexibility.model_dump(mode="json"),
+        "scope": rule.scope,
+        "scope_paths": sorted(rule.scope_paths),
+        "tool": "sopcontrol-compile/1",
+    })[:32]
+    rule.compile_digest = digest
+    rule.compile_tool = "sopcontrol-compile/1"
+    rule.compiled_at = utcnow()
+    registry.transition(rule_id, RuleStatus.compiled)
+    # transition 只改状态；证据字段需显式回写（registry 按 rule_id 全量保存）。
+    rules = registry.load()
+    for r in rules:
+        if r.rule_id == rule_id:
+            r.compile_digest = digest
+            r.compile_tool = "sopcontrol-compile/1"
+            r.compiled_at = rule.compiled_at
+    registry.save(rules)
+    return {"rule_id": rule_id, "rule_status": RuleStatus.compiled.value,
+            "compile_digest": digest, "compile_tool": "sopcontrol-compile/1",
+            "compiled_by": actor,
+            "note": "编译成功证据已记录；执行仍需上下文选择通过"}
 
 
 def list_once_only(root: Path | str) -> list[dict[str, Any]]:
