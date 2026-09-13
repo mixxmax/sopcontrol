@@ -279,3 +279,33 @@ def test_p1e_cli_json_outbox_and_unproven_host(project):
     assert "先台账" in (project / ".sopcontrol-local" / "learning" / "notifications.jsonl").read_text(encoding="utf-8")
     with _pt.raises(RuntimeError, match="UNPROVEN"):
         HostUiAdapter().notify(project, payload)
+
+
+def test_p2a_explicit_review_same_pipeline(project):
+    from sopcontrol.dynamic_sop import observe_utterance
+    from sopcontrol.learning import list_proposals, review_window
+    observe_utterance(project, quote="以后纠正先台账后评分", source_ref="s1")
+    out = review_window(project, session_id="sess-1")
+    assert out["events"] >= 1 and out["proposals"] >= 1
+    assert out["adapter"] in ("fake",)
+    assert len(list_proposals(project, status="proposed")) == out["proposals"]
+    import pytest as _pt
+    with _pt.raises(ValueError, match="必须指定"):
+        review_window(project)
+
+
+def test_p2a_external_import_no_registry_no_projection(project):
+    from sopcontrol.learning import import_external_proposal, list_proposals
+    from sopcontrol.registry import Registry
+    import pytest as _pt
+    before = len(Registry(project / ".sopcontrol" / "rules" / "registry.yaml").load())
+    p = import_external_proposal(project, {"statement": "外部经验：先小批量",
+                                           "source_ref": "antigravity:/learn",
+                                           "non_goals": ["不扩范围"]})
+    assert p.evidence_refs == ["external:antigravity:/learn"]
+    assert len(Registry(project / ".sopcontrol" / "rules" / "registry.yaml").load()) == before
+    assert len(list_proposals(project, status="proposed")) == 1
+    with _pt.raises(ValueError, match="回灌"):
+        import_external_proposal(project, {"statement": "复制 <!-- sopcontrol:v1 --> 内容"})
+    with _pt.raises(ValueError, match="为空"):
+        import_external_proposal(project, {"statement": "  "})

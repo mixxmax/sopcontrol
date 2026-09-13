@@ -604,3 +604,69 @@ def payload_from_proposal(proposal: LearningProposal, *,
                          statement=proposal.statement,
                          scope_summary=proposal.scope_summary,
                          route_hint=route_hint)
+
+
+# ---------------------------------------------------------------------------
+# P2-A：/learn 显式入口（同一提炼器 + 同一确认卡 + 同一持久化路由）
+# ---------------------------------------------------------------------------
+
+_PROJECTION_MARKERS = ("<!-- sopcontrol:", "sopcontrol:v1", "接管包", "takeover_pack")
+
+
+def review_window(root: Path | str, *, session_id: str = "",
+                  task_id: str = "",
+                  adapter: DistillerAdapter | None = None) -> dict[str, Any]:
+    """显式窗口回顾：用户指定会话/任务→聚合→提炼→存提案。必须二选一指定。"""
+    if not (session_id or task_id):
+        raise ValueError("必须指定 session_id 或 task_id（显式回顾范围）")
+    root = Path(root)
+    from .dynamic_sop import _load_jsonl
+    from pathlib import Path as _P
+    obs_path = _P(root) / ".sopcontrol-local" / "dynamic" / "observations.jsonl"
+    events: list[LearningEvent] = []
+    for rec in _load_jsonl(obs_path):
+        ev = LearningEvent(kind="utterance", session_id=session_id,
+                           task_id=task_id,
+                           message_ref=str(rec.get("observation_id", "")),
+                           text=str(rec.get("exact_quote", "")),
+                           scope={str(k): str(v) for k, v in
+                                  (rec.get("context", None) or {}).items()})
+        events.append(ev)
+    window = open_window(task_id=task_id, session_id=session_id)
+    bundle = aggregate_window(events, window)
+    out, used = distill_with_fallback(bundle, adapter or FakeDistiller())
+    proposals = [LearningProposal(
+        window_id=window.window_id, statement=str(p.get("summary", "")),
+        scope_summary=", ".join(f"{k}={','.join(v)}"
+                                for k, v in (p.get("scope", None) or {}).items()),
+        exceptions=list(p.get("exceptions", []) or []),
+        non_goals=list(p.get("non_goals", []) or []),
+        rule_class=str(p.get("rule_class", "dynamic_sop")),
+        evidence_refs=list(p.get("evidence_refs", []) or []))
+        for p in out.proposals]
+    saved = save_proposals(root, proposals)
+    return {"window_id": window.window_id, "events": len(events),
+            "proposals": saved, "adapter": used,
+            "no_candidate_reason": out.no_candidate_reason}
+
+
+def import_external_proposal(root: Path | str, data: dict[str, Any]) -> LearningProposal:
+    """外部提案导入：校验成型，只存提案库。不写 Registry，不回灌投影。"""
+    text = str(data.get("statement", "") or "").strip()
+    if not text:
+        raise ValueError("外部提案 statement 为空")
+    if any(m in text for m in _PROJECTION_MARKERS):
+        raise ValueError("拒绝回灌 SOP Control 自身投影内容")
+    source = str(data.get("source_ref", "") or "")
+    if any(m in source for m in _PROJECTION_MARKERS):
+        raise ValueError("拒绝回灌 SOP Control 自身投影来源")
+    proposal = LearningProposal(
+        window_id=str(data.get("window_id", "") or "external"),
+        statement=text,
+        scope_summary=str(data.get("scope_summary", "") or ""),
+        exceptions=list(data.get("exceptions", []) or []),
+        non_goals=list(data.get("non_goals", []) or ["待补充"]),
+        rule_class=str(data.get("rule_class", "dynamic_sop")),
+        evidence_refs=[f"external:{source}"] if source else [])
+    save_proposals(root, [proposal])
+    return proposal
