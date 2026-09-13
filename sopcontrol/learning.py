@@ -320,3 +320,121 @@ def evaluate_trigger(bundle: EvidenceBundle, *,
                                reason=f"重复纠正升级（{count} 次）", fingerprint=fp)
     return TriggerDecision(fire=False, level="defer",
                            reason="一次纠正延后到阶段边界", fingerprint=fp)
+
+
+# ---------------------------------------------------------------------------
+# P1-C：Distiller Adapter（可替换；真模型缺席时 fake 顶上，绝不卡死）
+# ---------------------------------------------------------------------------
+
+DISTILLER_SCHEMA_VERSION = "1"
+
+
+class DistillerOutput(BaseModel):
+    """§7.5 输出形（子集）：proposals 0-3 条 + 不足原因。"""
+    model_config = _STRICT
+
+    schema_version: str = DISTILLER_SCHEMA_VERSION
+    window_id: str = ""
+    proposals: list[dict[str, Any]] = Field(default_factory=list)
+    no_candidate_reason: str = ""
+
+
+class DistillerAdapter:
+    """可替换接口：distill(bundle) → DistillerOutput。永不写盘、不调工具。"""
+    name: str = "base"
+
+    def distill(self, bundle: EvidenceBundle) -> DistillerOutput:
+        raise NotImplementedError
+
+
+class FakeDistiller(DistillerAdapter):
+    """确定性 fake：主题→提案（≤3），离线测试唯一依赖。"""
+    name: str = "fake"
+
+    def distill(self, bundle: EvidenceBundle) -> DistillerOutput:
+        proposals = []
+        for topic in bundle.topics[:3]:
+            proposals.append({
+                "summary": topic,
+                "rule_class": "dynamic_sop",
+                "trigger": {}, "must": [topic], "must_not": [], "may": [],
+                "exceptions": ["用户明确反向要求"],
+                "non_goals": ["不扩大到无关任务"],
+                "scope": {},
+                "durability": "permanent_candidate",
+                "recommended_destination": "control",
+                "confidence": "high" if not bundle.conflicts else "not_proven",
+                "evidence_refs": [e.event_id for e in bundle.events[:4]],
+                "unsupported_claims": [],
+                "related_rule_ids": list(bundle.related_rule_ids),
+            })
+        return DistillerOutput(
+            window_id=bundle.window_id, proposals=proposals,
+            no_candidate_reason="" if proposals else "证据不足")
+
+
+class UnprovenLLMAdapter(DistillerAdapter):
+    """真模型位：本仓库无模型调用通道（快路径零 LLM），标 UNPROVEN，不伪装可用。"""
+    name: str = "llm-unproven"
+
+    def distill(self, bundle: EvidenceBundle) -> DistillerOutput:
+        raise RuntimeError("UNPROVEN：本仓库无模型接入，真实 Distiller 未实现")
+
+
+def validate_distiller_output(out: Any, bundle: EvidenceBundle) -> list[str]:
+    """§7.6 十项确定性校验（子集可判定项）：返回问题串，空=通过。"""
+    problems: list[str] = []
+    if not isinstance(out, DistillerOutput):
+        return ["输出不是 DistillerOutput"]
+    if out.schema_version != DISTILLER_SCHEMA_VERSION:
+        problems.append("schema_version 非法")
+    if len(out.proposals) > 3:
+        problems.append("提案超过 3 条")
+    window_ids = {e.event_id for e in bundle.events}
+    for p in out.proposals:
+        if not str(p.get("summary", "")).strip():
+            problems.append("summary 为空")
+        if not p.get("non_goals"):
+            problems.append("non_goals 缺失")
+        must = set(p.get("must", []) or [])
+        must_not = set(p.get("must_not", []) or [])
+        if must & must_not:
+            problems.append("must 与 must_not 直接冲突")
+        for ref in p.get("evidence_refs", []) or []:
+            if ref not in window_ids:
+                problems.append(f"evidence_ref 不在窗口内: {ref}")
+        if p.get("confidence") not in ("high", "medium", "not_proven"):
+            problems.append("confidence 非法")
+        scope = p.get("scope") or {}
+        for dim in ("actions", "phases", "products"):
+            allowed = {str(v) for e in bundle.events
+                       for v in ([e.scope.get(dim.rstrip("s"), "")]
+                                 if e.scope.get(dim.rstrip("s"), "") else [])}
+            for v in scope.get(dim, []) or []:
+                if allowed and str(v) not in allowed:
+                    problems.append(f"scope 扩大: {dim}={v}")
+    once_only = any("仅本次" in e.text for e in bundle.events)
+    for p in out.proposals:
+        if once_only and p.get("durability") == "permanent_candidate":
+            problems.append("once_only 证据不得推荐为永久")
+    return problems
+
+
+def distill_with_fallback(bundle: EvidenceBundle, adapter: DistillerAdapter, *,
+                          timeout_s: float = 10.0) -> tuple[DistillerOutput, str]:
+    """超时/异常/schema 失败→回退 fake。返回 (output, used_adapter)。永不抛。"""
+    import concurrent.futures
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(adapter.distill, bundle)
+            out = future.result(timeout=timeout_s)
+    except Exception as exc:
+        out = FakeDistiller().distill(bundle)
+        return out, f"fake-fallback(error:{type(exc).__name__})"
+    if validate_distiller_output(out, bundle):
+        out = FakeDistiller().distill(bundle)
+        if validate_distiller_output(out, bundle):
+            return DistillerOutput(window_id=bundle.window_id, proposals=[],
+                                   no_candidate_reason="fake 输出亦非法"), "empty"
+        return out, "fake-fallback(schema)"
+    return out, adapter.name

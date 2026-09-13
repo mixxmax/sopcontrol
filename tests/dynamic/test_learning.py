@@ -157,3 +157,59 @@ def test_p1b_conflict_never_forced():
     b = _bundle(["以后必须先台账", "以后不得先台账"])
     d = evaluate_trigger(b)
     assert d.fire is True and d.level == "suggest" and d.forces_permanent is False
+
+
+def test_p1c_fake_offline_no_model_needed():
+    from sopcontrol.learning import FakeDistiller
+    b = _bundle(["以后必须先台账后评分", "评分前必须先台账"])
+    out = FakeDistiller().distill(b)
+    assert 0 < len(out.proposals) <= 3
+    assert out.proposals[0]["non_goals"]
+
+
+def test_p1c_llm_unproven_explicit():
+    from sopcontrol.learning import UnprovenLLMAdapter, distill_with_fallback
+    b = _bundle(["以后必须先台账后评分"])
+    out, used = distill_with_fallback(b, UnprovenLLMAdapter())
+    assert used.startswith("fake-fallback") and out.window_id == b.window_id
+
+
+def test_p1c_timeout_falls_back():
+    import time
+    from sopcontrol.learning import DistillerAdapter, distill_with_fallback
+    class Slow(DistillerAdapter):
+        name = "slow"
+        def distill(self, bundle):
+            time.sleep(5)
+            raise AssertionError("不应到达")
+    b = _bundle(["以后必须先台账后评分"])
+    out, used = distill_with_fallback(b, Slow(), timeout_s=0.2)
+    assert used.startswith("fake-fallback")
+
+
+def test_p1c_schema_violations_rejected():
+    from sopcontrol.learning import DistillerOutput, validate_distiller_output
+    b = _bundle(["以后必须先台账"])
+    bad = DistillerOutput(window_id=b.window_id, proposals=[
+        {"summary": "", "must": ["a"], "must_not": ["a"],
+         "non_goals": [], "confidence": "high",
+         "evidence_refs": ["不在窗口"], "durability": "permanent_candidate"}])
+    problems = validate_distiller_output(bad, b)
+    assert len(problems) >= 4  # 空summary/冲突/无non_goals/坏ref（+once_only视数据）
+
+
+def test_p1c_scope_expansion_rejected():
+    from sopcontrol.learning import (DistillerOutput, LearningEvent,
+                                     aggregate_window, open_window,
+                                     validate_distiller_output)
+    w = open_window(task_id="T")
+    evs = [LearningEvent(kind="utterance", text="以后必须先台账", task_id="T",
+                         scope={"action": "search"})]
+    b = aggregate_window(evs, w)
+    bad = DistillerOutput(window_id=b.window_id, proposals=[
+        {"summary": "s", "must": ["m"], "must_not": [],
+         "non_goals": ["n"], "confidence": "high",
+         "evidence_refs": [b.events[0].event_id],
+         "scope": {"actions": ["删库"]},
+         "durability": "permanent_candidate"}])
+    assert any("scope 扩大" in p for p in validate_distiller_output(bad, b))
