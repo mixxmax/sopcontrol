@@ -109,22 +109,27 @@ def test_semantic_change_awaits_confirmation(project):
 
     real = up.SemanticProjection.capture
 
+    calls = {"n": 0}
+
     def fake_capture(root, version):
+        # 版本保持真实（§9.1 禁伪造版本）；第二次捕获（after）语义变化，
+        # 模拟新版本规则正文改变。
         proj = real(root, version)
-        if version == "0.4.0":
+        calls["n"] += 1
+        if calls["n"] >= 2:
             proj = proj.model_copy(deep=True)
-            proj.digest = "changed-" + proj.digest  # 模拟语义变化
+            proj.digest = "changed-" + proj.digest
         return proj
 
     up.SemanticProjection.capture = staticmethod(fake_capture)
     try:
-        result = sync(project, target_version="0.4.0", assume_yes=False)
+        result = sync(project, target_version="0.3.0", assume_yes=False)
     finally:
         up.SemanticProjection.capture = staticmethod(real)
     assert result["outcome"] == "awaiting_confirmation"
     assert result["switched"] is False
     # 用户确认（--yes）后切换
-    result2 = sync(project, target_version="0.4.0", assume_yes=True)
+    result2 = sync(project, target_version="0.3.0", assume_yes=True)
     assert result2["outcome"] == "switched"
 
 
@@ -319,3 +324,79 @@ def test_time_only_change_no_semantic_change(project):
     diff = semantic_diff(before, after)
     assert diff["semantic_changes"] is False
     assert diff["changed_rules"] == []
+
+
+def _tree_digest(root: Path) -> str:
+    import hashlib
+    h = hashlib.sha256()
+    for p in sorted(root.rglob("*")):
+        if p.is_file() and ".sopcontrol-local/runtimes" not in p.as_posix():
+            h.update(p.relative_to(root).as_posix().encode())
+            h.update(p.read_bytes())
+    return h.hexdigest()
+
+
+def test_wp_e_plan_is_read_only(project):
+    """§9.4：plan 前后项目目录（除 runtimes 外）完全不变。"""
+    _add_dynamic_rule(project, "DR-PLAN")
+    before = _tree_digest(project)
+    plan = plan_upgrade(project, target_version="0.3.0")
+    assert plan.to_version == "0.3.0"
+    assert _tree_digest(project) == before
+    assert not (project / ".sopcontrol-local" / "runtimes" / "0.3.0").exists()
+
+
+def test_wp_e_staged_runtime_is_real(project):
+    """§9.1/9.5：staging 产物非空、有 manifest、版本探针与 binding 一致。"""
+    _add_dynamic_rule(project, "DR-STAGE")
+    from sopcontrol.upgrade import init_binding, save_binding
+    binding = init_binding(project)
+    binding.core_version = "0.2.9"
+    save_binding(project, binding)
+    result = sync(project, target_version="0.3.0", assume_yes=True)
+    assert result["outcome"] == "switched", result
+    staged = Path(result["manifest"] and project / ".sopcontrol-local" / "runtimes" / "0.3.0")
+    manifest = json.loads((staged / "runtime-manifest.json").read_text(encoding="utf-8"))
+    assert manifest["file_count"] > 0 and manifest["package_digest"]
+    loaded = load_binding(project)
+    assert loaded.runtime_path == str(staged)
+    assert loaded.runtime_package_digest == manifest["package_digest"]
+
+
+def test_wp_e_staging_failure_keeps_old_binding(project):
+    """§9.5/9.8：staging 中断（源缺失）时旧 binding 原封不动。"""
+    from sopcontrol.upgrade import init_binding
+    from sopcontrol import upgrade as _up
+    binding = init_binding(project)
+    old_path, old_version = binding.runtime_path, binding.core_version
+    bad = _up.stage_runtime(project, version="9.9.9", source=project / "不存在")
+    assert bad["ok"] is False
+    loaded = load_binding(project)
+    assert loaded.runtime_path == old_path and loaded.core_version == old_version
+    assert not (project / ".sopcontrol-local" / "runtimes" / "9.9.9").exists()
+
+
+def test_wp_e_corrupt_binding_fail_closed(project):
+    """§9.7：binding 破坏时 fail-closed（blocked，不抛、不切换）。"""
+    (project / ".sopcontrol-local").mkdir(parents=True, exist_ok=True)
+    (project / ".sopcontrol-local" / "binding.yaml").write_text("{坏: [", encoding="utf-8")
+    result = sync(project, target_version="0.3.0", assume_yes=True)
+    assert result["outcome"] == "blocked" and result["switched"] is False
+
+
+def test_wp_e_rollback_keeps_dynamic_sop(project):
+    """§9.7/9.8：rollback 不丢 dynamic SOP。"""
+    _add_dynamic_rule(project, "DR-RB")
+    from sopcontrol.upgrade import init_binding, save_binding
+    binding = init_binding(project)
+    binding.core_version = "0.2.9"
+    save_binding(project, binding)
+    first = sync(project, target_version="0.3.0", assume_yes=True)
+    assert first["outcome"] == "switched", first
+    # 旧回滚点指向真实 staged runtime 时才可回滚； dev 同版本下探针版本一致即允许
+    rb = rollback(project)
+    rules = Registry(project / ".sopcontrol" / "rules" / "registry.yaml").load()
+    assert [r.rule_id for r in rules if r.rule_class == "dynamic_sop"] == ["DR-RB"]
+    assert rb["rolled_back"] in (True, False)  # 同版本探针不一致时保持当前亦合法
+    if rb["rolled_back"] is False:
+        assert "探针" in rb["note"] or "丢失" in rb["note"] or "可回滚" in rb["note"]

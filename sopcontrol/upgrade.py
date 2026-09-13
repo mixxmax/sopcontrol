@@ -46,6 +46,8 @@ class ProjectBinding(BaseModel):
     runtime_path: str = ""
     previous_runtime_path: str = ""
     previous_core_version: str = ""
+    runtime_package_digest: str = ""          # §9.3：当前 runtime 包摘要（空=未验证安装）
+    previous_runtime_package_digest: str = ""  # §9.3：上一回滚点包摘要
     rule_data_migration_version: int = 1
     installed_at: str = ""
     updated_at: str = ""
@@ -205,6 +207,103 @@ def _runtime_dir(root: Path, version: str) -> Path:
     return Path(root) / ".sopcontrol-local" / "runtimes" / version
 
 
+def _binding_file_corrupt(root: Path) -> bool:
+    """§9.7 fail-closed：binding 文件存在但不可解析即损坏（缺失不算损坏）。"""
+    path = _binding_path(Path(root))
+    if not path.is_file():
+        return False
+    try:
+        ProjectBinding.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
+        return False
+    except Exception:
+        return True
+
+
+def _package_digest(source: Path) -> str:
+    """对运行时源目录（sopcontrol/ + plugins/ + pyproject.toml）做内容摘要。"""
+    import hashlib
+    h = hashlib.sha256()
+    targets = [source / "sopcontrol", source / "plugins"]
+    for base in targets:
+        if not base.is_dir():
+            continue
+        for p in sorted(base.rglob("*.py")):
+            h.update(p.relative_to(source).as_posix().encode())
+            h.update(p.read_bytes())
+    pyproject = source / "pyproject.toml"
+    if pyproject.is_file():
+        h.update(pyproject.read_bytes())
+    return h.hexdigest()[:32]
+
+
+def _probe_runtime_version(runtime_dir: Path) -> str:
+    """真实启动探针：子进程从 staged 目录 import sopcontrol 并报版本。
+
+    空目录/坏安装无法通过——§9.1 假升级（空目录 + switched=true）在此被拒。
+    """
+    import subprocess
+    import sys
+    proc = subprocess.run(
+        [sys.executable, "-c",
+         "import sopcontrol; print(sopcontrol.__version__)"],
+        capture_output=True, text=True, timeout=60,
+        cwd=str(runtime_dir),
+        env={**__import__("os").environ, "PYTHONPATH": str(runtime_dir)},
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(f"runtime 启动失败: {proc.stderr.strip()[:200]}")
+    return proc.stdout.strip()
+
+
+def stage_runtime(root: Path, *, version: str, source: Optional[Path] = None) -> dict[str, Any]:
+    """§9.5 staging：复制真实包 → 写 manifest → 版本探针 → 规则链自检。
+
+    任一步失败都不碰当前 binding；返回 manifest 摘要供 sync 校验。"""
+    import shutil
+    root = Path(root)
+    if source is not None:
+        src = Path(source)
+    else:
+        import sopcontrol as _pkg
+        src = Path(_pkg.__file__).resolve().parent.parent
+    staged = _runtime_dir(root, version)
+    work = staged.parent / f".staging-{version}.tmp"
+    if work.exists():
+        shutil.rmtree(work)
+    try:
+        work.mkdir(parents=True)
+        for name in ("sopcontrol", "plugins"):
+            origin = src / name
+            if not origin.is_dir():
+                return {"ok": False, "error": f"源缺失: {name}"}
+            shutil.copytree(origin, work / name,
+                            ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+        if (src / "pyproject.toml").is_file():
+            shutil.copy2(src / "pyproject.toml", work / "pyproject.toml")
+        digest = _package_digest(work)
+        manifest = {"version": version, "package_digest": digest,
+                    "file_count": sum(1 for _ in work.rglob("*.py")),
+                    "created_at": datetime.now(timezone.utc).isoformat()}
+        if manifest["file_count"] <= 0:
+            return {"ok": False, "error": "staging 为空：拒绝空目录升级"}
+        (work / "runtime-manifest.json").write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+        try:
+            probed = _probe_runtime_version(work)
+        except Exception as exc:
+            return {"ok": False, "error": f"新 runtime 版本探针失败: {exc}"}
+        if probed != version:
+            return {"ok": False,
+                    "error": f"版本探针不一致: 期望 {version}，实际 {probed}"}
+        if staged.exists():
+            shutil.rmtree(staged)
+        os.replace(work, staged)
+        return {"ok": True, "staged_path": str(staged), "manifest": manifest}
+    finally:
+        if work.exists():
+            shutil.rmtree(work)
+
+
 def semantic_diff(before: SemanticProjection, after: SemanticProjection) -> dict[str, Any]:
     """§8.3 第 6 步：语义投影差异。任何放宽都是升级硬门（§8.4）。
 
@@ -279,12 +378,14 @@ def plan_upgrade(root: Path, *, target_version: Optional[str] = None) -> Upgrade
     from sopcontrol import __version__
 
     root = Path(root)
-    binding = load_binding(root) or init_binding(root)
+    # §9.4 纯只读：无绑定时用默认版本，不落盘（init 写盘只许 sync/显式 init 做）。
+    binding = load_binding(root)
+    from_version = binding.core_version if binding else __version__
     to_version = target_version or __version__
-    before = SemanticProjection.capture(root, binding.core_version)
-    # v1：staged runtime 目录登记（真实并行安装点；离线不下载）
+    before = SemanticProjection.capture(root, from_version)
+    # §9.4：plan 纯只读——只计算 staged 路径，不创建目录、不写 binding、
+    # 不迁移规则、不改 hook、不下载。所有写入在 sync/stage。
     staged = _runtime_dir(root, to_version)
-    staged.mkdir(parents=True, exist_ok=True)
     # 语义投影：staged 运行时编译同一份规则数据（规则数据独立于软件包，§8.1）
     after = SemanticProjection.capture(root, to_version)
     diff = semantic_diff(before, after)
@@ -305,12 +406,12 @@ def plan_upgrade(root: Path, *, target_version: Optional[str] = None) -> Upgrade
     else:
         gates.append({"gate": "schema_migration_reversible", "status": "pass",
                       "detail": ""})
-    major_change = _major_jump(binding.core_version, to_version)
+    major_change = _major_jump(from_version, to_version)
     auto_switch = (not blocked and not major_change
                    and not diff["semantic_changes"] and not diff["schema_changed"])
     if major_change:
         reasons.append("major/规则语义变化：需要明确确认（§8.5）")
-    return UpgradePlan(from_version=binding.core_version, to_version=to_version,
+    return UpgradePlan(from_version=from_version, to_version=to_version,
                        staged_path=str(staged), semantic_diff=diff,
                        gates=gates, auto_switch=auto_switch,
                        blocked=blocked, reasons=reasons)
@@ -332,8 +433,13 @@ def sync(root: Path, *, target_version: Optional[str] = None,
     失败时保持旧 runtime 不动（§8.3 第 10 步）；永久规则保留是硬门。
     """
     root = Path(root)
+    if _binding_file_corrupt(root):
+        return {"from_version": "", "to_version": target_version or "",
+                "switched": False, "rolled_back": False, "outcome": "blocked",
+                "reasons": ["binding 已损坏"],
+                "note": "binding.yaml 不可解析：fail-closed，手工修复或重建绑定后再升级"}
     plan = plan_upgrade(root, target_version=target_version)
-    binding = load_binding(root)
+    binding = load_binding(root) or init_binding(root)
     result: dict[str, Any] = {
         "from_version": plan.from_version, "to_version": plan.to_version,
         "semantic_diff": plan.semantic_diff, "gates": plan.gates,
@@ -347,6 +453,14 @@ def sync(root: Path, *, target_version: Optional[str] = None,
         result["outcome"] = "awaiting_confirmation"
         result["note"] = "存在语义/schema 变化或 major 升级：需要一次明确确认"
         return result
+    # §9.5 staging：真实安装 + manifest + 版本探针；失败不碰 binding。
+    staged = stage_runtime(root, version=plan.to_version)
+    result["staging"] = {k: v for k, v in staged.items() if k != "manifest"}
+    if not staged.get("ok"):
+        result["outcome"] = "blocked"
+        result["note"] = f"staging 失败：保持旧 runtime（{staged.get('error')}）"
+        return result
+    result["manifest"] = staged["manifest"]
     # 影子验证（§8.3 第 8 步）：在切换前对规则数据与账本做完整校验
     shadow = _shadow_verify(root)
     result["shadow_verify"] = shadow
@@ -354,15 +468,29 @@ def sync(root: Path, *, target_version: Optional[str] = None,
         result["outcome"] = "blocked"
         result["note"] = "影子验证失败：保持旧 runtime"
         return result
-    # 原子切换：binding 指针一次替换（launcher 按绑定选择 runtime）
+    # 原子切换：binding 指针一次替换（save_binding 经 fsync + 原子 replace）
     assert binding is not None
+    old_binding = binding.model_copy()
     binding.previous_runtime_path = binding.runtime_path
     binding.previous_core_version = binding.core_version
+    binding.previous_runtime_package_digest = binding.runtime_package_digest
     binding.core_version = plan.to_version
-    binding.runtime_path = plan.staged_path
+    binding.runtime_path = staged["staged_path"]
+    binding.runtime_package_digest = staged["manifest"]["package_digest"]
     binding.updated_at = utcnow().isoformat()
     binding.last_verify = {"shadow": shadow, "at": utcnow().isoformat()}
     save_binding(root, binding)
+    # §9.7 后验 probe：新 runtime 必须真实可启动，否则自动恢复旧 binding。
+    try:
+        probed = _probe_runtime_version(Path(binding.runtime_path))
+        if probed != plan.to_version:
+            raise RuntimeError(f"后验版本不一致: {probed}")
+    except Exception as exc:
+        save_binding(root, old_binding)
+        result["switched"] = False
+        result["outcome"] = "blocked"
+        result["note"] = f"后验 probe 失败，已恢复旧 binding：{exc}"
+        return result
     result["switched"] = True
     result["outcome"] = "switched"
     result["rollback_target"] = binding.previous_runtime_path
@@ -396,12 +524,35 @@ def rollback(root: Path) -> dict[str, Any]:
     target_projection = SemanticProjection.capture(root, previous_version)
     diff = semantic_diff(current_projection, target_projection)
     if diff["downgrades"] and diff["lost_dynamic_sop"]:
-        # 回滚本身也不得丢规则（双向硬门）
+        # 回滚本身也不得丢规则（双向硬门，先判纯规则门，再做真实探针）
         return {"rolled_back": False,
                 "note": f"回滚将丢失动态 SOP，拒绝执行: {diff['lost_dynamic_sop']}"}
+    # §9.7：用旧 runtime 真实执行版本探针，而不是当前 Python 重新模拟。
+    # staged 安装（有 manifest）做严格版本比对；开发态源码树（无 manifest）
+    # 只验证真实可启动（子进程 import 成功），不伪造版本号比对。
+    _prev = Path(binding.previous_runtime_path)
+    try:
+        if (_prev / "runtime-manifest.json").is_file():
+            probed = _probe_runtime_version(_prev)
+            if previous_version and probed != previous_version:
+                return {"rolled_back": False,
+                        "note": f"旧 runtime 版本探针不一致（期望 {previous_version}，实际 {probed}）：保持当前版本"}
+        else:
+            import subprocess as _sp, sys as _sys
+            _home = _prev.parent if _prev.name in ("sopcontrol", "plugins") else _prev
+            _pr = _sp.run([_sys.executable, "-c",
+                           "import sopcontrol; print(sopcontrol.__version__)"],
+                          capture_output=True, text=True, timeout=60,
+                          env={**__import__("os").environ, "PYTHONPATH": str(_home)})
+            if _pr.returncode != 0:
+                raise RuntimeError(_pr.stderr.strip()[:200])
+    except Exception as exc:
+        return {"rolled_back": False,
+                "note": f"旧 runtime 已不可启动，保持当前版本：{exc}"}
     binding.runtime_path, binding.previous_runtime_path = (
         binding.previous_runtime_path, binding.runtime_path)
-    binding.core_version = previous_version
+    binding.previous_core_version, binding.core_version = (
+        binding.core_version, previous_version)
     binding.updated_at = utcnow().isoformat()
     save_binding(root, binding)
     return {"rolled_back": True, "core_version": binding.core_version,
