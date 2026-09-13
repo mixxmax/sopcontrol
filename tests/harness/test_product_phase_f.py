@@ -167,3 +167,14 @@ def test_compat_measure_without_sys_regression(tmp_path, monkeypatch, capsys):
 
     assert rc == 0
     assert "warn: attach-status exceeded warm budget" in capsys.readouterr().err
+
+
+def test_wp_j_verified_platform_honest():
+    """WP-J：本机 darwin-arm64+3.12 标 verified；未验证平台不冒充。"""
+    from sopcontrol.product import compat_check
+    report = compat_check()
+    assert report["platform"]["os_verified"] is True
+    assert report["platform"]["python_verified"] is True
+    assert report["matrix"]["verified"]["os"] == ["macOS arm64"]
+    # 声明列表仍在（可装），但 verified 与其分离
+    assert "Linux" in report["matrix"]["os"]

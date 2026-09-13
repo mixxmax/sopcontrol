@@ -20,8 +20,8 @@ SOP Control **v0.2** 是可用的实验性控制平面，不是企业治理套�
 
 | 维度 | 支持 |
 |------|------|
-| Python | 3.10 / 3.11 / 3.12 |
-| OS | macOS / Linux / Windows |
+| Python | 3.10 / 3.11 / 3.12（本机 live 实测仅 3.12） |
+| OS | 正式支持：macOS arm64；Linux / Windows：未验证（unproven，不承诺） |
 | OpenCode | 插件 `tool.execute.before` — **live 实测** |
 | Codex | 无 PreToolUse → 投影 + `wrap` / `enter` + git/CI — **事后门 live 实测**；不得报 runtime enforceable |
 | Claude Code | PreToolUse 协议已适配 — live 视环境 API key；settings 损坏只局部 gap |

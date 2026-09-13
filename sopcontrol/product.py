@@ -14,6 +14,10 @@ from .coverage import control_coverage
 INSTALL_MATRIX: dict[str, Any] = {
     "python": ["3.10", "3.11", "3.12"],
     "os": ["macOS", "Linux", "Windows"],
+    # WP-J：只有本机 live 实测过。其余是“声明可装”，不是“已验证”——
+    # 不可宣称 Win/Linux 已验证；无真实 runner 结果一律 unproven。
+    "verified": {"os": ["macOS arm64"], "python": ["3.12"],
+                 "note": "仅 darwin-arm64 + CPython 3.12 本机实测；其余未验证"},
     "harnesses": {
         "opencode": {
             "interception": "runtime plugin tool.execute.before",
@@ -50,6 +54,8 @@ def current_platform_info() -> dict[str, Any]:
         in {v for v in INSTALL_MATRIX["python"]},
         "os": platform.system(),
         "os_supported": platform.system() in {"Darwin", "Linux", "Windows"},
+        "os_verified": platform.system() == "Darwin" and platform.machine() == "arm64",
+        "python_verified": f"{sys.version_info.major}.{sys.version_info.minor}" == "3.12",
         "platform": platform.platform(),
         "machine": platform.machine(),
     }
