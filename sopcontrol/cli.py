@@ -415,6 +415,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--control-profile", default="", help="绑定的动态 profile id（§9.2）")
     p.add_argument("--control-profile-revision", type=int, default=0, help="冻结 revision")
     p.add_argument("--plan-digest", default="", help="冻结计划 digest（验收一致性）")
+    p.add_argument("--goal-digest", default="", help="B4：绑定的 GoalContract digest（空=未绑定）")
+    p.add_argument("--execution-plan-digest", default="", help="B4：绑定的初始 ExecutionPlan digest（空=未绑定）")
     p.set_defaults(func=cmd_task)
     def _task_cmd(name: str, help_text: str, *, task_id: bool = False, changed: bool = False, fields: bool = False):
         p = task_sub.add_parser(name, help=help_text)

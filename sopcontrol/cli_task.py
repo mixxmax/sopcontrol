@@ -269,6 +269,8 @@ def cmd_task(args) -> int:
                     control_profile_id=bind_profile,
                     control_profile_revision=bind_rev,
                     effective_plan_digest=bind_digest,
+                    goal_digest=getattr(args, "goal_digest", "") or "",
+                    execution_plan_digest=getattr(args, "execution_plan_digest", "") or "",
                 ),
                 resolution_of=list(resolves),
             )

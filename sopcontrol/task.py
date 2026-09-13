@@ -76,6 +76,8 @@ class Contract(BaseModel):
     control_profile_id: str = ""                              # §9.2：绑定的动态 profile
     control_profile_revision: int = 0                         # 冻结 revision（0=未绑定）
     effective_plan_digest: str = ""                           # 冻结计划 digest（验收一致性）
+    goal_digest: str = ""                                        # B4：绑定的 GoalContract digest（空=未绑定）
+    execution_plan_digest: str = ""                              # B4：绑定的初始 ExecutionPlan digest（空=未绑定）
 
 
 class EnvelopeRecord(BaseModel):
@@ -342,6 +344,8 @@ def takeover_pack(
         "rule_verdicts": {r: rule_verdicts.get(r) for r in required},
         "open_findings": open_findings,
         "executor": task.contract.model_identity or "（未绑定）",
+        "goal_digest": task.contract.goal_digest,
+        "execution_plan_digest": task.contract.execution_plan_digest,
         "write_granularity": task.contract.write_granularity,
         "strict_schema": task.contract.strict_schema,
         "next_legal_actions": LEGAL_ACTIONS[task.status] + (
@@ -805,49 +809,57 @@ def _hash_file_chunks(path: Path, digest) -> None:
             digest.update(chunk)
 
 
-def _digest_walk(root: Path, rel: Path, parts: list[str], seen: set[str]) -> None:
-    """递归摘要：排序/POSIX 路径/类型/大小/内容；循环与逃逸显式处理。
+def _normalize_input_path(raw_path: str) -> str:
+    """§11.1 路径规范化：拒绝 NUL、绝对路径、父遍历；规范化分隔符并去重。"""
+    if "\0" in raw_path:
+        raise ValueError(f"路径包含非法 NUL 字符: {raw_path!r}")
+    s = raw_path.strip().replace("\\", "/")
+    p = Path(s)
+    if p.is_absolute() or s.startswith("/"):
+        raise ValueError(f"拒绝绝对路径输入: {raw_path!r}")
+    parts = p.parts
+    if any(part == ".." for part in parts):
+        raise ValueError(f"拒绝包含 '..' 的相对路径: {raw_path!r}")
+    norm_parts = [part for part in parts if part not in ("", ".")]
+    if not norm_parts:
+        return "."
+    return "/".join(norm_parts)
 
-    seen 记录已摘要的解析后绝对路径（防循环）；符号链接按键规范到解析目标，
-    使 alias 与 target 内容等价；逃逸 root 直接失败。
+
+def _digest_walk(root: Path, rel: Path, parts: list[str], seen: set[str]) -> None:
+    """递归摘要：排序/POSIX 路径/类型/大小/内容；失败一律 fail-closed。
+
+    §12.1（WP-6）默认安全策略：lstat 先行，符号链接一律拒绝——不因目标
+    位于任务目录内就自动跟随（跟随策略未来必须独立、显式、可绑定、可
+    测试，不能悄悄改变默认语义）；目录/socket/设备等特殊文件拒绝；
+    逃逸 root 与遍历循环直接失败。
     """
     import hashlib as _hashlib
-    import os as _os
+    import stat as _stat
 
-    root_abs = root.resolve()
     target = root / rel
     key = str(rel.as_posix())
+    # lstat 判定目录项类型本身：symlink 在此原样拒绝（不 resolve、不 readlink）
     if target.is_symlink():
-        try:
-            link_target = _os.readlink(target)
-        except OSError:
-            parts.append(f"{key}:unreadable-link")
-            return
-        try:
-            resolved = (target.parent / link_target).resolve()
-        except (OSError, RuntimeError, ValueError):
-            parts.append(f"{key}:symlink-loop")
-            return
-        try:
-            resolved.relative_to(root_abs)
-        except ValueError:
-            raise ValueError(f"输入路径逃逸 root：{key} -> {link_target}")
-        if str(resolved) in seen:
-            parts.append(f"{key}:cycle")
-            return
-        seen.add(str(resolved))
-        _digest_walk(root, resolved.relative_to(root_abs), parts, seen)
+        raise ValueError(f"输入路径是符号链接（默认拒绝，不跟随）: {key}")
+    try:
+        st = target.lstat()
+    except FileNotFoundError:
+        parts.append(f"{key}:missing")
         return
+    except OSError as exc:
+        raise ValueError(f"无法访问文件状态: {key} ({exc})")
+    if _stat.S_ISFIFO(st.st_mode) or _stat.S_ISSOCK(st.st_mode) \
+            or _stat.S_ISCHR(st.st_mode) or _stat.S_ISBLK(st.st_mode):
+        raise ValueError(f"不支持的特殊文件类型: {key}")
     if key in seen:
-        parts.append(f"{key}:cycle")
-        return
+        raise ValueError(f"检测到遍历循环: {key}")
     seen.add(key)
-    if target.is_dir():
+    if _stat.S_ISDIR(st.st_mode):
         try:
             children = sorted(p.name for p in target.iterdir())
-        except OSError:
-            parts.append(f"{key}:unreadable-dir")
-            return
+        except OSError as exc:
+            raise ValueError(f"无法读取目录: {key} ({exc})")
         if not children:
             parts.append(f"{key}:empty-dir")
             return
@@ -855,36 +867,42 @@ def _digest_walk(root: Path, rel: Path, parts: list[str], seen: set[str]) -> Non
         for name in children:
             _digest_walk(root, rel / name, parts, seen)
         return
-    if target.is_file():
-        size = target.stat().st_size
-        digest = _hashlib.sha256()
-        _hash_file_chunks(target, digest)
-        parts.append(f"{key}:file:{size}:{digest.hexdigest()[:16]}")
+    if _stat.S_ISREG(st.st_mode):
+        try:
+            size = st.st_size
+            digest = _hashlib.sha256()
+            _hash_file_chunks(target, digest)
+        except OSError as exc:
+            raise ValueError(f"无法读取文件内容: {key} ({exc})")
+        parts.append(f"{key}:file:{size}:{digest.hexdigest()}")
         return
-    if target.exists() or target.is_symlink():
-        parts.append(f"{key}:special")
-        return
-    parts.append(f"{key}:missing")
+    raise ValueError(f"不支持的特殊文件类型: {key}")
 
 
 def submit_input_digest_for(root: Path, changed_paths: list[str]) -> str:
     """submit 改动内容摘要（§7.3/§9 输入绑定）：固定 schema、稳定排序稳定编码。
 
     文件记内容 hash（分块流式）；目录递归记全部条目；空目录与缺失可区分；
-    符号链接不跟随、逃逸即失败；绝对路径/mtime/inode/权限不入摘要。
+    符号链接默认拒绝（不跟随，§12.1）；绝对路径/逃逸/特殊文件/循环即失败；
+    mtime/inode/权限不入摘要。
     """
     import hashlib as _hashlib
 
     from .worktree import resolves_inside
 
     root = Path(root)
+    # 路径验证、规范化与去重（§11.1）
+    normalized_set: set[str] = set()
+    for raw in changed_paths or []:
+        norm = _normalize_input_path(str(raw))
+        normalized_set.add(norm)
+
     parts: list[str] = [f"schema:{INPUT_DIGEST_SCHEMA}"]
-    for rel in sorted(changed_paths or []):
+    for rel in sorted(normalized_set):
         try:
             inside = resolves_inside(root, rel)
-        except (OSError, RuntimeError, ValueError):
-            parts.append(f"{rel}:unresolvable")
-            continue
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise ValueError(f"输入路径解析异常: {rel} ({exc})")
         if not inside:
             raise ValueError(f"输入路径逃逸 root：{rel}")
         _digest_walk(root, Path(rel), parts, set())
