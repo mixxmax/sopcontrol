@@ -370,3 +370,117 @@ def test_dynamic_compile_cli(project, capsys, monkeypatch):
     assert main(["dynamic", "compile", result["rule_id"], "--json"]) == 0
     out = json.loads(capsys.readouterr().out)
     assert out["rule_status"] == "compiled" and out["compile_digest"]
+
+
+def test_correction_without_keyword_becomes_low_candidate(project):
+    """无"永久"关键词的工作方式纠正 → 低优先级候选（可捕获，不打扰）。"""
+    from sopcontrol.dynamic_sop import observe_utterance
+
+    _o, cand, created = observe_utterance(
+        project, quote="审计顺序应该先台账后评分", source_ref="s1")
+    assert created is True
+    assert cand.priority == "low"
+
+
+def test_plain_discussion_stays_observation_only(project):
+    """普通讨论只留 observation，不生成候选。"""
+    from sopcontrol.dynamic_sop import list_dynamic_candidates, observe_utterance
+
+    _o, cand, created = observe_utterance(
+        project, quote="今天天气不错，适合出去走走", source_ref="s1")
+    assert created is False and cand is None
+    assert list_dynamic_candidates(project) == []
+    assert _o.observation_id.startswith("obs-")
+
+
+def test_explicit_once_only_blocked_from_permanent(project):
+    """显式"仅本次"即使确认 keep_longterm 也必须拒绝进永久空间。"""
+    import pytest
+
+    from sopcontrol.dynamic_sop import confirm_candidate, observe_utterance
+
+    _o, cand, _ = observe_utterance(
+        project, quote="仅本次跳过标题检查", source_ref="s1")
+    assert cand is not None  # 仍需确认卡片（选 once_only）
+    with pytest.raises(ValueError, match="仅本次"):
+        confirm_candidate(project, cand.candidate_id, "keep_longterm")
+    result = confirm_candidate(project, cand.candidate_id, "once_only")
+    assert result["permanent"] is False
+
+
+def test_not_a_rule_never_reasks(project):
+    """not_a_rule 后同样原话不再产生新候选。"""
+    from sopcontrol.dynamic_sop import confirm_candidate, observe_utterance
+
+    _o, cand, _ = observe_utterance(
+        project, quote="审计顺序应该先台账后评分", source_ref="s1")
+    confirm_candidate(project, cand.candidate_id, "not_a_rule")
+    _o2, cand2, created2 = observe_utterance(
+        project, quote="审计顺序应该先台账后评分", source_ref="s2")
+    assert created2 is False  # 去重命中，不复问
+
+
+def test_synonym_correction_aggregates(project):
+    """同义重复（标点/大小写差异）聚合到同一候选。"""
+    from sopcontrol.dynamic_sop import observe_utterance
+
+    _o1, c1, _ = observe_utterance(
+        project, quote="审计顺序应该先台账，后评分", source_ref="s1")
+    _o2, c2, created2 = observe_utterance(
+        project, quote="审计顺序应该先台账后评分！！", source_ref="s2")
+    assert created2 is False and c2.candidate_id == c1.candidate_id
+
+
+def test_distinct_rules_not_merged(project):
+    """不同规则不因相似词语被合并。"""
+    from sopcontrol.dynamic_sop import observe_utterance
+
+    _o1, c1, _ = observe_utterance(
+        project, quote="审计顺序应该先台账后评分", source_ref="s1")
+    _o2, c2, created2 = observe_utterance(
+        project, quote="审计顺序应该先评分后台账", source_ref="s2")
+    assert created2 is True and c2.candidate_id != c1.candidate_id
+
+
+def test_suggestion_without_confirm_zero_registry_growth(project):
+    """模型建议未确认 → registry 零增长（建议只活在 observation 里）。"""
+    from sopcontrol.dynamic_sop import observe_utterance
+    from sopcontrol.registry import Registry
+
+    before = len(Registry(project / ".sopcontrol" / "rules" / "registry.yaml").load())
+    observe_utterance(
+        project, quote="审计顺序应该先台账后评分", source_ref="s1",
+        suggested={"statement": "审计必须先台账", "modality": "MUST"})
+    after = len(Registry(project / ".sopcontrol" / "rules" / "registry.yaml").load())
+    assert after == before
+
+
+def test_repeat_correction_escalates_priority(project):
+    """同类纠正重复出现 → 高优先级。"""
+    from sopcontrol.dynamic_sop import observe_utterance
+
+    _o1, c1, _ = observe_utterance(
+        project, quote="审计顺序应该先台账后评分", source_ref="s1")
+    assert c1.priority == "low"
+    _o2, c2, _ = observe_utterance(
+        project, quote="审计顺序应该先台账后评分", source_ref="s2")
+    assert c2.priority == "high" and c2.frequency == 2
+
+
+def test_cross_session_restore_with_source_chain(project):
+    """换会话从 registry 恢复：规则、原话链、确认信息完整。"""
+    from sopcontrol.dynamic_sop import confirm_candidate, observe_utterance
+    from sopcontrol.registry import Registry
+
+    _o, cand, _ = observe_utterance(
+        project, quote="审计顺序应该先台账后评分", source_ref="conv-42",
+        context={"action": "materials.audit"})
+    result = confirm_candidate(
+        project, cand.candidate_id, "keep_longterm",
+        activation={"actions": ["materials.audit"]})
+    # 模拟换会话：全新 Registry 实例
+    rules = Registry(project / ".sopcontrol" / "rules" / "registry.yaml").load()
+    rule = next(r for r in rules if r.rule_id == result["rule_id"])
+    assert rule.source.ref == "conv-42"
+    assert rule.owner == "user" and rule.accepted_at is not None
+    assert rule.activation.actions == ["materials.audit"]

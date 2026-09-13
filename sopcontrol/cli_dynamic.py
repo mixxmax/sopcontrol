@@ -38,7 +38,9 @@ def cmd_dynamic(args) -> int:
         print(json.dumps({
             "observation_id": obs.observation_id,
             "explicit_once_only": obs.explicit_once_only,
-            "candidate_id": candidate.candidate_id,
+            "capture_tier": ("observation_only" if candidate is None
+                             else f"candidate_{candidate.priority}"),
+            "candidate_id": candidate.candidate_id if candidate else "",
             "new_candidate": created,
             "note": "候选只供审查；确认后永久保存（无 TTL）"},
             ensure_ascii=False, indent=2))

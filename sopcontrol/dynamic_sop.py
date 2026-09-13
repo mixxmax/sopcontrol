@@ -18,7 +18,7 @@ import os
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -42,6 +42,48 @@ _ONCE_ONLY_MARKERS = (
     "仅本次", "只这次", "这次先", "就这一次", "仅此一次", "just this once",
     "this time only", "only for this run",
 )
+
+# 纠正信号（工作方式纠正 → 候选；匹配任一即候选，见 classify_utterance）
+_CORRECTION_MARKERS = (
+    "纠正", "更正", "应该", "不应该", "不要", "别", "不应", "改为", "改成",
+    "改", "调整", "必须", "需要", "只对", "先", "前", "不要再", "真正想要",
+    "停止", "禁止", "上限", "下限", "轮", "停止条件", "容忍", "只修",
+    "为止", "不扩展", "只查", "只审", "范围", "跳过",
+)
+
+# 明确长期信号（→ 高优先级候选）
+_LONGTERM_MARKERS = (
+    "以后", "始终", "长期", "永远", "每次", "always", "记住",
+)
+
+CaptureTier = Literal["observation_only", "candidate_low", "candidate_high"]
+
+
+def _loose_quote(quote: str) -> str:
+    """同义归一（聚合用；原话本身永不改写）：大小写折叠 + 标点剥离 + 空白归一。
+
+    只合并标点/大小写差异（审计顺序应该先台账，后评分 ≡ 后评分！！）；
+    不同业务词（先台账后评分 vs 先评分后台账）不受影响。
+    """
+    import re
+    import unicodedata
+
+    text = unicodedata.normalize("NFKC", str(quote)).casefold()
+    text = "".join(ch for ch in text if not unicodedata.category(ch).startswith("P"))
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def classify_utterance(quote: str) -> CaptureTier:
+    """WP-C 三级捕获（确定性，不依赖 LLM）：普通讨论只留 observation；
+    纠正类进候选；明确长期/重复意图进高优先级（重复由调用方按 frequency 升级）。
+    """
+    text = str(quote)
+    lowered = text.lower()
+    if any(m in lowered or m in text for m in _LONGTERM_MARKERS):
+        return "candidate_high"
+    if any(m in lowered or m in text for m in _CORRECTION_MARKERS):
+        return "candidate_low"
+    return "observation_only"
 
 ConfirmDecision = "keep_longterm", "edit_keep_longterm", "once_only", "not_a_rule"
 
@@ -115,10 +157,13 @@ def observe_utterance(
     context: Optional[dict[str, str]] = None,
     suggested: Optional[dict[str, Any]] = None,
 ) -> tuple[UtteranceObservation, Any, bool]:
-    """捕获用户原话 → 候选（去重）。返回 (observation, candidate_record, created)。
+    """捕获用户原话 → 按三级策略决定是否候选。
 
-    确定性规则：所有纠正类表达都成为候选（不依赖"永久"关键词，§4.1/§12.2）；
+    返回 (observation, candidate_record|None, created)。
+    observation_only 时不创建候选（普通讨论不污染候选箱，§7.2）。
+    确定性规则：纠正类表达成为候选（不依赖"永久"关键词）；
     显式临时标记 → explicit_once_only（确认时只能进会话级记录）。
+    同义重复聚合到同一候选；重复出现升级为高优先级。
     """
     root = Path(root)
     quote = str(quote).strip()
@@ -138,12 +183,15 @@ def observe_utterance(
     records = _load_jsonl(path)
     records.append(obs.model_dump(mode="json"))
     _atomic_write_jsonl(path, records)
-    # 候选聚合（指纹去重：同义重复不重复询问，§4.2 第 6 步）
+    tier = classify_utterance(quote)
+    if tier == "observation_only":
+        return obs, None, False
+    # 候选聚合（同义归一去重：标点/大小写差异不重复询问，§4.2 第 6 步）
     store = CandidateStore(root)
-    normalized = " ".join(quote.split())
+    loose = _loose_quote(quote)
     candidate, created = store.upsert(
         kind="dynamic_sop",
-        statement=normalized,
+        statement=loose,
         scope_guess=str(context.get("product") or "project"),
         suggested_action="register_rule",
         suggested_modality="MUST",
@@ -151,7 +199,18 @@ def observe_utterance(
                                occurrence_id=obs.observation_id),
         note=("动态 SOP 候选：确认后永久保存（rule_class=dynamic_sop，无自动过期）；"
               "显式临时表达只会进入会话级记录"),
+        priority="high" if tier == "candidate_high" else "low",
+        explicit_once_only=explicit_once,
     )
+    # 候选陈述即宽松归一形态（仍可读；原话全文保留在 observation exact_quote）。
+    # 重复纠正升级为高优先级（frequency>=2 且仍是 low）
+    if candidate.frequency >= 2 and candidate.priority == "low":
+        candidate.priority = "high"
+        all_records = store.load()
+        for record in all_records:
+            if record.candidate_id == candidate.candidate_id:
+                record.priority = "high"
+        store.save(all_records)
     return obs, candidate, created
 
 
@@ -181,6 +240,10 @@ def confirm_candidate(
         raise ValueError(f"候选 {candidate_id} 不是动态 SOP 候选")
     if decision not in ConfirmDecision:
         raise ValueError(f"非法决定: {decision!r}（允许 {ConfirmDecision}）")
+    if decision in ("keep_longterm", "edit_keep_longterm") and record.explicit_once_only:
+        raise ValueError(
+            "仅本次表达不能进入永久空间：请选择 once_only（会话级记录）"
+            "或 not_a_rule；改永久语义必须走新 revision（§7.2）")
     statement = (edited_statement or record.statement).strip()
 
     if decision in ("keep_longterm", "edit_keep_longterm"):
