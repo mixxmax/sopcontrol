@@ -213,3 +213,53 @@ def test_p1c_scope_expansion_rejected():
          "scope": {"actions": ["删库"]},
          "durability": "permanent_candidate"}])
     assert any("scope 扩大" in p for p in validate_distiller_output(bad, b))
+
+
+def test_p1d_routes_list_and_decide(project):
+    from sopcontrol.learning import (LearningProposal, ProposalDecision,
+                                     decide_proposal, list_proposals,
+                                     save_proposals)
+    p = LearningProposal(window_id="w", statement="先台账后评分",
+                         scope_summary="筛选阶段", non_goals=["不扩范围"])
+    assert save_proposals(project, [p]) == 1
+    assert len(list_proposals(project, status="proposed")) == 1
+    d = ProposalDecision(proposal_id=p.proposal_id, route="control")
+    out = decide_proposal(project, p, d)
+    assert out["status"] == "confirmed" and "candidate_id" in out
+    # control 经候选箱：Registry 零增长，候选箱 +1
+    from sopcontrol.registry import Registry
+    assert isinstance(Registry(project / ".sopcontrol" / "rules" / "registry.yaml").load(), list)
+    from sopcontrol.dynamic_sop import list_dynamic_candidates
+    assert any(c["statement"] == "先台账后评分" for c in list_dynamic_candidates(project))
+    assert list_proposals(project, status="proposed") == []
+
+
+def test_p1d_document_both_once_only_defer_reject(project):
+    from sopcontrol.learning import (LearningProposal, ProposalDecision,
+                                     decide_proposal, list_proposals)
+    import pytest as _pt
+    mk = lambda s, w="w": LearningProposal(window_id=w, statement=s,
+                                           scope_summary="sc", non_goals=["n"])
+    p1 = mk("文案A", "w1")
+    out = decide_proposal(project, p1, ProposalDecision(proposal_id=p1.proposal_id, route="document"))
+    assert out["status"] == "confirmed" and out["doc_payload"]["statement"] == "文案A"
+    p2 = mk("双轨B", "w2")
+    out2 = decide_proposal(project, p2, ProposalDecision(proposal_id=p2.proposal_id, route="both"))
+    assert "candidate_id" in out2 and "doc_payload" in out2
+    p3 = mk("本次C", "w3")
+    out3 = decide_proposal(project, p3, ProposalDecision(proposal_id=p3.proposal_id, route="once_only"))
+    assert out3["status"] == "confirmed"
+    p4 = mk("延后D", "w4")
+    assert decide_proposal(project, p4, ProposalDecision(proposal_id=p4.proposal_id, route="defer"))["status"] == "deferred"
+    p5 = mk("拒绝E", "w5")
+    assert decide_proposal(project, p5, ProposalDecision(proposal_id=p5.proposal_id, route="reject"))["status"] == "rejected"
+    # once_only 证据禁 control
+    p6 = LearningProposal(window_id="w6", statement="临时F", scope_summary="sc",
+                          non_goals=["n"], evidence_refs=["仅本次-obs-1"])
+    with _pt.raises(ValueError, match="once_only"):
+        decide_proposal(project, p6, ProposalDecision(proposal_id=p6.proposal_id, route="control"))
+    # 重复决定拒绝（以库内已定案态重决）
+    done = list_proposals(project, status="deferred")[0]
+    with _pt.raises(ValueError, match="已定案"):
+        decide_proposal(project, done, ProposalDecision(proposal_id=done.proposal_id, route="reject"))
+    assert list_proposals(project, status="proposed") == []  # 被拒 control 未落盘

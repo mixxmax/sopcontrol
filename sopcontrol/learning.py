@@ -438,3 +438,111 @@ def distill_with_fallback(bundle: EvidenceBundle, adapter: DistillerAdapter, *,
                                    no_candidate_reason="fake 输出亦非法"), "empty"
         return out, "fake-fallback(schema)"
     return out, adapter.name
+
+
+# ---------------------------------------------------------------------------
+# P1-D：提案确认接口（列表/详情/决定路由；control 经候选箱正规链）
+# ---------------------------------------------------------------------------
+
+def _proposals_path(root: Path) -> Path:
+    d = Path(root) / ".sopcontrol-local" / "learning"
+    d.mkdir(parents=True, exist_ok=True)
+    return d / "proposals.jsonl"
+
+
+def save_proposals(root: Path | str, proposals: list[LearningProposal]) -> int:
+    import json
+    path = _proposals_path(Path(root))
+    with open(path, "a", encoding="utf-8") as fh:
+        for p in proposals:
+            fh.write(p.model_dump_json() + "\n")
+    return len(proposals)
+
+
+def list_proposals(root: Path | str, *,
+                   status: str = "") -> list[LearningProposal]:
+    import json
+    path = _proposals_path(Path(root))
+    if not path.is_file():
+        return []
+    out = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            p = LearningProposal.model_validate(json.loads(line))
+        except ValueError:
+            continue
+        if status and p.status != status:
+            continue
+        out.append(p)
+    return out
+
+
+def _rewrite_proposal(root: Path, proposal: LearningProposal) -> None:
+    import json
+    path = _proposals_path(Path(root))
+    kept: list[str] = []
+    replaced = False
+    if path.is_file():
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                if LearningProposal.model_validate(
+                        json.loads(line)).proposal_id == proposal.proposal_id:
+                    replaced = True
+                    continue
+            except ValueError:
+                pass
+            kept.append(line)
+    kept.append(proposal.model_dump_json())
+    path.write_text("\n".join(kept) + "\n", encoding="utf-8")
+
+
+def decide_proposal(root: Path | str, proposal: LearningProposal,
+                    decision: ProposalDecision) -> dict[str, Any]:
+    """P1-D：六选一路由。control/both 经 CandidateStore（正规链入口），
+    永不直写 Registry；once_only 证据禁 control。"""
+    from .candidate import CandidateSource, CandidateStore
+    root = Path(root)
+    if decision.proposal_id != proposal.proposal_id:
+        raise ValueError("决定与提案不匹配")
+    if decision.route in ("control", "both") and any(
+            "仅本次" in ref for ref in proposal.evidence_refs):
+        raise ValueError("once_only 证据不得路由 control")
+    if proposal.status != "proposed":
+        raise ValueError(f"提案已定案（{proposal.status}），不得重复决定")
+    result: dict[str, Any] = {"proposal_id": proposal.proposal_id,
+                              "route": decision.route}
+    if decision.route in ("control", "both"):
+        store = CandidateStore(root)
+        record, _ = store.upsert(
+            kind="dynamic_sop", statement=proposal.statement,
+            scope_guess="project", suggested_action="register_rule",
+            suggested_modality="MUST",
+            source=CandidateSource(source_type="learning_proposal",
+                                   ref=proposal.proposal_id,
+                                   occurrence_id=proposal.proposal_id),
+            note="学习提案转候选；晋升走 confirm/compile 正规链",
+            priority="low", explicit_once_only=False)
+        result["candidate_id"] = record.candidate_id
+    if decision.route in ("document", "both"):
+        result["doc_payload"] = {
+            "statement": proposal.statement,
+            "scope": proposal.scope_summary,
+            "exceptions": proposal.exceptions,
+            "non_goals": proposal.non_goals,
+        }
+    if decision.route == "once_only":
+        result["note"] = "仅本次：记入会话级语义，不进永久空间"
+    status_map = {"control": "confirmed", "document": "confirmed",
+                  "both": "confirmed", "once_only": "confirmed",
+                  "defer": "deferred", "reject": "rejected"}
+    decided = proposal.model_copy(update={
+        "status": status_map[decision.route], "route": decision.route,
+        "decided_at": utcnow()})
+    _rewrite_proposal(root, decided)
+    result["status"] = decided.status
+    return result
