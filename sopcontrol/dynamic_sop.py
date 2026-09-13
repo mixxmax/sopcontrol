@@ -283,11 +283,12 @@ def confirm_candidate(
                 "note": "动态 SOP 已永久保存并接受；无 TTL，仅显式生命周期可改变。"
                         "执行前需 compile（证据见 rule.compile_digest）"}
     if decision == "once_only":
-        # 仅本次：会话级记录，绝不进入永久规则空间（§2.3）
+        # 仅本次：会话级记录，绑定当前 session，绝不进入永久规则空间（§2.3/WP-F）
         path = _once_only_path(root)
         records = _load_jsonl(path)
         records.append({"candidate_id": candidate_id, "statement": statement,
-                        "recorded_at": utcnow().isoformat(), "actor": actor})
+                        "recorded_at": utcnow().isoformat(), "actor": actor,
+                        "session_id": current_session_id(root)})
         _atomic_write_jsonl(path, records)
         store.triage(candidate_id, "triaged")
         return {"decision": decision, "permanent": False,
@@ -354,8 +355,78 @@ def compile_rule(root: Path | str, rule_id: str, *,
             "note": "编译成功证据已记录；执行仍需上下文选择通过"}
 
 
-def list_once_only(root: Path | str) -> list[dict[str, Any]]:
-    return _load_jsonl(_once_only_path(Path(root)))
+def _session_id_path(root: Path) -> Path:
+    return _dynamic_dir(root) / "session_id"
+
+
+def current_session_id(root: Path | str) -> str:
+    """WP-F：会话 ID 只来自不可控源——环境变量 SOPCTL_SESSION，否则本地非权威文件。
+
+    永不从用户对话文本推断（§10.2）。"""
+    import os
+    import uuid
+    env = (os.environ.get("SOPCTL_SESSION") or "").strip()
+    if env:
+        return env
+    root = Path(root)
+    path = _session_id_path(root)
+    try:
+        existing = path.read_text(encoding="utf-8").strip()
+        if existing:
+            return existing
+    except OSError:
+        pass
+    sid = "sess-" + uuid.uuid4().hex[:12]
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(sid, encoding="utf-8")
+    except OSError:
+        pass
+    return sid
+
+
+def rotate_session(root: Path | str) -> str:
+    """新会话：轮换 ID。旧记录自动变为不可执行历史（list 默认不再返回）。"""
+    import uuid
+    root = Path(root)
+    sid = "sess-" + uuid.uuid4().hex[:12]
+    path = _session_id_path(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(sid, encoding="utf-8")
+    return sid
+
+
+def list_once_only(root: Path | str, *, session_id: str = "",
+                   active_only: bool = True) -> list[dict[str, Any]]:
+    """WP-F：默认只返回当前会话的 active 记录；history 需显式 active_only=False。"""
+    records = _load_jsonl(_once_only_path(Path(root)))
+    if not active_only:
+        return records
+    sid = session_id or current_session_id(root)
+    return [r for r in records if r.get("session_id", "") in ("", sid)]
+
+
+def clean_once_only(root: Path | str, *, session_id: str = "",
+                    keep_current: bool = True) -> dict[str, Any]:
+    """WP-F：清理会话级记录。失败只返回 error，绝不触碰永久 registry。"""
+    root = Path(root)
+    try:
+        records = _load_jsonl(_once_only_path(root))
+    except OSError as exc:
+        return {"cleaned": 0, "error": f"读取失败: {exc}"}
+    current = current_session_id(root)
+    if session_id:
+        kept = [r for r in records if r.get("session_id", "") != session_id]
+    elif keep_current:
+        kept = [r for r in records if r.get("session_id", "") in ("", current)]
+    else:
+        kept = []
+    cleaned = len(records) - len(kept)
+    try:
+        _atomic_write_jsonl(_once_only_path(root), kept)
+    except OSError as exc:
+        return {"cleaned": 0, "error": f"清理失败（永久规则未动）: {exc}"}
+    return {"cleaned": cleaned, "error": ""}
 
 
 # ---------------------------------------------------------------------------
@@ -370,6 +441,9 @@ _CONTEXT_KEYS = {"products": "product", "actions": "action", "phases": "phase",
 def select_rules(rules: list[Rule], context: dict[str, str]
                  ) -> tuple[list[Rule], list[dict[str, str]], list[dict[str, str]]]:
     """确定性情境选择。返回 (selected, not_applicable, unproven)。
+
+    WP-F：本函数只收 rules 显式入参，永不读取 once-only 会话文件——
+    会话残留无论如何不能影响规则选择（见测试）。
 
     not_applicable 项带可解释原因（§4.4 要求的措辞形态）：
     "规则 DR-001 存在且 active；本次未选择，因为 action=jobs.scan，规则要求 action=materials.audit。"

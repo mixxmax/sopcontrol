@@ -87,9 +87,21 @@ def cmd_dynamic(args) -> int:
         return 0
 
     if args.sub == "once-only":
-        items = list_once_only(root)
+        from .dynamic_sop import list_once_only as _loo
+        items = _loo(root, active_only=not getattr(args, "all", False))
         print(json.dumps(items, ensure_ascii=False, indent=2))
         return 0
+
+    if args.sub == "session-new":
+        from .dynamic_sop import rotate_session
+        print(rotate_session(root))
+        return 0
+
+    if args.sub == "once-only-clean":
+        from .dynamic_sop import clean_once_only
+        result = clean_once_only(root, session_id=getattr(args, "session", "") or "")
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0 if not result.get("error") else 1
 
     if args.sub == "compile":
         from .dynamic_sop import compile_rule

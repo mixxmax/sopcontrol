@@ -484,3 +484,49 @@ def test_cross_session_restore_with_source_chain(project):
     assert rule.source.ref == "conv-42"
     assert rule.owner == "user" and rule.accepted_at is not None
     assert rule.activation.actions == ["materials.audit"]
+
+
+def test_wp_f_session_isolation(project, monkeypatch):
+    """WP-F：同会话可读；rotate 后新会话不可读旧记录为 active；--all 可见历史。"""
+    from sopcontrol.dynamic_sop import (
+        clean_once_only, current_session_id, rotate_session,
+    )
+    _o, cand, _ = observe_utterance(project, quote="仅本次纠正标题检查用旧模板", source_ref="s1")
+    confirm_candidate(project, cand.candidate_id, "once_only")
+    sid = current_session_id(project)
+    assert any(i.get("session_id") == sid for i in list_once_only(project))
+    rotate_session(project)
+    assert list_once_only(project) == []
+    assert len(list_once_only(project, active_only=False)) == 1
+    out = clean_once_only(project)
+    assert out["cleaned"] == 1 and not out["error"]
+    assert list_once_only(project, active_only=False) == []
+
+
+def test_wp_f_residue_never_affects_selection(project):
+    """WP-F：文件残留不能影响规则选择；新会话重启后亦然。"""
+    from sopcontrol.dynamic_sop import rotate_session
+    _o, cand, _ = observe_utterance(project, quote="仅本次纠正残留AAA检查", source_ref="s1")
+    confirm_candidate(project, cand.candidate_id, "once_only")
+    rotate_session(project)  # 新会话：残留只剩历史
+    rules = Registry(project / ".sopcontrol" / "rules" / "registry.yaml").load()
+    sel, na, unp = select_rules(rules, {"action": "x", "phase": "y"})
+    assert all("残留AAA" not in json.dumps(x, ensure_ascii=False) for x in (sel, na, unp))
+
+
+def test_wp_f_cleanup_failure_never_touches_registry(project, monkeypatch):
+    """WP-F：清理失败不删 registry。"""
+    from sopcontrol import dynamic_sop as _ds
+    before = len(Registry(project / ".sopcontrol" / "rules" / "registry.yaml").load())
+    monkeypatch.setattr(_ds, "_atomic_write_jsonl", lambda *a, **k: (_ for _ in ()).throw(OSError("disk")))
+    out = _ds.clean_once_only(project, session_id="sess-none")
+    assert out["cleaned"] == 0 and out["error"]
+    after = Registry(project / ".sopcontrol" / "rules" / "registry.yaml").load()
+    assert len(after) == before
+
+
+def test_wp_f_session_id_not_from_user_text(project, monkeypatch):
+    """WP-F：会话 ID 不从用户文本推断；SOPCTL_SESSION 环境优先。"""
+    from sopcontrol.dynamic_sop import current_session_id
+    monkeypatch.setenv("SOPCTL_SESSION", "sess-env-1")
+    assert current_session_id(project) == "sess-env-1"
