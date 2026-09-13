@@ -640,3 +640,23 @@ def test_b6_postconditions_gate():
         st = GateState(expected_required_postconditions=["p1"])
         assert decide_control_result(mk([]), frozen, st).outcome == "unknown"
         assert decide_control_result(mk(["p1"]), frozen, st).outcome == "pass"
+
+
+def test_wp_h_b6_unbound_plan_digest_compat(tmp_path):
+    """WP-H 边界：execution_plan_digest 指向不存在的冻结计划→空=不绑定，旧行为不变。"""
+    from sopcontrol.control_result import ControlResult, evaluate_control_result
+    from sopcontrol.control_profile import freeze_profile, normalize_profile, save_draft
+    from sopcontrol.task import Contract, TaskRecord
+    from datetime import datetime, timezone
+    prof = normalize_profile(BASE)
+    save_draft(tmp_path, prof)
+    frozen = freeze_profile(tmp_path, "bind")
+    res = ControlResult.model_validate({
+        "result_id": "wp-h", "task_id": "TASK-B", "phase": "audit", "profile_id": "bind",
+        "profile_revision": frozen.revision, "effective_plan_digest": frozen.digest,
+        "input_digest": "in", "baseline_digest": "base",
+        "check_id": "jd_fit", "checked_dimensions": ["jd_fit"], "findings": [], "rounds_used": 0,
+        "producer": {"actor": "a", "independence": "self_check"},
+        "created_at": datetime.now(timezone.utc).isoformat(), "postconditions": []})
+    ev = evaluate_control_result(tmp_path, res, frozen)
+    assert ev.outcome == "pass"

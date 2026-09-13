@@ -400,3 +400,35 @@ def test_wp_e_rollback_keeps_dynamic_sop(project):
     assert rb["rolled_back"] in (True, False)  # 同版本探针不一致时保持当前亦合法
     if rb["rolled_back"] is False:
         assert "探针" in rb["note"] or "丢失" in rb["note"] or "可回滚" in rb["note"]
+
+
+def test_wp_h_post_probe_failure_restores_binding(project, monkeypatch):
+    """WP-H 负向：后验 probe 失败→自动恢复旧 binding，不切换。"""
+    from sopcontrol.upgrade import init_binding, save_binding
+    import sopcontrol.upgrade as up
+    binding = init_binding(project)
+    binding.core_version = "0.2.9"
+    old_path = binding.runtime_path
+    save_binding(project, binding)
+    calls = {"n": 0}
+    real = up._probe_runtime_version
+
+    def flaky(path):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return real(path)  # staging 探针通过
+        raise RuntimeError("post-switch boom")  # 后验失败
+
+    monkeypatch.setattr(up, "_probe_runtime_version", flaky)
+    result = up.sync(project, target_version="0.3.0", assume_yes=True)
+    assert result["outcome"] == "blocked" and result["switched"] is False
+    assert load_binding(project).runtime_path == old_path
+
+
+
+
+def test_wp_h_stage_missing_source_dir(project):
+    """WP-H 负向：源缺 plugins 目录→ staging 拒绝。"""
+    import sopcontrol.upgrade as up
+    bad = up.stage_runtime(project, version="9.9.9", source=project)
+    assert bad["ok"] is False and "源缺失" in bad["error"]

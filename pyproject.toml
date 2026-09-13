@@ -65,6 +65,9 @@ testpaths = ["tests"]
 [tool.coverage.run]
 branch = true
 source = ["sopcontrol", "plugins"]
+# staged runtime 复制品是构建产物（WP-E §9.5），不是被测源码——omit 后
+# fail_under 才度量真实源码；否则副本 0% 会淹没真实覆盖率。
+omit = ["*/.sopcontrol-local/runtimes/*"]
 # 子进程并行数据：pytest-cov 在报告前自动合并（防 statement/branch 混合 DataError）
 parallel = true
 

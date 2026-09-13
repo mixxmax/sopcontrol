@@ -530,3 +530,23 @@ def test_wp_f_session_id_not_from_user_text(project, monkeypatch):
     from sopcontrol.dynamic_sop import current_session_id
     monkeypatch.setenv("SOPCTL_SESSION", "sess-env-1")
     assert current_session_id(project) == "sess-env-1"
+
+
+def test_wp_h_clean_read_failure(project, monkeypatch):
+    """WP-H 负向：记录不可读→ error，不碰 registry。"""
+    from sopcontrol import dynamic_sop as _ds
+    before = len(Registry(project / ".sopcontrol" / "rules" / "registry.yaml").load())
+    monkeypatch.setattr(_ds, "_load_jsonl", lambda *a, **k: (_ for _ in ()).throw(OSError("read")))
+    out = _ds.clean_once_only(project)
+    assert out["cleaned"] == 0 and out["error"]
+    assert len(Registry(project / ".sopcontrol" / "rules" / "registry.yaml").load()) == before
+
+
+def test_wp_h_session_id_reuses_file(project):
+    """WP-H 边界：已有 session 文件→复用，不重写。"""
+    from sopcontrol.dynamic_sop import current_session_id
+    from pathlib import Path
+    f = Path(project) / ".sopcontrol-local" / "dynamic" / "session_id"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text("sess-pinned", encoding="utf-8")
+    assert current_session_id(project) == "sess-pinned"
