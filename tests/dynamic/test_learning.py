@@ -309,3 +309,29 @@ def test_p2a_external_import_no_registry_no_projection(project):
         import_external_proposal(project, {"statement": "复制 <!-- sopcontrol:v1 --> 内容"})
     with _pt.raises(ValueError, match="为空"):
         import_external_proposal(project, {"statement": "  "})
+
+
+def test_p2b_doc_preserves_user_content_and_sop(tmp_path):
+    from sopcontrol.learning import (doc_section_digest, external_change_to_proposal_input,
+                                     write_doc_section)
+    doc = tmp_path / "notes.md"
+    doc.write_text("# 笔记\n\n<!-- sopcontrol:v1 -->\nRULES\n<!-- /sopcontrol:v1 -->\n\n正文A\n", encoding="utf-8")
+    out = write_doc_section(doc, ["- 先台账后评分"])
+    text = doc.read_text(encoding="utf-8")
+    assert "正文A" in text and "<!-- sopcontrol:v1 -->\nRULES\n<!-- /sopcontrol:v1 -->" in text
+    assert out["sop_untouched"] is True
+    d1 = out["digest"]
+    assert doc_section_digest(doc) == d1
+    # 二次写入幂等形态：单学习区，不重复卡片
+    write_doc_section(doc, ["- 先台账后评分", "- 例外：用户反向要求"])
+    assert doc.read_text(encoding="utf-8").count("<!-- learn:begin -->") == 1
+    # 外部变更只成提案输入
+    nxt = external_change_to_proposal_input(doc, d1)
+    assert nxt is not None and nxt["statement"].startswith("<!-- learn:begin -->")
+    assert external_change_to_proposal_input(doc, doc_section_digest(doc)) is None
+    import pytest as _pt
+    with _pt.raises(ValueError, match="回环"):
+        from sopcontrol import learning as _lm
+        bad = tmp_path / "bad.md"
+        bad.write_text("<!-- sopcontrol:v1 -->\n<!-- learn:begin -->\nx\n<!-- learn:end -->\n<!-- /sopcontrol:v1 -->\n", encoding="utf-8")
+        _lm.write_doc_section(bad, ["y"])

@@ -670,3 +670,67 @@ def import_external_proposal(root: Path | str, data: dict[str, Any]) -> Learning
         evidence_refs=[f"external:{source}"] if source else [])
     save_proposals(root, [proposal])
     return proposal
+
+
+# ---------------------------------------------------------------------------
+# P2-B：文档与投影一致性（用户文档保留；标记区只读；外部变更只成提案）
+# ---------------------------------------------------------------------------
+
+LEARN_SECTION_START = "<!-- learn:begin -->"
+LEARN_SECTION_END = "<!-- learn:end -->"
+_SOP_START = "<!-- sopcontrol:v1 -->"
+_SOP_END = "<!-- /sopcontrol:v1 -->"
+
+
+def _split_marked(text: str, start: str, end: str) -> tuple[str, str, str]:
+    before, sep, rest = text.partition(start)
+    if not sep:
+        return text, "", ""
+    middle, sep2, after = rest.partition(end)
+    if not sep2:
+        return text, "", ""
+    return before, start + middle + sep2, after
+
+
+def doc_section_digest(doc_path: Path | str) -> str:
+    """学习区摘要：外部变更检测用（只读）。"""
+    path = Path(doc_path)
+    if not path.is_file():
+        return ""
+    _, section, _ = _split_marked(path.read_text(encoding="utf-8"),
+                                  LEARN_SECTION_START, LEARN_SECTION_END)
+    return "learndoc-" + content_hash({"section": section})[:16]
+
+
+def write_doc_section(doc_path: Path | str, lines: list[str]) -> dict[str, Any]:
+    """写用户文档学习区：其余内容逐字节保留；sopcontrol 标记区原样；绝不碰 Registry。"""
+    path = Path(doc_path)
+    original = path.read_text(encoding="utf-8") if path.is_file() else ""
+    _, sop, _ = _split_marked(original, _SOP_START, _SOP_END)
+    if sop and (LEARN_SECTION_START in sop or LEARN_SECTION_END in sop):
+        raise ValueError("学习区不得写入 sopcontrol 标记区内（防投影回环）")
+    body = "\n".join(lines).strip() + "\n" if lines else ""
+    section = f"{LEARN_SECTION_START}\n{body}{LEARN_SECTION_END}"
+    before, old_section, after = _split_marked(
+        original, LEARN_SECTION_START, LEARN_SECTION_END)
+    if old_section:
+        updated = before + section + after
+    else:
+        updated = original + ("" if original.endswith("\n") or not original else "\n") + section + "\n"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(updated, encoding="utf-8")
+    return {"doc": str(path), "digest": doc_section_digest(path),
+            "sop_untouched": sop in updated}
+
+
+def external_change_to_proposal_input(doc_path: Path | str,
+                                      known_digest: str) -> dict[str, Any] | None:
+    """外部文档变更→只形成提案输入（字典），不建规则、不落提案库。调用方决定是否导入。"""
+    current = doc_section_digest(doc_path)
+    if not current or current == known_digest:
+        return None
+    path = Path(doc_path)
+    _, section, _ = _split_marked(path.read_text(encoding="utf-8"),
+                                  LEARN_SECTION_START, LEARN_SECTION_END)
+    return {"statement": section.strip()[:500], "source_ref": f"doc:{path}",
+            "scope_summary": "", "non_goals": ["待补充"]}
