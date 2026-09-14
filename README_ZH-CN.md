@@ -1,4 +1,19 @@
-# SOP Control
+<div align="center">
+
+# 🛡️ SOP Control
+
+### 让 Agent 在规则之外保持自主，在规则之内保持忠实
+**低开销 · 模型中立 · 活在项目里的本地控制平面与可审计记忆**
+
+<p align="center">
+  <a href="https://github.com/mixxmax/sopcontrol"><img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=flat&logo=python&logoColor=white" alt="Python 3.10+"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License"></a>
+  <a href="tests/"><img src="https://img.shields.io/badge/Tests-981%20Passed-brightgreen.svg" alt="Tests 981 Passed"></a>
+  <a href="pyproject.toml"><img src="https://img.shields.io/badge/Coverage-85%25%2B%20Branch-success.svg" alt="Branch Coverage 85%+"></a>
+  <a href="#一附-c哪里会调用大模型默认几乎不调用"><img src="https://img.shields.io/badge/Hot%20Path-Zero--LLM%20Local-blueviolet.svg" alt="Zero LLM Hot Path"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Version-v0.4.0-blue.svg" alt="Version"></a>
+  <a href="LIMITATIONS.md"><img src="https://img.shields.io/badge/Status-Beta-orange.svg" alt="Beta"></a>
+</p>
 
 [返回中文首页](README.md) · [English](README.md#english)
 
@@ -6,13 +21,9 @@
   <img src="docs/assets/sopcontrol-living-boundary.gif" alt="活的项目边界——有限圆环，边缘持续变化" width="960" />
 </p>
 
-<p align="center">
-  <a href="https://github.com/mixxmax/sopcontrol"><img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=flat&logo=python&logoColor=white" alt="Python 3.10+"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License"></a>
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Version-v0.4.0-blue.svg" alt="Version"></a>
-  <a href="LIMITATIONS.md"><img src="https://img.shields.io/badge/Status-Beta-orange.svg" alt="Beta"></a>
-</p>
+</div>
 
+> [!NOTE]
 > **SOP Control 是一个低开销、模型中立、活在项目里的本地控制平面。**
 >
 > 它的任务不是替 Agent 思考，也不是替业务产品做语义判断，而是把已经确定的规则、用户希望长期保留的动态 SOP，以及默认最自然经济的执行逻辑，变成跨会话、跨模型、可观察、可验证的项目边界。
@@ -42,6 +53,31 @@ SOP Control 把这些问题拆成两个空间：
 | :--- | :--- | :--- |
 | **规则空间** | 项目、产品和用户 | 决定什么不能被悄悄重开，哪些检查必须发生，哪些范围允许变化 |
 | **解法空间** | Agent 和宿主产品 | 在规则允许的范围内选择实现方案、调用顺序和具体表达 |
+
+```mermaid
+flowchart TB
+    subgraph RuleSpace[" 🛡️ 规则空间 (Rule Space) · 权威与约束 "]
+        direction TB
+        C["📜 产品本体 (Constitution)<br/>• 正式入口 • 写入白名单"]
+        S["⚡ 动态 SOP (Dynamic SOP)<br/>• 纠正沉淀 • 弹性上下限"]
+        N["⚖️ 自然逻辑 (Natural Logic)<br/>• 依赖顺序 • 经济防支配"]
+    end
+
+    subgraph Boundary[" 🚪 本地控制边界 (Local Control Plane / Hot Path) "]
+        Gate{"sopctl gate / ticket<br/>(零大模型 · 本地微秒级)"}
+    end
+
+    subgraph SolutionSpace[" 🤖 解法空间 (Solution Space) · 自由与实现 "]
+        Agent["Coding Agent / LLM<br/>(Cursor / Claude / OpenCode / Codex)"]
+        Sol["自由选择方案 · 编写代码 · 尝试解法"]
+    end
+
+    RuleSpace --> Boundary
+    Agent --> Sol
+    Sol -- "涉及有副作用操作 / 写入" --> Boundary
+    Boundary -- "✅ 允许准入 (Admit / Ticket)" --> Output[("正式环境 / 代码库 / 数据库")]
+    Boundary -- "❌ 违规阻断 (Block / Fail-Closed)" --> Agent
+```
 
 核心原则是：
 
@@ -95,9 +131,9 @@ SOP Control 把这些问题拆成两个空间：
 
 **我们独有的三件事**（上面几类做法都不提供）：
 
-1. **可审计的记忆**：每条永久规则都带着哪句原话来的、谁确认的、适用什么范围、现在第几版——50 条规则、三个模型、两次升级之后，你仍然敢删其中一条。
-2. **确认才生效**：一次点击都不会被当成确认；调用方自称用户也不算；没确认的永远只是建议。
-3. **升级不丢规则**：版本化运行时 + 语义 diff + 影子验证；目标版本丢规则或放宽控制即阻断切换。
+| 🧠 **可审计的记忆** | 🔒 **确认才生效** | 🛡️ **升级不丢规则** |
+| :--- | :--- | :--- |
+| 每条永久规则都带着哪句原话来的、谁确认的、适用什么范围、现在第几版——**50 条规则、三个模型、两次升级之后，你仍然敢删其中一条**。 | 一次点击都不会被当成确认；调用方自称用户也不算；**没确认的内容永远只是建议**。 | 版本化运行时 + 语义 diff + 影子验证；**目标版本若丢规则或放宽控制，立即阻断切换**。 |
 
 **一句话选型：** 只想让模型听话一点 → 上面做法往往够用；想要**定下的规则在换模型、换会话、升版本之后仍然有效，且能证明** → 用 SOP Control。
 
@@ -105,7 +141,37 @@ SOP Control 把这些问题拆成两个空间：
 
 ## 一附 C、哪里会调用大模型（默认几乎不调用）
 
-**核心结论：SOP Control 本体的热路径不调用大模型。** 仓库内没有内嵌 OpenAI / Anthropic 等 SDK 作为默认依赖；规则选择、gate、票据、账本、活动日志都是本地确定性逻辑。
+> [!TIP]
+> **核心结论：SOP Control 本体的热路径不调用大模型。** 仓库内没有内嵌 OpenAI / Anthropic 等 SDK 作为默认依赖；规则选择、gate、票据、账本、活动日志都是本地确定性逻辑。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as 👤 用户 / 维护者
+    participant Agent as 🤖 Coding Agent
+    participant HotPath as ⚡ 本地控制面 (Hot Path - 零 LLM)
+    participant Host as 📦 宿主产品 (如 JobsFlow / CLI)
+    participant ColdPath as 🧠 学习提炼 (Cold Path - 可选模型)
+
+    Note over HotPath: 耗时 < 5ms · 纯本地确定性逻辑
+    Agent->>HotPath: 尝试执行写操作 / 提交变更
+    HotPath->>HotPath: 校验 Task 契约 / 规则 / Phase 约束
+    alt 规则匹配且合规
+        HotPath->>Host: 放行 (Admitted / Phase Granted)
+        Host-->>Agent: 执行成功并返回回执
+    else 越权 / 缺少前置检查
+        HotPath-->>Agent: 阻断并返回违规原因 (Fail-Closed)
+    end
+
+    opt 会话复盘与经验提炼 (低频冷路径)
+        User->>HotPath: sopctl learn / 动态观察
+        HotPath->>ColdPath: 提取会话中的高价值纠正
+        ColdPath-->>HotPath: 生成规则提案 (Proposal)
+        HotPath->>User: 交互式提示确认 (Accept / Defer / Reject)
+        User->>HotPath: ✅ 确认长期保留
+        HotPath->>HotPath: 编译写入永久 Registry (.sopcontrol/)
+    end
+```
 
 | 路径 | 是否调用 LLM | 说明 |
 | :--- | :--- | :--- |
@@ -227,14 +293,19 @@ sopctl learn decide <proposal-id> --decision control .
 
 learn 的完整链路是：
 
-~~~text
-会话/事件回顾
-    → 触发条件、背景、目标行为和排除项的提炼
-    → 结构化学习提案
-    → 用户选择 control / edit-control / document / both
-    → 编译、冲突检查、范围绑定
-    → 成为有效规则或产品文档
-~~~
+```mermaid
+flowchart TD
+    A["会话 / 事件回顾<br/>(Session & Event Review)"] --> B["提炼触发条件、行为、边界与排除项<br/>(Extract Context, Behavior & Exclusions)"]
+    B --> C["结构化学习提案<br/>(Structured Learning Proposal)"]
+    C --> D{"用户决策路由<br/>(User Decision)"}
+    D -- "control" --> E["永久动态规则<br/>(Durable Dynamic SOP in .sopcontrol/)"]
+    D -- "edit-control" --> F["人工修正提炼内容后再入库"]
+    D -- "document" --> G["宿主产品文档<br/>(Host Docs e.g. AGENTS.md)"]
+    D -- "both" --> H["双向绑定同步 (保持单一权威源)"]
+    D -- "once-only" --> I["当前会话临时约束 (不进永久库)"]
+    D -- "defer / reject" --> J["暂缓或拒绝入库"]
+    E & F & H --> K["编译 · 冲突检查 · 范围绑定 → 成为有效规则"]
+```
 
 其中：
 
@@ -270,18 +341,19 @@ learn 的完整链路是：
 
 无论候选来自自动观察还是 learn，都必须经过同一条权威链：
 
-~~~text
-观察
-  → 提案（不具权威）
-  → 用户选择
-  → 规则分类、范围和弹性编译
-  → 冲突/放宽/过期语义检查
-  → 投影到 Agent 上下文
-  → 真实入口接线与探针
-  → 运行时 gate / harness / hook
-  → 日志和证据
-  → 新问题再次进入观察窗口
-~~~
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> 观察: 对话纠正 / 操作复盘
+    观察 --> 提案: 自动提取候选 (无权威)
+    提案 --> 用户选择: 显式确认 (拒绝/修改/采纳)
+    用户选择 --> 弹性编译: 规则分类 / 范围绑定
+    弹性编译 --> 语义检查: 冲突 / 放宽 / 过期防御
+    语义检查 --> 投影生效: 投影至 Agent 上下文
+    投影生效 --> 运行拦截: Gate / Harness / Hook 动作拦截
+    运行拦截 --> 证据审计: 活动日志 / 账本验证
+    证据审计 --> [*]
+```
 
 一条合格的动态规则不应只有一句口号。至少要能回答：
 
@@ -321,15 +393,14 @@ SOP Control 的另一个终极母题是对接：安装一次后，尽量不用�
 
 ### 6.1 首次接入做什么
 
-~~~text
-安装
-  → attach 自动发现技术入口
-  → 生成 surface inventory
-  → 识别 CLI / API / hook / worker / 写入入口
-  → 建立适配器和统一 gateway
-  → 运行真实探针
-  → 报告 governed / mapped / gap / blocked / waived
-~~~
+```mermaid
+flowchart TD
+    A["📦 安装 sopcontrol<br/>(pip install)"] --> B["🔍 sopctl attach .<br/>(自动扫描发现技术入口)"]
+    B --> C["📋 生成 Surface Inventory<br/>(识别 CLI / API / Hook / Worker / 写入入口)"]
+    C --> D["🔌 建立适配器与统一 Gateway<br/>(安装 Harness / Wrapper 拦截器)"]
+    D --> E["⚡ 运行真实探针 (Probes)<br/>(验证入口可达性与控制链)"]
+    E --> F["📊 诚实输出覆盖度报告<br/>(Governed · Mapped · Gap · Blocked · Waived)"]
+```
 
 attach 的自动发现会读取宿主的有限结构信息和入口元数据，目的是建立“产品有哪些可被控制的表面”；它不是把整个产品全文塞给模型，也不是未经确认改写业务逻辑。对可以安全接入的入口，系统建立适配器、投影和探针；对暂时无法接入的入口，必须诚实报告 gap 或 blocked，不能把未发现当成已覆盖。
 
@@ -419,23 +490,17 @@ JobsFlow 的业务结果仍由 JobsFlow 自己负责。SOP Control 的价值是�
 
 ## 九、用户实际会看到什么
 
-~~~text
-用户提出目标或纠正 Agent
-        ↓
-Agent 通过宿主正式入口执行
-        ↓
-SOP Control 选择适用规则并做本地 gate
-        ↓
-只读动作直接继续；高影响动作按需确认/兑换
-        ↓
-宿主执行必需的业务检查和实际动作
-        ↓
-日志报告经过的入口、证据和未知项
-        ↓
-反复出现的高价值经验进入候选
-        ↓
-用户可忽略提示，也可用 learn 明确沉淀
-~~~
+```mermaid
+flowchart TD
+    U["👤 用户提出目标或在对话中纠正 Agent"] --> A["🤖 Agent 通过宿主正式入口执行动作"]
+    A --> G{"⚡ SOP Control 本地 Gate<br/>(选择适用规则 / 校验契约)"}
+    G -- "只读 / 低风险动作" --> Pass["✅ 直接放行 (零额外审批)"]
+    G -- "高风险 / 写入操作" --> Admit["🎟️ 按需挑战 · 验证 Capability Ticket"]
+    Pass & Admit --> HostExec["⚙️ 宿主执行必需业务检查与真实动作"]
+    HostExec --> LogRep["📝 活动日志记录验证证据与未知项"]
+    LogRep --> Observe["💡 反复出现的高价值经验自动进入候选池"]
+    Observe --> Settle["🎯 用户选择忽略，或用 sopctl learn 永久沉淀"]
+```
 
 理想的日常体验不是“每一步都弹窗”，而是：
 
@@ -520,20 +585,26 @@ sopctl rollback .
 
 ## 十二、核心命令
 
+<details open>
+<summary><b>📋 点击展开 / 收起：核心命令速查表 (CLI Reference)</b></summary>
+<br/>
+
 | 命令 | 作用 |
 | :--- | :--- |
-| sopctl attach . | 首次或中途接入，发现入口并建立连接计划 |
-| sopctl attach-status . | 查看接入状态 |
-| sopctl doctor . | 健康检查和下一步建议 |
-| sopctl audit . | 检查 MUST 规则是否有真实消费者 |
-| sopctl gate . | 本地或 CI 最终门禁 |
-| sopctl rule ... | 产品本体规则的生命周期 |
-| sopctl task ... | 任务契约、提交、验证、交付和换模型收紧 |
-| sopctl dynamic ... | 动态 SOP 的观察和确认 |
-| sopctl learn ... | 显式学习回顾、提案和路由 |
-| sopctl log ... | 运行日志、报告、健康和基准 |
-| sopctl growth measure/diff | 观察规则空间和歧义是否收窄 |
-| sopctl sync . / rollback . | 受控升级和回滚 |
+| `sopctl attach .` | 首次或中途接入，发现入口并建立连接计划 |
+| `sopctl attach-status .` | 查看接入状态 |
+| `sopctl doctor .` | 健康检查和下一步建议 |
+| `sopctl audit .` | 检查 MUST 规则是否有真实消费者 |
+| `sopctl gate .` | 本地或 CI 最终门禁 |
+| `sopctl rule ...` | 产品本体规则的生命周期 |
+| `sopctl task ...` | 任务契约、提交、验证、交付和换模型收紧 |
+| `sopctl dynamic ...` | 动态 SOP 的观察和确认 |
+| `sopctl learn ...` | 显式学习回顾、提案和路由 |
+| `sopctl log ...` | 运行日志、报告、健康和基准 |
+| `sopctl growth measure/diff` | 观察规则空间和歧义是否收窄 |
+| `sopctl sync . / rollback .` | 受控升级和回滚 |
+
+</details>
 
 ---
 

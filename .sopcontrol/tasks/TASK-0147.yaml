@@ -1,0 +1,70 @@
+task_id: TASK-0147
+contract:
+  objective: README定位升级：P2/P4市场语言+去点名+记忆质量结构，中英同步
+  allowed_writes:
+  - README.md
+  - README_ZH-CN.md
+  required_rules:
+  - CTRL-001
+  - SELF-001
+  - SELF-002
+  required_fields:
+  - readme
+  max_repairs: 1
+  repairs_fingerprint: null
+  write_granularity: file
+  strict_schema: true
+  capability_note: 当前模型未声明（已有画像 vertical-backbone 不适用） tier=unknown：模型能力未知：按保守边界执行，文件级写入
+    + 强制 MUST 字段清单；行为事件触发 weak 上限（近期任务迁移被拒）
+  model_identity: ''
+  control_profile_id: ''
+  control_profile_revision: 0
+  effective_plan_digest: ''
+  goal_digest: ''
+  execution_plan_digest: ''
+status: delivered
+repair_count: 0
+changed_paths:
+- README.md
+- README_ZH-CN.md
+submit_input_digest: in-e53e65632aab2c3074c08622f27ea6c6
+revision: 5
+created_at: '2026-09-14T18:33:02.361398Z'
+updated_at: '2026-09-14T18:39:56.552100Z'
+history:
+- at: '2026-09-14T18:33:02.646256Z'
+  action: accept
+  from_status: contract_proposed
+  to_status: executing
+  allowed: true
+  reason: 契约完整：目标、写入范围与可验证完成定义齐备
+  detail:
+    next_action: 执行变更后 task submit 提交改动路径
+- at: '2026-09-14T18:33:42.444849Z'
+  action: submit
+  from_status: executing
+  to_status: verification_pending
+  allowed: true
+  reason: 改动 2 个路径，全部在写入范围内；MUST 字段齐备 [readme]
+  detail:
+    next_action: 运行 task verify 由控制器独立审计
+- at: '2026-09-14T18:39:36.349266Z'
+  action: verify
+  from_status: verification_pending
+  to_status: verified
+  allowed: true
+  reason: 完成门通过：全部必需规则 [CTRL-001, SELF-001, SELF-002] 判定 pass（E4 实测：本轮执行 .venv/bin/python
+    -m pytest -q 通过（346.799s）+ E3 独立审计）
+  detail:
+    next_action: task deliver 交付
+- at: '2026-09-14T18:39:56.548352Z'
+  action: deliver
+  from_status: verified
+  to_status: delivered
+  allowed: true
+  reason: 完成门已独立验证，允许交付
+  detail:
+    next_action: 无
+resolution_of: []
+superseded_by_task: ''
+blocked_reason_code: ''

@@ -1,4 +1,19 @@
-# SOP Control
+<div align="center">
+
+# 🛡️ SOP Control
+
+### 让 Agent 在规则之外保持自主，在规则之内保持忠实
+**低开销 · 模型中立 · 活在项目里的本地控制平面与可审计记忆**
+
+<p align="center">
+  <a href="https://github.com/mixxmax/sopcontrol"><img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=flat&logo=python&logoColor=white" alt="Python 3.10+"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License"></a>
+  <a href="tests/"><img src="https://img.shields.io/badge/Tests-981%20Passed-brightgreen.svg" alt="Tests 981 Passed"></a>
+  <a href="pyproject.toml"><img src="https://img.shields.io/badge/Coverage-85%25%2B%20Branch-success.svg" alt="Branch Coverage 85%+"></a>
+  <a href="#一附-c哪里会调用大模型默认几乎不调用"><img src="https://img.shields.io/badge/Hot%20Path-Zero--LLM%20Local-blueviolet.svg" alt="Zero LLM Hot Path"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Version-v0.4.0-blue.svg" alt="Version"></a>
+  <a href="LIMITATIONS.md"><img src="https://img.shields.io/badge/Status-Beta-orange.svg" alt="Beta"></a>
+</p>
 
 **中文首页** · [English](#english) · [中文独立版](README_ZH-CN.md)
 
@@ -6,13 +21,9 @@
   <img src="docs/assets/sopcontrol-living-boundary.gif" alt="Living project boundary — a finite ring whose edge keeps changing" width="960" />
 </p>
 
-<p align="center">
-  <a href="https://github.com/mixxmax/sopcontrol"><img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=flat&logo=python&logoColor=white" alt="Python 3.10+"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License"></a>
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Version-v0.4.0-blue.svg" alt="Version"></a>
-  <a href="LIMITATIONS.md"><img src="https://img.shields.io/badge/Status-Beta-orange.svg" alt="Beta"></a>
-</p>
+</div>
 
+> [!NOTE]
 > **SOP Control 是一个低开销、模型中立、活在项目里的本地控制平面。**
 >
 > 它的任务不是替 Agent 思考，也不是替业务产品做语义判断，而是把已经确定的规则、用户希望长期保留的动态 SOP，以及默认最自然经济的执行逻辑，变成跨会话、跨模型、可观察、可验证的项目边界。
@@ -42,6 +53,31 @@ SOP Control 把这些问题拆成两个空间：
 | :--- | :--- | :--- |
 | **规则空间** | 项目、产品和用户 | 决定什么不能被悄悄重开，哪些检查必须发生，哪些范围允许变化 |
 | **解法空间** | Agent 和宿主产品 | 在规则允许的范围内选择实现方案、调用顺序和具体表达 |
+
+```mermaid
+flowchart TB
+    subgraph RuleSpace[" 🛡️ 规则空间 (Rule Space) · 权威与约束 "]
+        direction TB
+        C["📜 产品本体 (Constitution)<br/>• 正式入口 • 写入白名单"]
+        S["⚡ 动态 SOP (Dynamic SOP)<br/>• 纠正沉淀 • 弹性上下限"]
+        N["⚖️ 自然逻辑 (Natural Logic)<br/>• 依赖顺序 • 经济防支配"]
+    end
+
+    subgraph Boundary[" 🚪 本地控制边界 (Local Control Plane / Hot Path) "]
+        Gate{"sopctl gate / ticket<br/>(零大模型 · 本地微秒级)"}
+    end
+
+    subgraph SolutionSpace[" 🤖 解法空间 (Solution Space) · 自由与实现 "]
+        Agent["Coding Agent / LLM<br/>(Cursor / Claude / OpenCode / Codex)"]
+        Sol["自由选择方案 · 编写代码 · 尝试解法"]
+    end
+
+    RuleSpace --> Boundary
+    Agent --> Sol
+    Sol -- "涉及有副作用操作 / 写入" --> Boundary
+    Boundary -- "✅ 允许准入 (Admit / Ticket)" --> Output[("正式环境 / 代码库 / 数据库")]
+    Boundary -- "❌ 违规阻断 (Block / Fail-Closed)" --> Agent
+```
 
 核心原则是：
 
@@ -93,9 +129,9 @@ SOP Control 把这些问题拆成两个空间：
 
 **我们独有的三件事**（上面几类做法都不提供）：
 
-1. **可审计的记忆**：每条永久规则都带着哪句原话来的、谁确认的、适用什么范围、现在第几版——50 条规则、三个模型、两次升级之后，你仍然敢删其中一条。
-2. **确认才生效**：一次点击都不会被当成确认；调用方自称用户也不算；没确认的永远只是建议。
-3. **升级不丢规则**：版本化运行时 + 语义 diff + 影子验证；目标版本丢规则或放宽控制即阻断切换。
+| 🧠 **可审计的记忆** | 🔒 **确认才生效** | 🛡️ **升级不丢规则** |
+| :--- | :--- | :--- |
+| 每条永久规则都带着哪句原话来的、谁确认的、适用什么范围、现在第几版——**50 条规则、三个模型、两次升级之后，你仍然敢删其中一条**。 | 一次点击都不会被当成确认；调用方自称用户也不算；**没确认的内容永远只是建议**。 | 版本化运行时 + 语义 diff + 影子验证；**目标版本若丢规则或放宽控制，立即阻断切换**。 |
 
 **一句话选型：** 只想让模型听话一点 → 上面做法往往够用；想要**定下的规则在换模型、换会话、升版本之后仍然有效，且能证明** → 用 SOP Control。
 
@@ -103,7 +139,37 @@ SOP Control 把这些问题拆成两个空间：
 
 ## 一附 C、哪里会调用大模型（默认几乎不调用）
 
-**核心结论：SOP Control 本体的热路径不调用大模型。** 仓库内没有内嵌 OpenAI / Anthropic 等 SDK 作为默认依赖；规则选择、gate、票据、账本、活动日志都是本地确定性逻辑。
+> [!TIP]
+> **核心结论：SOP Control 本体的热路径不调用大模型。** 仓库内没有内嵌 OpenAI / Anthropic 等 SDK 作为默认依赖；规则选择、gate、票据、账本、活动日志都是本地确定性逻辑。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as 👤 用户 / 维护者
+    participant Agent as 🤖 Coding Agent
+    participant HotPath as ⚡ 本地控制面 (Hot Path - 零 LLM)
+    participant Host as 📦 宿主产品 (如 JobsFlow / CLI)
+    participant ColdPath as 🧠 学习提炼 (Cold Path - 可选模型)
+
+    Note over HotPath: 耗时 < 5ms · 纯本地确定性逻辑
+    Agent->>HotPath: 尝试执行写操作 / 提交变更
+    HotPath->>HotPath: 校验 Task 契约 / 规则 / Phase 约束
+    alt 规则匹配且合规
+        HotPath->>Host: 放行 (Admitted / Phase Granted)
+        Host-->>Agent: 执行成功并返回回执
+    else 越权 / 缺少前置检查
+        HotPath-->>Agent: 阻断并返回违规原因 (Fail-Closed)
+    end
+
+    opt 会话复盘与经验提炼 (低频冷路径)
+        User->>HotPath: sopctl learn / 动态观察
+        HotPath->>ColdPath: 提取会话中的高价值纠正
+        ColdPath-->>HotPath: 生成规则提案 (Proposal)
+        HotPath->>User: 交互式提示确认 (Accept / Defer / Reject)
+        User->>HotPath: ✅ 确认长期保留
+        HotPath->>HotPath: 编译写入永久 Registry (.sopcontrol/)
+    end
+```
 
 | 路径 | 是否调用 LLM | 说明 |
 | :--- | :--- | :--- |
@@ -225,14 +291,19 @@ sopctl learn decide <proposal-id> --decision control .
 
 learn 的完整链路是：
 
-~~~text
-会话/事件回顾
-    → 触发条件、背景、目标行为和排除项的提炼
-    → 结构化学习提案
-    → 用户选择 control / edit-control / document / both
-    → 编译、冲突检查、范围绑定
-    → 成为有效规则或产品文档
-~~~
+```mermaid
+flowchart TD
+    A["会话 / 事件回顾<br/>(Session & Event Review)"] --> B["提炼触发条件、行为、边界与排除项<br/>(Extract Context, Behavior & Exclusions)"]
+    B --> C["结构化学习提案<br/>(Structured Learning Proposal)"]
+    C --> D{"用户决策路由<br/>(User Decision)"}
+    D -- "control" --> E["永久动态规则<br/>(Durable Dynamic SOP in .sopcontrol/)"]
+    D -- "edit-control" --> F["人工修正提炼内容后再入库"]
+    D -- "document" --> G["宿主产品文档<br/>(Host Docs e.g. AGENTS.md)"]
+    D -- "both" --> H["双向绑定同步 (保持单一权威源)"]
+    D -- "once-only" --> I["当前会话临时约束 (不进永久库)"]
+    D -- "defer / reject" --> J["暂缓或拒绝入库"]
+    E & F & H --> K["编译 · 冲突检查 · 范围绑定 → 成为有效规则"]
+```
 
 其中：
 
@@ -268,18 +339,19 @@ learn 的完整链路是：
 
 无论候选来自自动观察还是 learn，都必须经过同一条权威链：
 
-~~~text
-观察
-  → 提案（不具权威）
-  → 用户选择
-  → 规则分类、范围和弹性编译
-  → 冲突/放宽/过期语义检查
-  → 投影到 Agent 上下文
-  → 真实入口接线与探针
-  → 运行时 gate / harness / hook
-  → 日志和证据
-  → 新问题再次进入观察窗口
-~~~
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> 观察: 对话纠正 / 操作复盘
+    观察 --> 提案: 自动提取候选 (无权威)
+    提案 --> 用户选择: 显式确认 (拒绝/修改/采纳)
+    用户选择 --> 弹性编译: 规则分类 / 范围绑定
+    弹性编译 --> 语义检查: 冲突 / 放宽 / 过期防御
+    语义检查 --> 投影生效: 投影至 Agent 上下文
+    投影生效 --> 运行拦截: Gate / Harness / Hook 动作拦截
+    运行拦截 --> 证据审计: 活动日志 / 账本验证
+    证据审计 --> [*]
+```
 
 一条合格的动态规则不应只有一句口号。至少要能回答：
 
@@ -319,15 +391,14 @@ SOP Control 的另一个终极母题是对接：安装一次后，尽量不用�
 
 ### 6.1 首次接入做什么
 
-~~~text
-安装
-  → attach 自动发现技术入口
-  → 生成 surface inventory
-  → 识别 CLI / API / hook / worker / 写入入口
-  → 建立适配器和统一 gateway
-  → 运行真实探针
-  → 报告 governed / mapped / gap / blocked / waived
-~~~
+```mermaid
+flowchart TD
+    A["📦 安装 sopcontrol<br/>(pip install)"] --> B["🔍 sopctl attach .<br/>(自动扫描发现技术入口)"]
+    B --> C["📋 生成 Surface Inventory<br/>(识别 CLI / API / Hook / Worker / 写入入口)"]
+    C --> D["🔌 建立适配器与统一 Gateway<br/>(安装 Harness / Wrapper 拦截器)"]
+    D --> E["⚡ 运行真实探针 (Probes)<br/>(验证入口可达性与控制链)"]
+    E --> F["📊 诚实输出覆盖度报告<br/>(Governed · Mapped · Gap · Blocked · Waived)"]
+```
 
 attach 的自动发现会读取宿主的有限结构信息和入口元数据，目的是建立“产品有哪些可被控制的表面”；它不是把整个产品全文塞给模型，也不是未经确认改写业务逻辑。对可以安全接入的入口，系统建立适配器、投影和探针；对暂时无法接入的入口，必须诚实报告 gap 或 blocked，不能把未发现当成已覆盖。
 
@@ -417,23 +488,17 @@ JobsFlow 的业务结果仍由 JobsFlow 自己负责。SOP Control 的价值是�
 
 ## 九、用户实际会看到什么
 
-~~~text
-用户提出目标或纠正 Agent
-        ↓
-Agent 通过宿主正式入口执行
-        ↓
-SOP Control 选择适用规则并做本地 gate
-        ↓
-只读动作直接继续；高影响动作按需确认/兑换
-        ↓
-宿主执行必需的业务检查和实际动作
-        ↓
-日志报告经过的入口、证据和未知项
-        ↓
-反复出现的高价值经验进入候选
-        ↓
-用户可忽略提示，也可用 learn 明确沉淀
-~~~
+```mermaid
+flowchart TD
+    U["👤 用户提出目标或在对话中纠正 Agent"] --> A["🤖 Agent 通过宿主正式入口执行动作"]
+    A --> G{"⚡ SOP Control 本地 Gate<br/>(选择适用规则 / 校验契约)"}
+    G -- "只读 / 低风险动作" --> Pass["✅ 直接放行 (零额外审批)"]
+    G -- "高风险 / 写入操作" --> Admit["🎟️ 按需挑战 · 验证 Capability Ticket"]
+    Pass & Admit --> HostExec["⚙️ 宿主执行必需业务检查与真实动作"]
+    HostExec --> LogRep["📝 活动日志记录验证证据与未知项"]
+    LogRep --> Observe["💡 反复出现的高价值经验自动进入候选池"]
+    Observe --> Settle["🎯 用户选择忽略，或用 sopctl learn 永久沉淀"]
+```
 
 理想的日常体验不是“每一步都弹窗”，而是：
 
@@ -518,20 +583,26 @@ sopctl rollback .
 
 ## 十二、核心命令
 
+<details open>
+<summary><b>📋 点击展开 / 收起：核心命令速查表 (CLI Reference)</b></summary>
+<br/>
+
 | 命令 | 作用 |
 | :--- | :--- |
-| sopctl attach . | 首次或中途接入，发现入口并建立连接计划 |
-| sopctl attach-status . | 查看接入状态 |
-| sopctl doctor . | 健康检查和下一步建议 |
-| sopctl audit . | 检查 MUST 规则是否有真实消费者 |
-| sopctl gate . | 本地或 CI 最终门禁 |
-| sopctl rule ... | 产品本体规则的生命周期 |
-| sopctl task ... | 任务契约、提交、验证、交付和换模型收紧 |
-| sopctl dynamic ... | 动态 SOP 的观察和确认 |
-| sopctl learn ... | 显式学习回顾、提案和路由 |
-| sopctl log ... | 运行日志、报告、健康和基准 |
-| sopctl growth measure/diff | 观察规则空间和歧义是否收窄 |
-| sopctl sync . / rollback . | 受控升级和回滚 |
+| `sopctl attach .` | 首次或中途接入，发现入口并建立连接计划 |
+| `sopctl attach-status .` | 查看接入状态 |
+| `sopctl doctor .` | 健康检查和下一步建议 |
+| `sopctl audit .` | 检查 MUST 规则是否有真实消费者 |
+| `sopctl gate .` | 本地或 CI 最终门禁 |
+| `sopctl rule ...` | 产品本体规则的生命周期 |
+| `sopctl task ...` | 任务契约、提交、验证、交付和换模型收紧 |
+| `sopctl dynamic ...` | 动态 SOP 的观察和确认 |
+| `sopctl learn ...` | 显式学习回顾、提案和路由 |
+| `sopctl log ...` | 运行日志、报告、健康和基准 |
+| `sopctl growth measure/diff` | 观察规则空间和歧义是否收窄 |
+| `sopctl sync . / rollback .` | 受控升级和回滚 |
+
+</details>
 
 ---
 
@@ -582,10 +653,28 @@ Distributed under the [MIT License](LICENSE).
 
 <a id="english"></a>
 
-# SOP Control — English
+<div align="center">
+
+# 🛡️ SOP Control
+
+### Keep agents autonomous in solution space, faithful in rule space
+**Low-overhead · Model-neutral · Repository-local control plane with auditable memory**
+
+<p align="center">
+  <a href="https://github.com/mixxmax/sopcontrol"><img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=flat&logo=python&logoColor=white" alt="Python 3.10+"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License"></a>
+  <a href="tests/"><img src="https://img.shields.io/badge/Tests-981%20Passed-brightgreen.svg" alt="Tests 981 Passed"></a>
+  <a href="pyproject.toml"><img src="https://img.shields.io/badge/Coverage-85%25%2B%20Branch-success.svg" alt="Branch Coverage 85%+"></a>
+  <a href="#0c-where-large-models-are-called-almost-never-by-default"><img src="https://img.shields.io/badge/Hot%20Path-Zero--LLM%20Local-blueviolet.svg" alt="Zero LLM Hot Path"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Version-v0.4.0-blue.svg" alt="Version"></a>
+  <a href="LIMITATIONS.md"><img src="https://img.shields.io/badge/Status-Beta-orange.svg" alt="Beta"></a>
+</p>
 
 **[中文首页](README.md)** · [Standalone Chinese edition](README_ZH-CN.md)
 
+</div>
+
+> [!NOTE]
 > **SOP Control is a low-overhead, model-neutral local control plane that lives with the project.**
 >
 > It does not think for an agent and it does not perform a host product’s business-semantic review. It turns settled rules, user preferences that deserve to persist, and the most natural economical default execution logic into a project boundary that remains observable and testable across sessions, models, and harnesses.
@@ -623,9 +712,9 @@ Many adjacent practices solve a different job. Check this table first so you do 
 
 **Three things only we provide:**
 
-1. **Auditable memory**: every permanent rule carries which quote it came from, who confirmed it, what scope it applies to, and which revision it is at — after 50 rules, three models, and two upgrades, you still dare to delete one.
-2. **Nothing takes effect without confirmation**: a click is never consent, and a caller claiming to be the user does not count; unconfirmed items stay suggestions forever.
-3. **Upgrades never lose rules**: versioned runtimes + semantic diff + shadow verification; a target version that drops rules or loosens control blocks the switch.
+| 🧠 **Auditable Memory** | 🔒 **Explicit Confirmation** | 🛡️ **Zero Lost Rules on Upgrade** |
+| :--- | :--- | :--- |
+| Every permanent rule carries which quote it came from, who confirmed it, what scope it applies to, and which revision it is at — **after 50 rules, three models, and two upgrades, you still dare to delete one**. | A click is never consent, and a caller claiming to be the user does not count; **unconfirmed items stay suggestions forever**. | Versioned runtimes + semantic diff + shadow verification; **a target version that drops rules or loosens control blocks the switch**. |
 
 **One-line chooser:** want the model to listen better → the above is usually enough. Want **settled rules to stay binding across model switches, sessions, and upgrades — with proof** → use SOP Control.
 
@@ -633,7 +722,37 @@ Many adjacent practices solve a different job. Check this table first so you do 
 
 ## 0c. Where large models are called (almost never by default)
 
-**Bottom line: SOP Control’s hot path does not call an LLM.** There is no embedded OpenAI/Anthropic SDK as a default dependency. Rule selection, gates, tickets, ledgers, and activity logs are local deterministic logic.
+> [!TIP]
+> **Bottom line: SOP Control’s hot path does not call an LLM.** There is no embedded OpenAI/Anthropic SDK as a default dependency. Rule selection, gates, tickets, ledgers, and activity logs are local deterministic logic.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as 👤 User / Maintainer
+    participant Agent as 🤖 Coding Agent
+    participant HotPath as ⚡ Local Control Plane (Hot Path - Zero LLM)
+    participant Host as 📦 Host Product (e.g. JobsFlow / CLI)
+    participant ColdPath as 🧠 Distiller / Learning (Cold Path - Optional LLM)
+
+    Note over HotPath: Latency < 5ms · Pure local deterministic logic
+    Agent->>HotPath: Attempt write / state mutation
+    HotPath->>HotPath: Validate Task contract / rules / phase constraints
+    alt Rule matches and compliant
+        HotPath->>Host: Grant / Admit
+        Host-->>Agent: Action executed with receipt
+    else Unauthorized / Missing prerequisite
+        HotPath-->>Agent: Block & report violation (Fail-Closed)
+    end
+
+    opt Session Review & Experience Capture (Infrequent Cold Path)
+        User->>HotPath: sopctl learn / dynamic observe
+        HotPath->>ColdPath: Distill high-value correction
+        ColdPath-->>HotPath: Emit structured proposal
+        HotPath->>User: Prompt for decision (Accept / Defer / Reject)
+        User->>HotPath: ✅ Confirm retention
+        HotPath->>HotPath: Compile & persist into .sopcontrol/
+    end
+```
 
 | Path | LLM? | Notes |
 | :--- | :--- | :--- |
@@ -666,6 +785,31 @@ SOP Control separates two spaces:
 | :--- | :--- | :--- |
 | **Rule space** | The project, product, and user | Decide what cannot be silently reopened, what must be checked, and what variation is allowed |
 | **Solution space** | The agent and host product | Choose the implementation, order, and expression inside the boundary |
+
+```mermaid
+flowchart TB
+    subgraph RuleSpace[" 🛡️ Rule Space · Authority & Invariants "]
+        direction TB
+        C["📜 Product Constitution<br/>• Formal Entrances • Write Boundaries"]
+        S["⚡ Dynamic SOP<br/>• Retained Preferences • Tolerance Ceilings"]
+        N["⚖️ Natural Logic<br/>• Dependency Order • Cost Dominance"]
+    end
+
+    subgraph Boundary[" 🚪 Local Control Boundary (Zero-LLM Hot Path) "]
+        Gate{"sopctl gate / ticket<br/>(Microsecond Deterministic Check)"}
+    end
+
+    subgraph SolutionSpace[" 🤖 Solution Space · Freedom & Execution "]
+        Agent["Coding Agent / LLM<br/>(Cursor / Claude / OpenCode / Codex)"]
+        Sol["Explore implementation · Tool calls · Solution design"]
+    end
+
+    RuleSpace --> Boundary
+    Agent --> Sol
+    Sol -- "Side effects / State mutation" --> Boundary
+    Boundary -- "✅ Admitted / Ticket Granted" --> Output[("Codebase / DB / Formal Output")]
+    Boundary -- "❌ Blocked / Fail-Closed" --> Agent
+```
 
 > **Autonomy belongs in solution space, not rule space.**
 
@@ -790,14 +934,19 @@ sopctl learn decide <proposal-id> --decision control .
 
 The chain is:
 
-~~~text
-session/event review
-    → trigger, context, target behavior, and exclusions
-    → structured learning proposal
-    → user chooses control / edit-control / document / both
-    → compile, conflict check, and scope binding
-    → effective rule or product documentation
-~~~
+```mermaid
+flowchart TD
+    A["Session & Event Review<br/>(Analyze corrections & context)"] --> B["Extract Context, Behavior & Exclusions<br/>(Structured distillation)"]
+    B --> C["Structured Learning Proposal<br/>(Proposal artifact)"]
+    C --> D{"User Decision Routing<br/>(sopctl learn decide)"}
+    D -- "control" --> E["Permanent Dynamic SOP<br/>(Write into .sopcontrol/)"]
+    D -- "edit-control" --> F["Edit extraction before promotion"]
+    D -- "document" --> G["Host Product Documentation<br/>(e.g. AGENTS.md)"]
+    D -- "both" --> H["Dual-write with single authority binding"]
+    D -- "once-only" --> I["Session-scoped constraint (Not permanent)"]
+    D -- "defer / reject" --> J["Defer or reject proposal"]
+    E & F & H --> K["Compile · Conflict Check · Scope Binding → Effective Rule"]
+```
 
 Routes mean:
 
@@ -833,18 +982,19 @@ It applies only without an explicit reverse intent. If the user says “score ev
 
 Whether a candidate comes from ambient observation or learn, it follows one authority chain:
 
-~~~text
-observation
-  → proposal (not authoritative)
-  → user choice
-  → classification, scope, and flexibility compilation
-  → conflict / widening / expiry checks
-  → projection into agent context
-  → real entrance wiring and probe
-  → runtime gate / harness / hook
-  → logs and evidence
-  → next observation window
-~~~
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> Observation: Session Correction / Review
+    Observation --> Proposal: Automated Candidate (No Authority)
+    Proposal --> UserDecision: Explicit Confirmation (Accept/Edit/Reject)
+    UserDecision --> Compilation: Classification / Scope Binding
+    Compilation --> SemanticChecks: Conflict / Widening / Expiry Checks
+    SemanticChecks --> Projection: Project to Agent Context
+    Projection --> RuntimeGate: Intercept at Action Boundary (Gate/Harness/Hook)
+    RuntimeGate --> AuditEvidence: Activity Log & Ledger Verification
+    AuditEvidence --> [*]
+```
 
 A durable dynamic rule must answer:
 
@@ -884,15 +1034,14 @@ Another central theme is integration: install once, avoid asking users to rewrit
 
 ### 6.1 What first attach does
 
-~~~text
-install
-  → attach discovers technical surfaces
-  → builds a surface inventory
-  → identifies CLI / API / hook / worker / write entrances
-  → installs adapters and a common gateway
-  → runs real probes
-  → reports governed / mapped / gap / blocked / waived
-~~~
+```mermaid
+flowchart TD
+    A["📦 Install sopcontrol<br/>(pip install)"] --> B["🔍 sopctl attach .<br/>(Scan & Discover Technical Surfaces)"]
+    B --> C["📋 Generate Surface Inventory<br/>(Map CLI / API / Hook / Worker / Write paths)"]
+    C --> D["🔌 Install Adapters & Common Gateway<br/>(Setup Harness / Interception wrappers)"]
+    D --> E["⚡ Run Real Probes<br/>(Verify Reachability & Control Chain)"]
+    E --> F["📊 Output Honest Coverage Report<br/>(Governed · Mapped · Gap · Blocked · Waived)"]
+```
 
 attach reads bounded structural metadata and entrance references to build an inventory. It does not feed the entire product into a model or rewrite business logic without confirmation. Safe surfaces receive adapters, projections, and probes; unsupported surfaces are reported as gaps or blocked, never silently counted as covered.
 
@@ -978,23 +1127,17 @@ JobsFlow remains responsible for business results. SOP Control ensures that Jobs
 
 ## 9. What users experience
 
-~~~text
-user states a goal or corrects the agent
-        ↓
-agent uses the host’s formal entrance
-        ↓
-SOP Control selects rules and runs a local gate
-        ↓
-read-only work continues; high-impact work is admitted as needed
-        ↓
-the host runs required semantic checks and the actual action
-        ↓
-a report shows entrances, evidence, and unknowns
-        ↓
-repeated high-value experience becomes a candidate
-        ↓
-the user may ignore it or use learn to retain it
-~~~
+```mermaid
+flowchart TD
+    U["👤 User states a goal or corrects the agent"] --> A["🤖 Agent executes via host formal entrance"]
+    A --> G{"⚡ SOP Control Local Gate<br/>(Select rules / Validate contract)"}
+    G -- "Read-only / Low risk" --> Pass["✅ Direct Pass (Zero ceremony)"]
+    G -- "High impact / State mutation" --> Admit["🎟️ Challenge & Redeem Capability Ticket"]
+    Pass & Admit --> HostExec["⚙️ Host executes required checks & actual action"]
+    HostExec --> LogRep["📝 Activity Log records evidence & unknowns"]
+    LogRep --> Observe["💡 High-value repeating experience enters candidates"]
+    Observe --> Settle["🎯 User ignores or confirms via sopctl learn"]
+```
 
 The intended daily experience is not a modal at every step:
 
@@ -1079,20 +1222,26 @@ These surfaces are different entrances to one project control plane, not competi
 
 ## 12. Core commands
 
+<details open>
+<summary><b>📋 Click to expand / collapse: Full CLI Command Reference (sopctl)</b></summary>
+<br/>
+
 | Command | Role |
 | :--- | :--- |
-| sopctl attach . | First or mid-project integration and surface discovery |
-| sopctl attach-status . | Inspect integration status |
-| sopctl doctor . | Health check and next moves |
-| sopctl audit . | Check whether MUST rules have real consumers |
-| sopctl gate . | Final local or CI gate |
-| sopctl rule ... | Product constitution lifecycle |
-| sopctl task ... | Task contracts, submit, verify, deliver, and tightening model rebind |
-| sopctl dynamic ... | Observe and confirm dynamic SOPs |
-| sopctl learn ... | Explicit learning review, proposal, and routing |
-| sopctl log ... | Activity logs, reports, health, and benchmark |
-| sopctl growth measure/diff | Rule-space and ambiguity snapshots |
-| sopctl sync . / rollback . | Controlled upgrade and rollback |
+| `sopctl attach .` | First or mid-project integration and surface discovery |
+| `sopctl attach-status .` | Inspect integration status |
+| `sopctl doctor .` | Health check and next moves |
+| `sopctl audit .` | Check whether MUST rules have real consumers |
+| `sopctl gate .` | Final local or CI gate |
+| `sopctl rule ...` | Product constitution lifecycle |
+| `sopctl task ...` | Task contracts, submit, verify, deliver, and tightening model rebind |
+| `sopctl dynamic ...` | Observe and confirm dynamic SOPs |
+| `sopctl learn ...` | Explicit learning review, proposal, and routing |
+| `sopctl log ...` | Activity logs, reports, health, and benchmark |
+| `sopctl growth measure/diff` | Rule-space and ambiguity snapshots |
+| `sopctl sync . / rollback .` | Controlled upgrade and rollback |
+
+</details>
 
 ---
 
