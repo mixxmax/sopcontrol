@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.1 — 2026-09-14
+
+PROMPT-D fix pack: dynamic SOP control route closes the confirm/compile loop.
+
+### Fixed
+
+- **DS-05**: `learn decide --route control|both` now auto-runs `confirm_candidate(keep_longterm)` + `compile_rule` after CandidateStore upsert, so user confirmation enters effective/selectable rules (not candidate-only)
+- **DS-04**: `once_only` route records session-level evidence and never grows permanent Registry
+- **LR-01/02/06**: `FakeDistiller` (alias `DeterministicRuleExtractor`) honestly named; refuses chitchat/system-error topics; once-only evidence is not recommended as `permanent_candidate`
+
+### Verification
+
+- Dynamic/learning regression: control → compiled + select; reload; idempotent rule_id; chitchat/system-error zero proposals
+
 ## 0.3.0 — 2026-09-09
 
 Universal attach control plane + segmentation release (Early Access). Audit baseline: `f65b191`.

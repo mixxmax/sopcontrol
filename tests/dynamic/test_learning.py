@@ -221,6 +221,8 @@ def test_p1d_routes_list_and_decide(project):
     from sopcontrol.learning import (LearningProposal, ProposalDecision,
                                      decide_proposal, list_proposals,
                                      save_proposals)
+    from sopcontrol.dynamic_sop import select_rules
+    from sopcontrol.model import RuleStatus
     p = LearningProposal(window_id="w", statement="先台账后评分",
                          scope_summary="筛选阶段", non_goals=["不扩范围"])
     assert save_proposals(project, [p]) == 1
@@ -228,11 +230,15 @@ def test_p1d_routes_list_and_decide(project):
     d = ProposalDecision(proposal_id=p.proposal_id, route="control")
     out = decide_proposal(project, p, d)
     assert out["status"] == "confirmed" and "candidate_id" in out
-    # control 经候选箱：Registry 零增长，候选箱 +1
+    # DS-05：用户选 control = 显式确认 → Registry 增长且 compiled，可被 select
     from sopcontrol.registry import Registry
-    assert isinstance(Registry(project / ".sopcontrol" / "rules" / "registry.yaml").load(), list)
-    from sopcontrol.dynamic_sop import list_dynamic_candidates
-    assert any(c["statement"] == "先台账后评分" for c in list_dynamic_candidates(project))
+    rules = Registry(project / ".sopcontrol" / "rules" / "registry.yaml").load()
+    rule = next(r for r in rules if r.rule_id == out["rule_id"])
+    assert rule.statement == "先台账后评分"
+    assert rule.status == RuleStatus.compiled
+    assert out.get("compile_digest")
+    selected, _, _ = select_rules(rules, {"action": "search"})
+    assert any(r.rule_id == out["rule_id"] for r in selected)
     assert list_proposals(project, status="proposed") == []
 
 
@@ -248,9 +254,15 @@ def test_p1d_document_both_once_only_defer_reject(project):
     p2 = mk("双轨B", "w2")
     out2 = decide_proposal(project, p2, ProposalDecision(proposal_id=p2.proposal_id, route="both"))
     assert "candidate_id" in out2 and "doc_payload" in out2
+    assert out2.get("rule_id") and out2.get("compile_digest")
     p3 = mk("本次C", "w3")
     out3 = decide_proposal(project, p3, ProposalDecision(proposal_id=p3.proposal_id, route="once_only"))
     assert out3["status"] == "confirmed"
+    assert out3.get("permanent") is False
+    from sopcontrol.registry import Registry
+    assert not any(r.statement == "本次C" for r in
+                   Registry(project / ".sopcontrol" / "rules" / "registry.yaml").load())
+
     p4 = mk("延后D", "w4")
     assert decide_proposal(project, p4, ProposalDecision(proposal_id=p4.proposal_id, route="defer"))["status"] == "deferred"
     p5 = mk("拒绝E", "w5")
@@ -291,7 +303,7 @@ def test_p2a_explicit_review_same_pipeline(project):
     observe_utterance(project, quote="以后纠正先台账后评分", source_ref="s1")
     out = review_window(project, session_id="sess-1")
     assert out["events"] >= 1 and out["proposals"] >= 1
-    assert out["adapter"] in ("fake",)
+    assert out["adapter"] in ("fake", "deterministic-rule-extractor")
     assert len(list_proposals(project, status="proposed")) == out["proposals"]
     import pytest as _pt
     with _pt.raises(ValueError, match="必须指定"):
@@ -392,6 +404,7 @@ def test_p3b_defer_pending_redecidable(project):
     out2 = decide_proposal(project, pending,
                            ProposalDecision(proposal_id=pending.proposal_id, route="control"))
     assert out2["status"] == "confirmed" and "candidate_id" in out2
+    assert out2.get("rule_id") and out2.get("rule_status") == "compiled"
 
 
 def test_p3b_seen_fingerprint_no_respam(project):
@@ -434,6 +447,99 @@ def test_p3b_restart_persistence(project):
     # 模拟重启：重新从盘读（无内存缓存可依赖）
     assert any(i.statement == "持久A" for i in list_proposals(project))
     assert len(list_once_only(project)) == 1
+
+
+def test_ds05_control_survives_reload_and_select(project):
+    """DS-05/06：control 进 effective；新 Registry 实例可加载并 select。"""
+    from sopcontrol.learning import (LearningProposal, ProposalDecision,
+                                     decide_proposal, save_proposals)
+    from sopcontrol.dynamic_sop import select_rules
+    from sopcontrol.registry import Registry
+    from sopcontrol.model import RuleStatus
+    p = LearningProposal(window_id="w", statement="评分前必须先排除已入表",
+                         scope_summary="筛选", non_goals=["不扩范围"])
+    save_proposals(project, [p])
+    out = decide_proposal(project, p, ProposalDecision(proposal_id=p.proposal_id, route="control"))
+    # 模拟新进程：全新 Registry 实例
+    rules = Registry(project / ".sopcontrol" / "rules" / "registry.yaml").load()
+    rule = next(r for r in rules if r.rule_id == out["rule_id"])
+    assert rule.status == RuleStatus.compiled
+    selected, _, _ = select_rules(rules, {"action": "score"})
+    assert any(r.rule_id == out["rule_id"] for r in selected)
+
+
+def test_ds08_control_idempotent_no_duplicate_rule(project):
+    """DS-08：重复确认不产生第二条等价规则（同 statement → 同 rule_id）。"""
+    from sopcontrol.learning import (LearningProposal, ProposalDecision,
+                                     decide_proposal, save_proposals)
+    from sopcontrol.registry import Registry
+    p1 = LearningProposal(window_id="w1", statement="审计最多一轮",
+                          scope_summary="sc", non_goals=["n"])
+    save_proposals(project, [p1])
+    out1 = decide_proposal(project, p1, ProposalDecision(proposal_id=p1.proposal_id, route="control"))
+    p2 = LearningProposal(window_id="w2", statement="审计最多一轮",
+                          scope_summary="sc", non_goals=["n"])
+    save_proposals(project, [p2])
+    out2 = decide_proposal(project, p2, ProposalDecision(proposal_id=p2.proposal_id, route="control"))
+    assert out1["rule_id"] == out2["rule_id"]
+    rules = [r for r in Registry(project / ".sopcontrol" / "rules" / "registry.yaml").load()
+             if r.statement == "审计最多一轮"]
+    assert len(rules) == 1
+
+
+def test_lr01_chitchat_no_proposal():
+    """LR-01：普通闲聊不产生 proposal。"""
+    from sopcontrol.learning import (FakeDistiller, LearningEvent,
+                                     aggregate_window, open_window)
+    w = open_window(task_id="T")
+    texts = ["你好", "在吗", "哈哈谢谢", "hello there", "感谢帮助",
+             "早上好", "晚上好", "咋样了", "嗨", "thanks a lot"]
+    b = aggregate_window([LearningEvent(kind="utterance", text=t, task_id="T") for t in texts], w)
+    out = FakeDistiller().distill(b)
+    assert out.proposals == []
+
+
+def test_lr02_system_error_no_proposal():
+    """LR-02：系统报错不产生 proposal。"""
+    from sopcontrol.learning import (FakeDistiller, LearningEvent,
+                                     aggregate_window, open_window)
+    w = open_window(task_id="T")
+    texts = [
+        "Traceback (most recent call last): ValueError: boom",
+        "workflow action scan failed: timeout",
+        "ConnectionResetError: peer closed",
+        "RuntimeError: capability_ticket_invalid",
+        "Exception: errno 61 connection refused",
+    ]
+    b = aggregate_window(
+        [LearningEvent(kind="tool_call", text=t, task_id="T") for t in texts], w)
+    out = FakeDistiller().distill(b)
+    assert out.proposals == []
+
+
+def test_lr06_once_only_not_permanent_candidate():
+    """LR-06：一次性实验不得推荐为永久候选正文。"""
+    from sopcontrol.learning import (FakeDistiller, LearningEvent,
+                                     aggregate_window, open_window,
+                                     validate_distiller_output)
+    w = open_window(task_id="T")
+    b = aggregate_window([
+        LearningEvent(kind="utterance",
+                      text="这一次故意先给全部候选评分，仅本次实验，不要改变以后默认",
+                      task_id="T"),
+    ], w)
+    out = FakeDistiller().distill(b)
+    # 要么不提案，要么 durability=once_only（不得 permanent_candidate）
+    assert all(p.get("durability") != "permanent_candidate" for p in out.proposals)
+    assert validate_distiller_output(out, b) == [] or not out.proposals
+
+
+def test_fake_distiller_honest_name():
+    """FakeDistiller 诚实命名为确定性提取器，不是 LLM。"""
+    from sopcontrol.learning import DeterministicRuleExtractor, FakeDistiller
+    assert FakeDistiller is DeterministicRuleExtractor
+    assert "deterministic" in FakeDistiller.name or "fake" in FakeDistiller.name
+    assert "llm" not in FakeDistiller.name.casefold()
 
 
 def test_p3b_natural_logic_keeps_reverse_path(project):
@@ -492,6 +598,6 @@ def test_p4_default_path_zero_llm(project):
     b = aggregate_window([LearningEvent(kind="utterance", text="以后必须先台账",
                                         task_id="T")], w)
     r = review_window_idempotent(project, b)
-    assert r["adapter"] == "fake" and r["distill_calls"] == 1
+    assert r["adapter"] in ("fake", "deterministic-rule-extractor") and r["distill_calls"] == 1
     m = LearningMetrics()
     assert m.llm_tokens_in == 0 and m.llm_tokens_out == 0
