@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.0
+
+- Learn/dynamic permanent decisions require user confirmation envelopes
+- Review windows isolate by original task/session
+- once_only durability blocks control promotion
+- Release codename / workspace target: 0.4.0
+
+
 ## 0.3.1 — 2026-09-14
 
 PROMPT-D fix pack: dynamic SOP control route closes the confirm/compile loop.

@@ -1,0 +1,106 @@
+task_id: TASK-0140
+contract:
+  objective: 收敛A：untracked MSE六模块+logic七测试+五harness测试归属收敛（12h stale，并发会话止写）
+  allowed_writes:
+  - sopcontrol/cli_logic.py
+  - sopcontrol/cli_surface.py
+  - sopcontrol/goal_contract.py
+  - sopcontrol/lineage.py
+  - sopcontrol/operator_contract.py
+  - sopcontrol/surface_inventory.py
+  - tests/logic/conftest.py
+  - tests/logic/test_mse_cli.py
+  - tests/logic/test_mse_judge.py
+  - tests/logic/test_mse_lineage.py
+  - tests/logic/test_mse_models.py
+  - tests/logic/test_mse_policy.py
+  - tests/logic/test_mse_product.py
+  - tests/logic/test_mse_runtime.py
+  - tests/harness/test_growth_joint_fixture.py
+  - tests/harness/test_p1_canonical.py
+  - tests/harness/test_p1_input_digest.py
+  - tests/harness/test_p1_install_rollback.py
+  - tests/harness/test_p1_tickets.py
+  - tests/harness/test_surface_inventory.py
+  required_rules:
+  - CTRL-001
+  - SELF-001
+  - SELF-002
+  required_fields:
+  - converge_a
+  max_repairs: 1
+  repairs_fingerprint: null
+  write_granularity: file
+  strict_schema: true
+  capability_note: 当前模型未声明（已有画像 vertical-backbone 不适用） tier=unknown：模型能力未知：按保守边界执行，文件级写入
+    + 强制 MUST 字段清单；行为事件触发 weak 上限（近期任务迁移被拒）
+  model_identity: ''
+  control_profile_id: ''
+  control_profile_revision: 0
+  effective_plan_digest: ''
+  goal_digest: ''
+  execution_plan_digest: ''
+status: delivered
+repair_count: 0
+changed_paths:
+- sopcontrol/cli_logic.py
+- sopcontrol/cli_surface.py
+- sopcontrol/goal_contract.py
+- sopcontrol/lineage.py
+- sopcontrol/operator_contract.py
+- sopcontrol/surface_inventory.py
+- tests/logic/conftest.py
+- tests/logic/test_mse_cli.py
+- tests/logic/test_mse_judge.py
+- tests/logic/test_mse_lineage.py
+- tests/logic/test_mse_models.py
+- tests/logic/test_mse_policy.py
+- tests/logic/test_mse_product.py
+- tests/logic/test_mse_runtime.py
+- tests/harness/test_growth_joint_fixture.py
+- tests/harness/test_p1_canonical.py
+- tests/harness/test_p1_input_digest.py
+- tests/harness/test_p1_install_rollback.py
+- tests/harness/test_p1_tickets.py
+- tests/harness/test_surface_inventory.py
+submit_input_digest: in-7e7ec3771b82cc169ad700e859b952b5
+revision: 5
+created_at: '2026-09-14T03:53:48.821509Z'
+updated_at: '2026-09-14T03:59:41.123823Z'
+history:
+- at: '2026-09-14T03:53:52.161506Z'
+  action: accept
+  from_status: contract_proposed
+  to_status: executing
+  allowed: true
+  reason: 契约完整：目标、写入范围与可验证完成定义齐备
+  detail:
+    next_action: 执行变更后 task submit 提交改动路径
+- at: '2026-09-14T03:54:20.839013Z'
+  action: submit
+  from_status: executing
+  to_status: verification_pending
+  allowed: true
+  reason: 改动 20 个路径，全部在写入范围内；MUST 字段齐备 [converge_a]
+  detail:
+    next_action: 运行 task verify 由控制器独立审计
+- at: '2026-09-14T03:59:26.542043Z'
+  action: verify
+  from_status: verification_pending
+  to_status: verified
+  allowed: true
+  reason: 完成门通过：全部必需规则 [CTRL-001, SELF-001, SELF-002] 判定 pass（E4 实测：本轮执行 .venv/bin/python
+    -m pytest -q 通过（293.385s）+ E3 独立审计）
+  detail:
+    next_action: task deliver 交付
+- at: '2026-09-14T03:59:41.119202Z'
+  action: deliver
+  from_status: verified
+  to_status: delivered
+  allowed: true
+  reason: 完成门已独立验证，允许交付
+  detail:
+    next_action: 无
+resolution_of: []
+superseded_by_task: ''
+blocked_reason_code: ''

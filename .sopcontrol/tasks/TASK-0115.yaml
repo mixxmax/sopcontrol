@@ -1,0 +1,38 @@
+task_id: TASK-0115
+contract:
+  objective: b4 probe - will withdraw
+  allowed_writes:
+  - tests/harness/test_task_profile_binding.py
+  required_rules: []
+  required_fields: []
+  max_repairs: 1
+  repairs_fingerprint: null
+  write_granularity: file
+  strict_schema: true
+  capability_note: 当前模型未声明（已有画像 vertical-backbone 不适用） tier=unknown：模型能力未知：按保守边界执行，文件级写入
+    + 强制 MUST 字段清单；行为事件触发 weak 上限（近期任务迁移被拒）
+  model_identity: ''
+  control_profile_id: ''
+  control_profile_revision: 0
+  effective_plan_digest: ''
+  goal_digest: g9
+  execution_plan_digest: p9
+status: withdrawn
+repair_count: 0
+changed_paths: []
+submit_input_digest: ''
+revision: 2
+created_at: '2026-09-13T17:09:38.986083Z'
+updated_at: '2026-09-13T17:09:47.665073Z'
+history:
+- at: '2026-09-13T17:09:47.663141Z'
+  action: withdraw
+  from_status: contract_proposed
+  to_status: withdrawn
+  allowed: true
+  reason: 契约提案已放弃：b4 probe cleanup
+  detail:
+    next_action: 无（withdrawn 为终态；如需继续请重新 task open）
+resolution_of: []
+superseded_by_task: ''
+blocked_reason_code: ''
