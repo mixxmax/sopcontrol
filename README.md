@@ -19,6 +19,8 @@
 
 **一句话理解：** 让 Agent 在规则之外保持自主，在规则之内保持忠实。
 
+**再一句话（给长期重度用户）：** SOP Control 是 Agent 的**可审计记忆**——你随口纠正的每一条经验，带着哪句话来的、谁确认的、适用什么范围、现在第几版，永久保存、换模型不丢、升级不丢；没确认的东西，永远只是建议。
+
 **当前状态：** v0.4.0 · **Beta / early public**。适合细分产品接入、评估和狗粮测试；还不宣称是操作系统级沙箱、企业合规平台或对抗恶意进程的安全边界。请同时阅读 [LIMITATIONS.md](LIMITATIONS.md)、[RESIDUAL_RISKS.md](RESIDUAL_RISKS.md) 和 [CHANGELOG.md](CHANGELOG.md)。
 
 ---
@@ -76,25 +78,26 @@ SOP Control 把这些问题拆成两个空间：
 
 ---
 
-## 一附 B、和主流同类产品差在哪里
+## 一附 B、什么时候你不需要 SOP Control
 
-市场上很多“和 Agent 相关”的工具看起来像 SOP Control，但解决的是另一类问题。下面按**品类**对比，方便选对工具，而不是互相替代。
+很多“和 Agent 相关”的做法看起来像 SOP Control，但解决的是另一类问题。先对照下表排除，避免装错工具——下面不点名任何产品，只按“你要解决的事”划分。
 
-| 品类 / 常见形态 | 它主要解决什么 | SOP Control 与之的差别 |
+| 如果你要解决的是 | 通常做法 | 为什么那不是 SOP Control |
 | :--- | :--- | :--- |
-| **提示词 / 自定义指令 / AGENTS.md  alone**（Cursor Rules、Claude Project Instructions、系统提示） | 把偏好塞进上下文，让模型“尽量记得” | 我们把权威放进 `.sopcontrol/`，并用 hook / gate / ticket **在动作边界拦截**；投影文件只是给 Agent 看的摘要，不是第二套权威源。 |
-| **Agent 编排框架**（LangGraph、CrewAI、AutoGen、各类 multi-agent runtime） | 怎么拆任务、怎么调用工具、怎么在图里流转 | 我们不编排业务图；我们约束**已经决定不能改的边界**。编排框架回答“下一步调谁”；我们回答“这一步有没有资格发生”。 |
-| **内容安全 / Guardrails**（LlamaGuard、NeMo Guardrails、厂商 Moderation API） | 拦截有害、越权、敏感输出 | 我们管的是**项目 SOP 与产品入口**，不是通用内容审核。你可以同时用两者：Guardrails 管说了什么危险话；SOP Control 管有没有绕过产品写入口。 |
-| **Agent 可观测性**（LangSmith、Helicone、各类 trace UI） | 看见调用链、token、延迟、失败 | 我们提供活动日志与覆盖报告，但目标是**控制证据**（gated / admitted / verified / unproven），不是通用 APM。日志不能放行，也不能把自报写成成功。 |
-| **企业策略 / EDR / 沙箱** | 对抗恶意软件、数据外泄、未授权进程 | 威胁模型不同：我们面向**协作中的本机操作者与 coding agent**，不宣称挡住拥有同等文件系统权限、刻意绕过全部入口的恶意进程。 |
-| **“再雇一个审查 Agent”** | 每次改动都用另一个模型再看一遍 | 我们默认**热路径零额外模型调用**；审查是高风险升级，不是每次编辑的税。 |
+| 让模型“多听你几句”，把偏好塞进上下文 | 自定义指令、项目提示词文件 | 那是建议，不是权威。我们把权威放进 `.sopcontrol/`，并用 hook / gate / ticket **在动作边界拦截**；投影文件只是给 Agent 看的摘要，不是第二套权威源。 |
+| 拆任务、调工具、走流程图 | 多 Agent 编排 | 我们不编排业务图。编排回答“下一步调谁”；我们回答“这一步有没有资格发生”。 |
+| 拦截有害、越权、敏感输出 | 内容审核与 guardrails | 我们管的是**项目 SOP 与产品入口**，不是通用内容审核。两者可并存：一个管说了什么危险话，一个管有没有绕过产品写入口。 |
+| 看见调用链、token、延迟、失败 | 可观测性与 trace | 我们提供活动日志与覆盖报告，但目标是**控制证据**（gated / admitted / verified / unproven），不是通用 APM。日志不能放行，也不能把自报写成成功。 |
+| 对抗恶意软件、数据外泄、未授权进程 | 企业策略 / 沙箱 | 威胁模型不同：我们面向**协作中的本机操作者与 coding agent**，不宣称挡住拥有同等文件系统权限、刻意绕过全部入口的恶意进程。 |
+| 每次改动都想被再看一遍 | 外加审查环节 | 我们默认**热路径零额外模型调用**；审查是高风险升级，不是每次编辑的税。 |
 
-**怎么选：**
+**我们独有的三件事**（上面几类做法都不提供）：
 
-- 只想让模型“多听你几句” → 提示词 / AGENTS.md 往往够用；
-- 要编排复杂多 Agent 工作流 → 用编排框架；
-- 要拦截有害内容 → 用 Guardrails / Moderation；
-- 要让**已经定下的产品规则在换模型后仍被强制执行**，并且能证明有没有走过正式入口 → 用 SOP Control（可与上面几类并存）。
+1. **可审计的记忆**：每条永久规则都带着哪句原话来的、谁确认的、适用什么范围、现在第几版——50 条规则、三个模型、两次升级之后，你仍然敢删其中一条。
+2. **确认才生效**：一次点击都不会被当成确认；调用方自称用户也不算；没确认的永远只是建议。
+3. **升级不丢规则**：版本化运行时 + 语义 diff + 影子验证；目标版本丢规则或放宽控制即阻断切换。
+
+**一句话选型：** 只想让模型听话一点 → 上面做法往往够用；想要**定下的规则在换模型、换会话、升版本之后仍然有效，且能证明** → 用 SOP Control。
 
 ---
 
@@ -605,20 +608,26 @@ Distributed under the [MIT License](LICENSE).
 
 ---
 
-## 0b. How we differ from common “agent” products
+## 0b. When you do NOT need SOP Control
 
-Many tools look adjacent. They usually solve a different job.
+Many adjacent practices solve a different job. Check this table first so you do not install the wrong tool — no products are named here, only the job to be done.
 
-| Category | Main job | Difference vs SOP Control |
+| If your job is | Usual approach | Why that is not SOP Control |
 | :--- | :--- | :--- |
-| **Prompts / custom instructions / AGENTS.md alone** (Cursor Rules, Claude Project Instructions, system prompts) | Put preferences into context so the model “tries to remember” | We keep authority in `.sopcontrol/` and **intercept at the action boundary** (hooks / gate / tickets). Projection files are summaries for agents, not a second authority. |
-| **Agent orchestration** (LangGraph, CrewAI, AutoGen, multi-agent runtimes) | Split work, call tools, walk a graph | We do not orchestrate business graphs. Orchestrators answer “who runs next?”; we answer “is this step allowed to happen?” |
-| **Content safety / guardrails** (LlamaGuard, NeMo Guardrails, vendor Moderation APIs) | Block harmful or disallowed model output | We govern **project SOPs and product entrances**, not generic content policy. Both can coexist. |
-| **Agent observability** (LangSmith, Helicone, trace UIs) | See chains, tokens, latency, failures | We log **control evidence** (gated / admitted / verified / unproven), not generic APM. Logs cannot approve actions or mint success from self-reports. |
-| **Enterprise policy / EDR / sandboxes** | Stop malware, exfiltration, rogue processes | Different threat model: we target a **cooperating local operator + coding agent**, not a peer process that bypasses every controlled entrance. |
-| **“Hire a second reviewer agent”** | Re-read every change with another model | Our default **hot path adds zero extra model calls**; semantic review is a high-risk escalation, not a tax on every edit. |
+| Make the model “hear you better” via context | Custom instructions / project prompt files | That is advice, not authority. We keep authority in `.sopcontrol/` and **intercept at the action boundary**. Projections are summaries, not a second authority. |
+| Split work and walk a graph | Multi-agent orchestration | Orchestrators answer “who runs next?”; we answer “is this step allowed to happen?” |
+| Block harmful output | Content moderation / guardrails | We govern **project SOPs and product entrances**, not generic content policy. Both can coexist. |
+| See chains, tokens, latency | Observability / tracing | We log **control evidence** (gated / admitted / verified / unproven), not generic APM. Logs cannot approve actions or mint success from self-reports. |
+| Stop malware or rogue processes | Enterprise policy / sandboxes | Different threat model: a **cooperating local operator + coding agent**. |
+| Re-read every change | Extra review steps | Our default **hot path adds zero extra model calls**; review is a high-risk escalation, not a tax on every edit. |
 
-**How to choose:** want the model to “hear you better” → prompts may be enough. Need multi-agent workflows → use an orchestrator. Need content safety → use guardrails. Need **settled product rules to remain binding after a model switch, with proof that formal entrances were used** → use SOP Control (alongside the others if needed).
+**Three things only we provide:**
+
+1. **Auditable memory**: every permanent rule carries which quote it came from, who confirmed it, what scope it applies to, and which revision it is at — after 50 rules, three models, and two upgrades, you still dare to delete one.
+2. **Nothing takes effect without confirmation**: a click is never consent, and a caller claiming to be the user does not count; unconfirmed items stay suggestions forever.
+3. **Upgrades never lose rules**: versioned runtimes + semantic diff + shadow verification; a target version that drops rules or loosens control blocks the switch.
+
+**One-line chooser:** want the model to listen better → the above is usually enough. Want **settled rules to stay binding across model switches, sessions, and upgrades — with proof** → use SOP Control.
 
 ---
 
