@@ -152,3 +152,77 @@ resolve_and_run() {
 }
 resolve_and_run
 '''
+
+
+def bound_launch(root: Path | str, *,
+                 env: dict[str, str] | None = None) -> dict[str, object]:
+    """§9.6 稳定 launcher 解析（纯查询，不执行）：找根→读绑定→验目录→
+    验 manifest/摘要→给 argv+env；绑定损坏 fail-closed 带修复提示。
+
+    无绑定文件 = 旧项目路径（unbound，不阻断，保兼容）。
+    """
+    from sopcontrol.upgrade import _binding_file_corrupt, load_binding
+
+    root = Path(root).resolve()
+    binding_path = root / ".sopcontrol-local" / "binding.yaml"
+    if not binding_path.is_file():
+        return {"ok": True, "bound": False, "argv": None, "env": {},
+                "reason": "无绑定：走旧解析链（SOPCTL_BIN/.venv/PATH）"}
+    if _binding_file_corrupt(root):
+        return {"ok": False, "bound": True, "argv": None, "env": {},
+                "reason": "binding 已损坏：fail-closed",
+                "hint": "用备份恢复 .sopcontrol-local/binding.yaml，"
+                        "或删 binding 回退旧解析（将失去版本钉死）"}
+    binding = load_binding(root)
+    assert binding is not None
+    rt = Path(binding.runtime_path) if binding.runtime_path else None
+    if rt is None or not str(rt):
+        return {"ok": False, "bound": True, "argv": None, "env": {},
+                "reason": "binding 无 runtime_path：fail-closed",
+                "hint": "重跑 sopctl sync 重建绑定"}
+    # 允许目录：项目内 runtimes / 当前包的开发树（dev）——拒绝任意外部路径。
+    try:
+        from sopcontrol import __file__ as _pkg
+        dev_home = str(Path(_pkg).resolve().parent.parent)
+    except Exception:
+        dev_home = ""
+    allowed_prefixes = (str(root / ".sopcontrol-local" / "runtimes"), dev_home)
+    rt_s = str(rt.resolve()) if rt.exists() else str(rt)
+    if not any(p and (rt_s == p or rt_s.startswith(p.rstrip("/") + "/"))
+               for p in allowed_prefixes):
+        return {"ok": False, "bound": True, "argv": None, "env": {},
+                "reason": f"runtime 路径不在允许目录内：{rt_s}",
+                "hint": "检查 binding 是否被篡改；重跑 sync 重建"}
+    manifest = rt / "runtime-manifest.json"
+    if manifest.is_file():
+        import json as _json
+        try:
+            data = _json.loads(manifest.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {"ok": False, "bound": True, "argv": None, "env": {},
+                    "reason": "manifest 不可解析：fail-closed",
+                    "hint": "重跑 sopctl sync 重建该版本目录"}
+        if binding.runtime_package_digest and data.get("package_digest") != \
+                binding.runtime_package_digest:
+            return {"ok": False, "bound": True, "argv": None, "env": {},
+                    "reason": "manifest 摘要与绑定不一致：fail-closed",
+                    "hint": "runtime 目录疑被替换；回滚或重跑 sync"}
+        if binding.core_version and data.get("version") != binding.core_version:
+            return {"ok": False, "bound": True, "argv": None, "env": {},
+                    "reason": "manifest 版本与绑定不一致：fail-closed",
+                    "hint": "回滚或重跑 sync"}
+    else:
+        # 开发树（无 manifest）：断言包真实存在（editable 下裸 import 恒真不足为据）。
+        pkg = rt if (rt / "__init__.py").is_file() else rt / "sopcontrol"
+        if not (pkg / "__init__.py").is_file():
+            return {"ok": False, "bound": True, "argv": None, "env": {},
+                    "reason": f"runtime 路径下无 sopcontrol 包：{rt_s}",
+                    "hint": "重跑 sopctl sync 重建绑定"}
+    py = root / ".venv" / "bin" / "python"
+    python = str(py) if py.is_file() else sys.executable
+    base_env = dict(env or {})
+    base_env["PYTHONPATH"] = str(rt) + (os.pathsep + base_env["PYTHONPATH"]
+                                        if base_env.get("PYTHONPATH") else "")
+    return {"ok": True, "bound": True,
+            "argv": [python, "-m", "sopcontrol.cli"], "env": base_env,
+            "reason": f"绑定 runtime：{rt_s}"}
