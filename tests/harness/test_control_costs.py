@@ -36,7 +36,7 @@ def _frozen(tmp_path):
 
 def _result(frozen, rid, **kw):
     base = {
-        "result_id": rid, "task_id": "TASK-C", "profile_id": "run-cost",
+        "result_id": rid, "task_id": "TASK-C", "phase": "audit", "check_id": "jd_fit", "profile_id": "run-cost",
         "profile_revision": 1, "effective_plan_digest": frozen.digest,
         "input_digest": "same-in", "baseline_digest": "same-base",
         "checked_dimensions": ["jd_fit"], "findings": [], "rounds_used": 0,

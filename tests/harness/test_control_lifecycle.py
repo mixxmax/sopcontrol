@@ -36,7 +36,7 @@ def _result(frozen, **kw):
     from datetime import datetime, timezone
 
     base = {
-        "result_id": "r1", "task_id": "TASK-7", "profile_id": "run-life",
+        "result_id": "r1", "task_id": "TASK-7", "phase": "audit", "check_id": "jd_fit", "profile_id": "run-life",
         "profile_revision": 1, "effective_plan_digest": frozen.digest,
         "input_digest": "in", "baseline_digest": "base",
         "checked_dimensions": ["jd_fit"], "findings": [], "rounds_used": 0,

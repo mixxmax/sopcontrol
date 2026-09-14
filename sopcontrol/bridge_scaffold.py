@@ -22,7 +22,7 @@ _EXT = {"sh": "", "python": ".py", "node": ".js"}
 
 def _admit_flags(*, integration_id: str, action: str, side_effect: str = "",
                  task_id: str = "", plan_digest: str = "",
-                 phase: str = "") -> list[str]:
+                 phase: str = "", capability_binding: str = "") -> list[str]:
     flags = ["--integration-id", integration_id, "--action", action]
     if side_effect:
         flags += ["--side-effect", side_effect]
@@ -32,6 +32,8 @@ def _admit_flags(*, integration_id: str, action: str, side_effect: str = "",
         flags += ["--plan-digest", plan_digest]
     if phase:
         flags += ["--phase", phase]
+    if capability_binding:
+        flags += ["--capability-binding", capability_binding]
     return flags
 
 
@@ -55,7 +57,7 @@ if [ -z "$BIN" ]; then echo "sopctl not found (SOPCTL_BIN/.venv/PATH)" >&2; exit
 def render_scaffold(*, lang: str, integration_id: str, action: str,
                     command: list[str], side_effect: str = "",
                     task_id: str = "", plan_digest: str = "",
-                    phase: str = "") -> str:
+                    phase: str = "", capability_binding: str = "") -> str:
     """渲染单文件正式入口（无 secret、无网络、无业务逻辑）。"""
     if lang not in LANGS:
         raise ValueError(f"unsupported lang {lang!r} (want one of {LANGS})")
@@ -64,7 +66,8 @@ def render_scaffold(*, lang: str, integration_id: str, action: str,
         raise ValueError("scaffold 需要非空原始命令")
     flags = _admit_flags(integration_id=integration_id, action=action,
                          side_effect=side_effect, task_id=task_id,
-                         plan_digest=plan_digest, phase=phase)
+                         plan_digest=plan_digest, phase=phase,
+                         capability_binding=capability_binding)
     if lang == "sh":
         q = " ".join(shlex.quote(p) for p in command)
         f = " ".join(shlex.quote(p) for p in flags)
@@ -96,7 +99,7 @@ def render_scaffold(*, lang: str, integration_id: str, action: str,
             f"ACTION = {json.dumps(action)}\n"
             f"COMMAND = {json.dumps(command)}\n"
             f"FLAGS = {json.dumps(flags)}\n"
-            f"NEEDS_TICKET = {json.dumps(bool(side_effect))}\n\n"
+            f"NEEDS_TICKET = {repr(bool(side_effect))}\n\n"
             "def _resolve():\n"
             '    explicit = os.environ.get("SOPCTL_BIN", "").strip()\n'
             "    if explicit and os.access(explicit, os.X_OK):\n"
@@ -176,38 +179,94 @@ def render_scaffold(*, lang: str, integration_id: str, action: str,
 def install_scaffold(
     root: Path, *, name: str, lang: str, integration_id: str, action: str,
     command: list[str], side_effect: str = "", task_id: str = "",
-    plan_digest: str = "", phase: str = "",
+    plan_digest: str = "", phase: str = "", capability_binding: str = "",
 ) -> dict[str, Any]:
     """写入正式入口文件并登记回滚清单；返回 {name, file, rollback}。"""
+    import os
+    import stat
+
     root = Path(root)
     if lang not in LANGS:
         raise ValueError(f"unsupported lang {lang!r} (want one of {LANGS})")
     from .scope import validate_identifier
+
+    # R-01（§7.1/§7.2）：install_scaffold 与 install_wrapper/run_bridge 复用
+    # 同一分类器——side_effect 省略时自动分类；已知网络/数据库/浏览器工具
+    # 绝不生成无 admit 的裸执行入口（"readonly passthrough" 只属于可证伪的
+    # 本地命令，未命中的未知程序按 AGENTS.md cooperating-operator 边界处理）。
+    if not side_effect:
+        from .bridge import classify_bridge_argv
+
+        _, side_effect = classify_bridge_argv(integration_id, [str(c) for c in command])
 
     name = name or (integration_id.replace(".", "-") + "-bridge")
     validate_identifier(name, kind="bridge 安装名")
     bin_dir = root / ".sopcontrol-local" / "bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
     target = bin_dir / (name + _EXT[lang])
-    existed = target.exists()
+
+    existed = False
     prev_backup: str | None = None
     prev_mode: int | None = None
-    if existed:
+
+    try:
+        st = target.lstat()
+        existed = True
+    except FileNotFoundError:
+        st = None
+    except OSError as exc:
+        raise RuntimeError(f"检查安装目标失败: {exc}")
+
+    if st is not None:
+        if stat.S_ISLNK(st.st_mode):
+            raise ValueError(f"拒绝覆盖符号链接目标: {target}")
+        if stat.S_ISDIR(st.st_mode):
+            raise ValueError(f"拒绝覆盖目录目标: {target}")
+        if not stat.S_ISREG(st.st_mode):
+            raise ValueError(f"拒绝覆盖特殊文件目标: {target}")
+
         backup_dir = root / ".sopcontrol-local" / "bridge-rollback"
         backup_dir.mkdir(parents=True, exist_ok=True)
         prev_path = backup_dir / f"{target.name}.prev"
-        prev_path.write_bytes(target.read_bytes())
-        try:
-            prev_mode = target.stat().st_mode & 0o7777
-            prev_path.chmod(prev_mode)
-        except OSError:
-            pass
-        prev_backup = str(prev_path)
-    target.write_text(render_scaffold(
+        if prev_path.exists():
+            prev_backup = str(prev_path)
+            manifest = _load_manifest(root)
+            prev_mode = (manifest.get(name) or {}).get("prev_mode") or (st.st_mode & 0o7777)
+        else:
+            prev_mode = st.st_mode & 0o7777
+            tmp_prev = backup_dir / f".{target.name}.prev.tmp.{os.getpid()}"
+            try:
+                tmp_prev.write_bytes(target.read_bytes())
+                tmp_prev.chmod(prev_mode)
+                tmp_prev.replace(prev_path)
+                prev_backup = str(prev_path)
+            except Exception as exc:
+                if tmp_prev.exists():
+                    try:
+                        tmp_prev.unlink()
+                    except OSError:
+                        pass
+                raise RuntimeError(f"备份已有文件失败，保持目标不变: {exc}")
+
+    content = render_scaffold(
         lang=lang, integration_id=integration_id, action=action,
         command=[str(c) for c in command], side_effect=side_effect,
-        task_id=task_id, plan_digest=plan_digest, phase=phase), encoding="utf-8")
-    target.chmod(0o755)
+        task_id=task_id, plan_digest=plan_digest, phase=phase,
+        capability_binding=capability_binding,
+    )
+    tmp_target = bin_dir / f".{target.name}.tmp.{os.getpid()}"
+    try:
+        tmp_target.write_text(content, encoding="utf-8")
+        tmp_target.chmod(0o755)
+        tmp_target.replace(target)
+    except Exception as exc:
+        if tmp_target.exists():
+            try:
+                tmp_target.unlink()
+            except OSError:
+                pass
+        raise RuntimeError(f"原子安装写入失败: {exc}")
+
     manifest = _load_manifest(root)
     manifest[name] = {
         "integration_id": integration_id,
@@ -217,6 +276,7 @@ def install_scaffold(
         "side_effect": side_effect,
         "plan_digest": plan_digest,
         "phase": phase,
+        "capability_binding": capability_binding,
         "files": [str(target)],
         "existed_before": existed,
         "prev_backup": prev_backup,

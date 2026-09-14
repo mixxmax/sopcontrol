@@ -36,6 +36,8 @@ def _result(**kw):
     base = {
         "result_id": "res-1",
         "task_id": "TASK-9",
+        "phase": "audit",
+        "check_id": "jd_fit",
         "profile_id": "run-q",
         "profile_revision": 1,
         "effective_plan_digest": "",

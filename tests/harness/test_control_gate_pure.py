@@ -43,7 +43,7 @@ def _frozen():
 
 def _result(**kw):
     base = {
-        "result_id": "pure-1", "task_id": "TASK-P", "profile_id": "pure",
+        "result_id": "pure-1", "task_id": "TASK-P", "phase": "audit", "check_id": "jd_fit", "profile_id": "pure",
         "profile_revision": 1, "effective_plan_digest": "",
         "input_digest": "in", "baseline_digest": "base",
         "checked_dimensions": ["jd_fit", "factual_accuracy"],

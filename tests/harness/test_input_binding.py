@@ -61,19 +61,22 @@ def test_escape_symlink_loop_and_special_rejected_or_marked(tmp_path):
         link.symlink_to(link)
     except OSError:
         pytest.skip("平台不支持 symlink")
-    d1 = _digest(tmp_path, "loop")
-    assert "symlink" in d1 or "loop" in d1 or d1.startswith("in-")
+    with pytest.raises(ValueError):
+        _digest(tmp_path, "loop")
     target = tmp_path / "real.txt"
     target.write_text("v", encoding="utf-8")
     (tmp_path / "alias").symlink_to(target)
-    assert _digest(tmp_path, "alias") == _digest(tmp_path, "real.txt")
+    # §12.1（R-06）：symlink 默认拒绝——即使目标位于任务目录内也不跟随，
+    # 不把 link 本身与目标内容混为一谈
+    with pytest.raises(ValueError, match="符号链接"):
+        _digest(tmp_path, "alias")
     fifo = tmp_path / "pipe"
     try:
         os.mkfifo(fifo)
     except (OSError, AttributeError):
         pytest.skip("平台不支持 fifo")
-    marked = _digest(tmp_path, "pipe")
-    assert marked.startswith("in-")
+    with pytest.raises(ValueError):
+        _digest(tmp_path, "pipe")
 
 
 def test_large_file_streaming_hash(tmp_path):

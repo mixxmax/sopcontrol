@@ -64,7 +64,7 @@ class ProfileRepair(BaseModel):
     policy: Literal["hard_errors_only"] = "hard_errors_only"
     max_rounds: int = 1
     recheck_unchanged_input: bool = False
-    stop_after_pass: bool = True
+    stop_after_pass: bool = False
 
 
 StopWhen = Literal["pass", "pass_with_warnings", "max_rounds", "block"]
@@ -92,6 +92,10 @@ class ControlProfile(BaseModel):
     budget: ProfileBudget = Field(default_factory=ProfileBudget)
     expires_at: str | None = None
     stop_when: list[StopWhen] = Field(default_factory=lambda: ["pass"])
+    execution_policy: "ExecutionPolicy" = Field(default_factory=lambda: ExecutionPolicy())
+
+
+from .execution_logic import ExecutionPolicy  # noqa: E402  （MSE 支柱配置）
 
 
 class FrozenPlan(BaseModel):
@@ -124,27 +128,75 @@ class ComposedPlan(BaseModel):
     profile: ControlProfile
     layers: dict[str, Any] = Field(default_factory=dict)
 
+    @property
+    def task_digest(self) -> str:
+        task_data = self.layers.get("task")
+        if isinstance(task_data, dict):
+            return str(task_data.get("digest") or self.digest)
+        return str(self.layers.get("task_digest") or self.digest)
+
+
+def extract_task_digest(plan: Any) -> str:
+    """从 FrozenPlan / ComposedPlan 中统一提取 task 层的 digest。"""
+    if hasattr(plan, "task_digest"):
+        return plan.task_digest
+    if hasattr(plan, "layers") and isinstance(plan.layers, dict):
+        task_data = plan.layers.get("task")
+        if isinstance(task_data, dict) and "digest" in task_data:
+            return str(task_data["digest"])
+        if "task_digest" in plan.layers:
+            return str(plan.layers["task_digest"])
+    return getattr(plan, "digest", "")
+
+
+def declared_field_set(profile: ControlProfile) -> list[str]:
+    """层的实际声明字段集合（点路径，§9.4）：absent 与显式默认必须可区分。
+
+    以 Pydantic model_fields_set 为准（fresh-parsed 模型准确；经 model_dump
+    往返重载的模型所有字段都视为显式声明——冻结文件即如此，属已知边界）。
+    """
+    declared: list[str] = []
+
+    def _walk(model: BaseModel, prefix: str) -> None:
+        for name in sorted(model.model_fields_set):
+            path = f"{prefix}{name}"
+            value = getattr(model, name)
+            if isinstance(value, BaseModel):
+                if value.model_fields_set:
+                    _walk(value, path + ".")
+                else:
+                    declared.append(path)
+            else:
+                declared.append(path)
+
+    _walk(profile, "")
+    return declared
+
 
 def _merge_all_fields(base: ControlProfile, task: ControlProfile) -> ControlProfile:
-    """Base ⊕ Task 全字段合并（只收紧）：required/excluded/modes/tolerance/
-    budget/repair/baseline/stop_when/expires 全覆盖；放宽即 ProfileError。"""
-    data = task.model_dump(mode="json")
-    # required/excluded：base 并入 task（交集冲突由 normalize 裁决）
-    required = set(task.checks.required) | set(base.checks.required)
-    excluded = set(task.checks.excluded) | set(base.checks.excluded)
-    data["checks"]["required"] = sorted(required)
-    data["checks"]["excluded"] = sorted(excluded)
-    # modes：重叠维度只允许收紧（rank 只升不降）
+    """Base ⊕ Task 全字段合并（只收紧，§9.2/§9.3）。
+
+    未声明字段=继承 base 有效值，不参与放宽比较（不能因 Pydantic 默认值
+    把继承误判为放宽）；显式声明才参与收紧比较；显式放宽拒绝。
+    """
+    top = set(task.model_fields_set)
+    data = base.model_dump(mode="json")
+    # checks：required/excluded 并集（只能增加）；modes 逐维收紧
+    t_checks = set(task.checks.model_fields_set)
+    task_required = set(task.checks.required) if "required" in t_checks else set()
+    task_excluded = set(task.checks.excluded) if "excluded" in t_checks else set()
+    data["checks"]["required"] = sorted(set(base.checks.required) | task_required)
+    data["checks"]["excluded"] = sorted(set(base.checks.excluded) | task_excluded)
     modes = dict(base.checks.modes)
-    for dim, mode in task.checks.modes.items():
+    for dim, mode in (task.checks.modes.items() if "modes" in t_checks else []):
         old = modes.get(dim)
         if old is not None and _MODE_RANK[mode] < _MODE_RANK[old]:
             raise ProfileError(f"task 不得放宽 base 的 mode {dim}（{old}→{mode}）")
         modes[dim] = mode
     data["checks"]["modes"] = modes
-    # tolerance：重叠类别只允许收紧
+    # tolerance：逐类收紧（dict 键即声明）
     tolerance = dict(base.tolerance or {})
-    for category, level in (task.tolerance or {}).items():
+    for category, level in (task.tolerance.items() if "tolerance" in top else []):
         if level not in _TOLERANCE_RANK:
             raise ProfileError(f"task tolerance 非法: {category}={level}")
         old = tolerance.get(category, "allowed")
@@ -154,26 +206,89 @@ def _merge_all_fields(base: ControlProfile, task: ControlProfile) -> ControlProf
             raise ProfileError(f"task 不得放宽 base 的 tolerance[{category}]（{old}→{level}）")
         tolerance[category] = level
     data["tolerance"] = tolerance
-    # budget/repair：只允许收紧（数值只降不升）
+    # budget：逐键 presence，未声明键继承 base（默认值不得冒充声明）
+    t_budget = set(task.budget.model_fields_set)
     for key in ("max_audit_calls", "max_repair_calls"):
+        if key not in t_budget:
+            continue
         old, new = getattr(base.budget, key), getattr(task.budget, key)
         if new > old:
             raise ProfileError(f"task 不得放宽 base 的 budget.{key}（{old}→{new}）")
         data["budget"][key] = min(old, new)
-    if task.repair.max_rounds > base.repair.max_rounds:
-        raise ProfileError("task 不得放宽 base 的 repair.max_rounds")
-    data["repair"]["max_rounds"] = min(base.repair.max_rounds, task.repair.max_rounds)
-    if task.repair.policy != base.repair.policy:
+    # repair：max_rounds/policy 同上；布尔收紧项显式放宽拒绝
+    t_repair = set(task.repair.model_fields_set)
+    if "max_rounds" in t_repair:
+        if task.repair.max_rounds > base.repair.max_rounds:
+            raise ProfileError("task 不得放宽 base 的 repair.max_rounds")
+        data["repair"]["max_rounds"] = min(base.repair.max_rounds, task.repair.max_rounds)
+    if "policy" in t_repair and task.repair.policy != base.repair.policy:
         raise ProfileError("task 不得改变 base 的 repair.policy")
-    # baseline：跨层必须一致（改基线语义走新 revision，不是叠加）
+    if "recheck_unchanged_input" in t_repair:
+        if base.repair.recheck_unchanged_input and not task.repair.recheck_unchanged_input:
+            raise ProfileError("task 不得放宽 base 的 repair.recheck_unchanged_input")
+        data["repair"]["recheck_unchanged_input"] = (
+            bool(base.repair.recheck_unchanged_input) or bool(task.repair.recheck_unchanged_input)
+        )
+    if "stop_after_pass" in t_repair:
+        if base.repair.stop_after_pass and not task.repair.stop_after_pass:
+            raise ProfileError("task 不得放宽 base 的 repair.stop_after_pass")
+        data["repair"]["stop_after_pass"] = (
+            bool(base.repair.stop_after_pass) or bool(task.repair.stop_after_pass)
+        )
+    # execution_policy（MSE）：逐键 presence 合成，只收紧（§15.1）
+    if "execution_policy" in top:
+        from .execution_logic import ExecutionPolicy as _EP
+
+        t_ep = set(task.execution_policy.model_fields_set)
+        base_ep = base.execution_policy
+        ep_data = base_ep.model_dump(mode="json")
+        _MODE_RANK_EP = {"observe": 0, "warn": 1, "block": 2}
+        for key in set(ep_data) & t_ep:
+            new_val = getattr(task.execution_policy, key)
+            old_val = getattr(base_ep, key)
+            if key in ("mode", "unknown_expensive_action"):
+                if _MODE_RANK_EP[new_val] < _MODE_RANK_EP[old_val]:
+                    raise ProfileError(
+                        f"task 不得放宽 base 的 execution_policy.{key}（{old_val}→{new_val}）")
+                ep_data[key] = new_val if _MODE_RANK_EP[new_val] >= _MODE_RANK_EP[old_val] else old_val
+            elif key == "allow_speculative_work":
+                # true→false 是收紧；false→true 是放宽
+                if old_val is False and new_val is True:
+                    raise ProfileError("task 不得放宽 base 的 execution_policy.allow_speculative_work")
+                ep_data[key] = bool(old_val) and bool(new_val)
+            elif key in ("max_scope_expansion_ratio", "max_expensive_items",
+                         "max_external_calls"):
+                if new_val is not None:
+                    if old_val is not None and new_val > old_val:
+                        raise ProfileError(
+                            f"task 不得放宽 base 的 execution_policy.{key}（{old_val}→{new_val}）")
+                    ep_data[key] = new_val
+            else:
+                # 布尔强制项：False→True 收紧（OR）；True→False 放宽即拒
+                if old_val and not new_val:
+                    raise ProfileError(
+                        f"task 不得放宽 base 的 execution_policy.{key}（true→false）")
+                ep_data[key] = bool(old_val) or bool(new_val)
+        data["execution_policy"] = ep_data
+    # baseline：未声明字段继承；显式声明才要求与 base 一致（改基线走新 revision）
+    t_baseline = set(task.baseline.model_fields_set)
     for field in ("generation_mode", "audit_mode", "challenge_without_explicit_request",
                   "independence_required", "require_accept", "require_proven_independence"):
-        if getattr(task.baseline, field) != getattr(base.baseline, field):
-            raise ProfileError(f"task 不得改变 base 的 baseline.{field}")
-    # stop_when：只允许增加停止条件（停得更快=更紧）
-    if not set(task.stop_when or ["pass"]) >= set(base.stop_when or ["pass"]):
-        raise ProfileError("task 不得减少 base 的 stop_when")
-    data["stop_when"] = sorted(set(task.stop_when or ["pass"]))
+        if field in t_baseline and getattr(task.baseline, field) != getattr(base.baseline, field):
+            raise ProfileError(
+                f"task 不得改变 base 的 baseline.{field}"
+                f"（{getattr(base.baseline, field)}→{getattr(task.baseline, field)}）")
+    if "source_ref" in t_baseline and task.baseline.source_ref:
+        if base.baseline.source_ref and task.baseline.source_ref != base.baseline.source_ref:
+            raise ProfileError(
+                f"task 不得改变 base 的 baseline.source_ref"
+                f"（{base.baseline.source_ref}→{task.baseline.source_ref}）")
+        data["baseline"]["source_ref"] = task.baseline.source_ref
+    # stop_when：未声明继承；显式声明只允许增加停止条件（停得更快=更紧）
+    if "stop_when" in top:
+        if not set(task.stop_when or ["pass"]) >= set(base.stop_when or ["pass"]):
+            raise ProfileError("task 不得减少 base 的 stop_when")
+        data["stop_when"] = sorted(set(task.stop_when or ["pass"]))
     # expires_at：取绝对时间最早者（先转 aware UTC 再比，不做字符串 min）。
     earliest: str | None = None
     earliest_dt = None
@@ -189,13 +304,40 @@ def _merge_all_fields(base: ControlProfile, task: ControlProfile) -> ControlProf
         if earliest_dt is None or current < earliest_dt:
             earliest_dt, earliest = current, normalized
     data["expires_at"] = earliest
-    # scope：下层不得扩大上层（project/task/phase 逐项比对；current-project 为通配）
-    for field in ("project", "task", "phase"):
-        upper, lower = getattr(base.scope, field), getattr(task.scope, field)
-        if (upper and lower and upper != lower
-                and upper != "current-project" and lower != "current-project"):
-            raise ProfileError(f"task scope 扩大了 base scope.{field}（{upper}→{lower}）")
-    # scope 归属 task 层（任务级配置本就声明作用域）
+    # scope：下层不得扩大上层（下层必须是上层子集）。
+    # presence 语义：project 默认值是通配 "current-project"，task 层省略时
+    # 必须继承 base，不得把默认通配当成显式扩大声明。
+    t_scope = set(task.scope.model_fields_set)
+    upper_proj, lower_proj = base.scope.project, task.scope.project
+    if "project" in t_scope:
+        if upper_proj and upper_proj != "current-project":
+            if lower_proj == "current-project" or (lower_proj and lower_proj != upper_proj):
+                raise ProfileError(f"task scope 扩大了 base scope.project（{upper_proj}→{lower_proj}）")
+            data["scope"]["project"] = upper_proj
+        else:
+            data["scope"]["project"] = lower_proj or upper_proj
+
+    upper_task, lower_task = base.scope.task, task.scope.task
+    if upper_task:
+        if not lower_task:
+            data["scope"]["task"] = upper_task
+        elif lower_task != upper_task:
+            raise ProfileError(f"task scope 扩大或改变了 base scope.task（{upper_task}→{lower_task}）")
+        else:
+            data["scope"]["task"] = upper_task
+    else:
+        data["scope"]["task"] = lower_task
+
+    upper_phase, lower_phase = base.scope.phase, task.scope.phase
+    if upper_phase:
+        if not lower_phase:
+            data["scope"]["phase"] = upper_phase
+        elif lower_phase != upper_phase:
+            raise ProfileError(f"task scope 扩大或改变了 base scope.phase（{upper_phase}→{lower_phase}）")
+        else:
+            data["scope"]["phase"] = upper_phase
+    else:
+        data["scope"]["phase"] = lower_phase
     return normalize_profile(data)
 
 
@@ -250,6 +392,58 @@ def compile_effective_profile(
     return normalize_profile(compiled.model_dump(mode="json"))
 
 
+_ACTOR_WHITELIST = {
+    "tier", "max_repairs", "write_granularity", "strict_schema",
+    "source", "evaluation_id", "approved", "approved_by",
+    "approved_at", "approval_expires_at", "model", "digest",
+}
+
+
+def normalize_actor_snapshot(actor: dict[str, Any] | None) -> dict[str, Any]:
+    if not actor:
+        return {}
+    unknown = set(actor) - _ACTOR_WHITELIST
+    if unknown:
+        raise ProfileError(f"actor snapshot 未知字段: {sorted(unknown)}")
+    normalized = dict(actor)
+    if "tier" in normalized and normalized["tier"] not in ("strong", "fragile", "weak", "unknown"):
+        raise ProfileError(f"actor tier 非法: {normalized['tier']}")
+    if "max_repairs" in normalized:
+        try:
+            normalized["max_repairs"] = int(normalized["max_repairs"])
+        except (ValueError, TypeError):
+            raise ProfileError(f"actor max_repairs 非法: {normalized['max_repairs']}")
+    # 解析 approved 字段：严格处理字符串与布尔，防止 approved="false" 被当成 True
+    raw_approved = normalized.get("approved")
+    if isinstance(raw_approved, str):
+        if raw_approved.lower() in ("false", "0", "no", "off", ""):
+            is_approved = False
+        elif raw_approved.lower() in ("true", "1", "yes", "on"):
+            is_approved = True
+        else:
+            raise ProfileError(f"actor approved 非法: {raw_approved}")
+    else:
+        is_approved = bool(raw_approved)
+
+    # 强制验证 live 评测与人工批准：不能仅靠 approved=True 伪造放宽
+    source = str(normalized.get("source") or "")
+    eval_id = str(normalized.get("evaluation_id") or "")
+    approved_by = str(normalized.get("approved_by") or "")
+    if is_approved:
+        if not (source.startswith("live:") and eval_id and approved_by):
+            is_approved = False
+
+    normalized["approved"] = is_approved
+
+    # 未批准的 actor 必须使用保守上限（§6.2 第六步）
+    if not normalized.get("approved"):
+        normalized["tier"] = "unknown"
+        normalized["max_repairs"] = min(int(normalized.get("max_repairs", 1)), 1)
+        normalized["write_granularity"] = "file"
+        normalized["strict_schema"] = True
+    return normalized
+
+
 def compose_effective_plan(
     task_frozen: FrozenPlan,
     run_override: dict[str, Any] | None = None,
@@ -262,21 +456,22 @@ def compose_effective_plan(
     单一组合点：无 base/run/actor 层时 digest 与 plan_digest 完全一致
     （存量绑定不断）；任一层存在即进入分层 digest。
     """
+    if (isinstance(task_frozen, ComposedPlan) or (hasattr(task_frozen, "layers") and getattr(task_frozen, "layers", None))) and not run_override and base_profile is None and not actor_snapshot:
+        return task_frozen  # type: ignore[return-value]
     compiled = compile_effective_profile(
         task_frozen.profile, run_override, base_profile=base_profile)
-    actor = actor_snapshot or {}
+    actor = normalize_actor_snapshot(actor_snapshot)
     if actor:
         # actor 只收紧既有控制项（§4.1.4）：修复轮数取最小；其他 knobs 不进 profile。
-        try:
-            cap = max(0, int(actor.get("max_repairs", compiled.repair.max_rounds)))
-        except (ValueError, TypeError):
-            cap = compiled.repair.max_rounds
+        cap = actor.get("max_repairs", compiled.repair.max_rounds)
         compiled.repair.max_rounds = min(compiled.repair.max_rounds, cap)
         compiled = normalize_profile(compiled.model_dump(mode="json"))
     layers: dict[str, Any] = {
         "base": {"profile": base_profile.profile_id if base_profile else "",
                  "digest": plan_digest(base_profile, task_frozen.revision) if base_profile else ""},
-        "task": {"revision": task_frozen.revision, "digest": task_frozen.digest},
+        # §9.4：声明字段集进入层信息——absent 与显式默认必须产生不同 digest
+        "task": {"revision": task_frozen.revision, "digest": task_frozen.digest,
+                 "declared_fields": declared_field_set(task_frozen.profile)},
         "run": run_override or {},
         "actor": actor,
     }

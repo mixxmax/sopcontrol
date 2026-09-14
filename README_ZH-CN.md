@@ -180,6 +180,36 @@ sopctl gate .
 
 ---
 
+## 🧬 动态 SOP：把日常纠正变成永久规则
+
+用户不经意说出的长期偏好，不应该只活在聊天记录里：
+
+```bash
+# 1. 捕获原话（不打断工作；无“永久”关键词的行为纠正也会成为候选）
+sopctl dynamic observe --quote "独立审计只检查与 JD 的贴合和明显事实错误" \
+  --source-ref "session-42" --action materials.audit
+
+# 2. 低打扰确认（四选一：记为长期 / 修改后记为长期 / 仅本次 / 不是规则）
+sopctl dynamic list
+sopctl dynamic confirm <candidate-id> --decision keep_longterm \
+  --activation '{"actions": ["materials.audit"]}' \
+  --flexibility '{"max_correction_rounds": 1}'
+
+# 3. 永久生效：规则进入权威注册表（rule_class=dynamic_sop，无 TTL，
+#    不因重启/换模型/升级消失），在匹配情境自动激活，无关情境保持安静
+sopctl dynamic once-only   # 仅本次指令单独存放，绝不进入永久空间
+```
+
+### 一体化升级与回滚
+
+```bash
+sopctl sync        # 语义 diff → 影子验证 → 原子切换；规则丢失/放宽即阻断
+sopctl rollback    # 回滚上一 runtime；项目规则数据独立于软件包，不受影响
+```
+
+> **诚实边界**：SOP Control 控制合作执行者经过受控入口的行为，不宣称能防御
+> 拥有同等文件系统权限、主动绕过全部入口的恶意进程；它不是操作系统级沙箱。
+
 ## 🔌 多 Agent 运行时（Harness）支持
 
 所有 Harness 适配器都消费同一个仓库控制面。它们是执行入口，不是彼此竞争的事实来源。

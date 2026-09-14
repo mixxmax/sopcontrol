@@ -186,6 +186,41 @@ sopctl gate .
 
 ---
 
+## 🧬 Dynamic SOPs: Turn Everyday Corrections into Permanent Rules
+
+Long-lived preferences you mention in passing should not live in chat history:
+
+```bash
+# 1. Capture the verbatim utterance (non-blocking; corrections without the
+#    word "permanently" still become candidates)
+sopctl dynamic observe --quote "Independent audits only check JD fit and factual errors" \
+  --source-ref "session-42" --action materials.audit
+
+# 2. Low-friction confirmation card (keep long-term / edit / this-time-only / not a rule)
+sopctl dynamic list
+sopctl dynamic confirm <candidate-id> --decision keep_longterm \
+  --activation '{"actions": ["materials.audit"]}' \
+  --flexibility '{"max_correction_rounds": 1}'
+
+# 3. Permanent: the rule enters the authoritative registry (rule_class=dynamic_sop,
+#    no TTL — survives restarts, model switches, upgrades), activates only in
+#    matching contexts, and stays silent elsewhere
+sopctl dynamic once-only   # session-scoped instructions never enter the permanent space
+```
+
+### One-Command Upgrade & Rollback
+
+```bash
+sopctl sync        # semantic diff → shadow verify → atomic switch; rule loss or
+                   # enforcement downgrade blocks the switch
+sopctl rollback    # restore the previous runtime; project rule data is independent
+                   # of the package and untouched
+```
+
+> **Honest boundary**: SOP Control governs a cooperating executor through controlled
+> entry points; it does not claim defense against a malicious process with equal
+> filesystem privileges that bypasses every entry point, and it is not an OS sandbox.
+
 ## 🔌 Supported Agent Harnesses
 
 All harness adapters consume the same repository control plane. They are execution surfaces, not competing sources of truth.

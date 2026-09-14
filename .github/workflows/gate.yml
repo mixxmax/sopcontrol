@@ -24,7 +24,7 @@ jobs:
       - name: Ruff blocking checks
         run: ruff check sopcontrol plugins tests
       - name: Pytest and combined coverage
-        run: pytest -q --cov --cov-report=term-missing
+        run: pytest -q --cov --cov-branch --cov-report=term-missing
       - name: Arm identity and pre-push
         run: |
           sopctl identity init .

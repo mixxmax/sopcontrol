@@ -36,6 +36,8 @@ def _result(frozen, rid, task="TASK-GOLD", **kw):
     base = {
         "result_id": rid, "task_id": task, "profile_id": frozen.profile_id,
         "profile_revision": frozen.revision,
+        "phase": frozen.profile.scope.phase or "audit",
+        "check_id": list(frozen.profile.checks.required)[0] if frozen.profile.checks.required else "jd_fit",
         "effective_plan_digest": frozen.digest,
         "input_digest": f"in-{rid}", "baseline_digest": "base",
         "checked_dimensions": list(frozen.profile.checks.required),
