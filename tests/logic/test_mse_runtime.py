@@ -403,3 +403,21 @@ def test_runtime_costs_aggregates_from_receipts(tmp_path):
     payload = json.loads(buf.getvalue())
     assert rc == 0 and payload["receipts"] >= 1
     assert payload["external_calls"] >= 1
+
+
+def test_t4_expected_goal_digest_enforced(tmp_path):
+    """T4：mse 声明期望 goal 与冻结快照一致才放行；不一致拒；不声明不绑定。"""
+    from sopcontrol.bridge import mse_runtime_precheck
+    ctx = _freeze_full_loop(tmp_path, mode="observe")
+    root = ctx["root"]
+    good = _goal_digest_of(ctx["frozen"])
+    mse = {"operator_id": "fx.score", "expected_goal_digest": good}
+    refusal, _ = mse_runtime_precheck(root, mse=mse, plan_id="p-min")
+    assert refusal is None or refusal.get("policy_decision") != "mse:goal_mismatch"
+    bad_mse = {"operator_id": "fx.score", "expected_goal_digest": "goal-deadbeef"}
+    refusal2, summary2 = mse_runtime_precheck(root, mse=bad_mse, plan_id="p-min")
+    assert refusal2 is not None and refusal2["policy_decision"] == "mse:goal_mismatch"
+    assert summary2["reason_codes"] == ["goal_mismatch"]
+    plain_mse = {"operator_id": "fx.score"}
+    refusal3, _ = mse_runtime_precheck(root, mse=plain_mse, plan_id="p-min")
+    assert refusal3 is None or refusal3.get("policy_decision") != "mse:goal_mismatch"

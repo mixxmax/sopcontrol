@@ -1105,6 +1105,26 @@ def mse_runtime_precheck(
         except Exception:
             continue
     mse = mse or {}
+    # T4：调用方声明期望 goal（任务契约 goal_digest）时，必须与冻结快照一致；
+    # 不一致即身份错配——拒（与 policy.mode 无关）；不声明即不绑定（保兼容）。
+    expected_goal = str(mse.get("expected_goal_digest") or "")
+    if expected_goal and goal is not None and goal.digest() != expected_goal:
+        summary = {"outcome": "block", "reason_codes": ["goal_mismatch"],
+                   "pending_reducers": [], "dominated_steps": [],
+                   "estimated_avoided_items": 0,
+                   "next_action": "核对任务 goal_digest 与冻结计划是否同源",
+                   "plan_id": str(plan_id), "step_id": ""}
+        return {"schema_version": SCHEMA_VERSION,
+                "operation_id": "", "attempt_id": "",
+                "integration_id": "", "action": "",
+                "input_fingerprint": "", "side_effect": "none",
+                "ticket": None, "challenge_count": 0, "executed": False,
+                "exit_code": None, "stdout_tail": "", "stderr_tail": "",
+                "redemption_point": "none", "ticket_handoff": "",
+                "policy_decision": "mse:goal_mismatch",
+                "error": (f"任务 goal 与冻结计划不一致：期望 {expected_goal}，"
+                            f"冻结 {goal.digest()}：拒绝执行"),
+                "logic": summary}, summary
     # 步骤解析：显式 step > operator 匹配 > 唯一昂贵步
     step_id = str(mse.get("plan_step_id") or "")
     if step_id and plan.step_by_id(step_id) is None:

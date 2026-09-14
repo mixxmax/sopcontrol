@@ -503,6 +503,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="MSE：本次执行实际新增有效对象数（未测量则省略，不得伪造 0）",
     )
     run_p.add_argument(
+        "--expected-goal-digest", default="",
+        help="T4：任务契约 goal_digest；与冻结计划快照不一致即拒（空=不绑定）",
+    )
+    run_p.add_argument(
         "command", nargs=argparse.REMAINDER,
         help="原始命令与参数（用 -- 分隔）",
     )
@@ -538,6 +542,8 @@ def build_parser() -> argparse.ArgumentParser:
                       help="MSE：绑定冻结计划（昂贵步前置判定；block 模式下阻断签发）")
     ch_p.add_argument("--mse-json", default="",
                       help="MSE 上下文 JSON（plan_step_id/operator_id/input_set_digest 等）")
+    ch_p.add_argument("--expected-goal-digest", default="",
+                      help="T4：任务契约 goal_digest；与冻结计划快照不一致即拒（空=不绑定）")
     ch_p.add_argument("--format", default="json", choices=["json", "export"],
                       help="export 只打印 export SOPCTL_TICKET_FILE=…（供 wrapper eval）")
     ch_p.add_argument("command", nargs=argparse.REMAINDER, help="待执行命令（算指纹用）")
@@ -1078,6 +1084,8 @@ def cmd_bridge(args) -> int:
             return 2
     if getattr(args, "mse_new_objects", None) is not None:
         mse["new_objects"] = args.mse_new_objects
+    if getattr(args, "expected_goal_digest", "") or "":
+        mse["expected_goal_digest"] = args.expected_goal_digest
     receipt = run_bridge(
         root,
         integration_id=args.integration_id,
@@ -1129,6 +1137,8 @@ def cmd_bridge_challenge(args) -> int:
         except ValueError as exc:
             print(f"错误: --mse-json 非法: {exc}", file=sys.stderr)
             return 2
+    if getattr(args, "expected_goal_digest", "") or "":
+        mse["expected_goal_digest"] = args.expected_goal_digest
     try:
         issued = challenge_admission(
             _Path.cwd(), integration_id=args.integration_id, action=args.action,
