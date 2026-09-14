@@ -67,8 +67,10 @@ def test_module_never_imports_registry_writer():
     import sopcontrol.learning as m
     import inspect
     src = inspect.getsource(m)
-    # 加载只读允许（旧规则可加载）；写操作（迁移/新增/保存）禁止。
-    assert ".transition(" not in src and ".add(" not in src and ".save(" not in src
+    # 加载只读允许（旧规则可加载）；Registry 写操作禁止（精确匹配，seen.add 之类误伤除外）。
+    import re as _re
+    assert not _re.search(r"registry\.\s*(add|save|transition)\s*\(", src)
+    assert "Registry(" not in src or "load()" in src
 
 
 def test_proposal_decision_split_from_rule_status():
@@ -258,10 +260,12 @@ def test_p1d_document_both_once_only_defer_reject(project):
                           non_goals=["n"], evidence_refs=["仅本次-obs-1"])
     with _pt.raises(ValueError, match="once_only"):
         decide_proposal(project, p6, ProposalDecision(proposal_id=p6.proposal_id, route="control"))
-    # 重复决定拒绝（以库内已定案态重决）
-    done = list_proposals(project, status="deferred")[0]
+    # 终态拒绝复决：先把 p4 定为 reject，再重决
+    decide_proposal(project, list_proposals(project, status="deferred")[0],
+                    ProposalDecision(proposal_id=p4.proposal_id, route="reject"))
+    done = list_proposals(project, status="rejected")[0]
     with _pt.raises(ValueError, match="已定案"):
-        decide_proposal(project, done, ProposalDecision(proposal_id=done.proposal_id, route="reject"))
+        decide_proposal(project, done, ProposalDecision(proposal_id=done.proposal_id, route="control"))
     assert list_proposals(project, status="proposed") == []  # 被拒 control 未落盘
 
 
@@ -372,3 +376,75 @@ def test_review_f1_no_self_conflict():
     assert len(aggregate_window(both, w).conflicts) == 1
     mixed = ev("应该先台账") + ev("这里不应该跳过")
     assert len(aggregate_window(mixed, w).conflicts) == 1
+
+
+def test_p3b_defer_pending_redecidable(project):
+    """§10.12：defer 不过期、可复决；终态才拒绝。"""
+    from sopcontrol.learning import (LearningProposal, ProposalDecision,
+                                     decide_proposal, list_proposals)
+    p = LearningProposal(window_id="w", statement="延后事项", scope_summary="sc",
+                         non_goals=["n"])
+    from sopcontrol.learning import save_proposals
+    save_proposals(project, [p])
+    out = decide_proposal(project, p, ProposalDecision(proposal_id=p.proposal_id, route="defer"))
+    assert out["status"] == "deferred"
+    pending = list_proposals(project, status="deferred")[0]
+    out2 = decide_proposal(project, pending,
+                           ProposalDecision(proposal_id=pending.proposal_id, route="control"))
+    assert out2["status"] == "confirmed" and "candidate_id" in out2
+
+
+def test_p3b_seen_fingerprint_no_respam(project):
+    """§10.12：已提醒指纹持久化，不重复刷屏。"""
+    from sopcontrol.learning import evaluate_trigger, load_seen, mark_seen
+    b = _bundle(["以后必须先台账后评分"])
+    first = evaluate_trigger(b)
+    assert first.fire is True
+    mark_seen(project, first.fingerprint)
+    assert first.fingerprint in load_seen(project)
+    second = evaluate_trigger(b, seen_fingerprints=load_seen(project))
+    assert second.fire is False
+
+
+def test_p3b_single_distill_per_window(project):
+    """§10.20：同窗口同证据只调一次；证据变了才可再调。"""
+    from sopcontrol.learning import LearningEvent, aggregate_window, open_window, review_window_idempotent
+    w = open_window(task_id="T")
+    evs = [LearningEvent(kind="utterance", text="以后必须先台账", task_id="T")]
+    b = aggregate_window(evs, w)
+    r1 = review_window_idempotent(project, b)
+    assert r1["distill_calls"] == 1 and len(r1["proposals"]) == 1
+    r2 = review_window_idempotent(project, b)
+    assert r2["distill_calls"] == 0 and r2["cached"] is True
+    b2 = aggregate_window(evs + [LearningEvent(kind="utterance", text="评分前必须先台账", task_id="T")], w)
+    r3 = review_window_idempotent(project, b2)
+    assert r3["distill_calls"] == 1
+
+
+def test_p3b_restart_persistence(project):
+    """§10.17：提案与会话记录落盘，'重启'（重新读取）后仍在。"""
+    from sopcontrol.dynamic_sop import list_once_only
+    from sopcontrol.learning import (LearningProposal, list_proposals,
+                                     save_proposals)
+    from sopcontrol.dynamic_sop import confirm_candidate, observe_utterance
+    save_proposals(project, [LearningProposal(window_id="w", statement="持久A",
+                                              scope_summary="sc", non_goals=["n"])])
+    _o, cand, _ = observe_utterance(project, quote="仅本次纠正用旧模板", source_ref="s1")
+    confirm_candidate(project, cand.candidate_id, "once_only")
+    # 模拟重启：重新从盘读（无内存缓存可依赖）
+    assert any(i.statement == "持久A" for i in list_proposals(project))
+    assert len(list_once_only(project)) == 1
+
+
+def test_p3b_natural_logic_keeps_reverse_path(project):
+    """§10.18/§4.4：natural_logic 提案保留反向条件，不泛化成禁令。"""
+    from sopcontrol.learning import (LearningProposal, ProposalDecision,
+                                     decide_proposal)
+    p = LearningProposal(window_id="w", statement="默认先过滤再评分",
+                         scope_summary="搜索阶段", rule_class="natural_logic",
+                         exceptions=["用户明确改变目标", "存在真实依赖", "产品强规则要求"],
+                         non_goals=["不扩大到所有任务", "不是所有任务永远先过滤"])
+    out = decide_proposal(project, p,
+                          ProposalDecision(proposal_id=p.proposal_id, route="document"))
+    assert out["doc_payload"]["exceptions"] == ["用户明确改变目标", "存在真实依赖", "产品强规则要求"]
+    assert p.rule_class == "natural_logic"

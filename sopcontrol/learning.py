@@ -517,7 +517,8 @@ def decide_proposal(root: Path | str, proposal: LearningProposal,
     if decision.route in ("control", "both") and any(
             "仅本次" in ref for ref in proposal.evidence_refs):
         raise ValueError("once_only 证据不得路由 control")
-    if proposal.status != "proposed":
+    # §6/defer 语义：deferred 是 pending，可复决；confirmed/rejected 为终态。
+    if proposal.status not in ("proposed", "deferred"):
         raise ValueError(f"提案已定案（{proposal.status}），不得重复决定")
     result: dict[str, Any] = {"proposal_id": proposal.proposal_id,
                               "route": decision.route}
@@ -812,3 +813,86 @@ def learning_diagnose(root: Path | str) -> dict[str, Any]:
             "decision_rate": (decided / total if total else 0.0),
             "llm_tokens": 0,
             "note": "学习为本地低流量路径；超限只降级跳过，不阻塞任务"}
+
+
+# ---------------------------------------------------------------------------
+# PROMPT-A P3b：指纹持久、单窗口提炼幂等
+# ---------------------------------------------------------------------------
+
+def _seen_path(root: Path) -> Path:
+    d = Path(root) / ".sopcontrol-local" / "learning"
+    d.mkdir(parents=True, exist_ok=True)
+    return d / "seen_fingerprints.json"
+
+
+def load_seen(root: Path | str) -> set[str]:
+    import json
+    path = _seen_path(Path(root))
+    if not path.is_file():
+        return set()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except ValueError:
+        return set()
+    return set(data) if isinstance(data, list) else set()
+
+
+def mark_seen(root: Path | str, fingerprint: str) -> set[str]:
+    import json
+    seen = load_seen(root)
+    seen.add(fingerprint)
+    _seen_path(Path(root)).write_text(
+        json.dumps(sorted(seen), ensure_ascii=False), encoding="utf-8")
+    return seen
+
+
+def _distill_ledger_path(root: Path) -> Path:
+    d = Path(root) / ".sopcontrol-local" / "learning"
+    d.mkdir(parents=True, exist_ok=True)
+    return d / "distill_ledger.json"
+
+
+def _distill_ledger_load(root: Path) -> dict[str, Any]:
+    import json
+    path = _distill_ledger_path(Path(root))
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except ValueError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _distill_ledger_record(root: Path, window_id: str, bundle_digest: str,
+                           proposals: list[dict[str, Any]], adapter: str) -> None:
+    import json
+    ledger = _distill_ledger_load(root)
+    ledger[window_id] = {"bundle_digest": bundle_digest, "proposals": proposals,
+                         "adapter": adapter,
+                         "at": utcnow().isoformat()}
+    _distill_ledger_path(Path(root)).write_text(
+        json.dumps(ledger, ensure_ascii=False), encoding="utf-8")
+
+
+def review_window_idempotent(root: Path | str, bundle: EvidenceBundle, *,
+                             adapter: DistillerAdapter | None = None,
+                             force: bool = False) -> dict[str, Any]:
+    """单窗口提炼幂等（§10.20）：同窗口同证据只调一次；证据变了才可再调。
+
+    /learn 显式强制（force）仍只回顾有界窗口，不放宽证据校验。
+    返回含 distill_calls（本次实际调用次数，0 或 1）。
+    """
+    root = Path(root)
+    bundle_digest = "bd-" + content_hash(bundle.model_dump(mode="json"))[:16]
+    ledger = _distill_ledger_load(root)
+    hit = ledger.get(bundle.window_id)
+    if hit and not force and hit.get("bundle_digest") == bundle_digest:
+        return {"window_id": bundle.window_id, "proposals": hit.get("proposals", []),
+                "adapter": hit.get("adapter", ""), "distill_calls": 0,
+                "cached": True}
+    out, used = distill_with_fallback(bundle, adapter or FakeDistiller())
+    raw = [p for p in out.proposals]
+    _distill_ledger_record(root, bundle.window_id, bundle_digest, raw, used)
+    return {"window_id": bundle.window_id, "proposals": raw, "adapter": used,
+            "distill_calls": 1, "cached": False}
