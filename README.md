@@ -19,7 +19,7 @@
 
 **一句话理解：** 让 Agent 在规则之外保持自主，在规则之内保持忠实。
 
-**当前状态：** v0.4.0 · **Beta / early public**。适合细分产品接入、评估和狗粮测试；还不宣称是操作系统级沙箱、企业合规平台或对抗恶意进程的安全边界。请同时阅读 [LIMITATIONS.md](LIMITATIONS.md)、[RESIDUAL_RISKS.md](RESIDUAL_RISKS.md) 和 [CHANGELOG.md](CHANGELOG.md)。
+**当前状态：** v0.4.0 · **Beta / early public** 请同时阅读 [LIMITATIONS.md](LIMITATIONS.md)、[RESIDUAL_RISKS.md](RESIDUAL_RISKS.md) 和 [CHANGELOG.md](CHANGELOG.md)。
 
 ---
 
