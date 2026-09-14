@@ -217,21 +217,54 @@ def test_p1c_scope_expansion_rejected():
     assert any("scope 扩大" in p for p in validate_distiller_output(bad, b))
 
 
+def _control_with_user_confirm(project, proposal, *, route="control"):
+    """定点：先 challenge，再从 handoff 取 secret 核销（模拟宿主用户确认）。"""
+    from sopcontrol.learning import (
+        ProposalDecision,
+        decide_proposal,
+        read_learning_confirmation_secret,
+    )
+    challenge = decide_proposal(
+        project, proposal,
+        ProposalDecision(proposal_id=proposal.proposal_id, route=route, actor="agent"),
+    )
+    assert challenge["status"] == "needs_user"
+    assert challenge.get("confirmation_id")
+    assert "confirmation_secret" not in challenge
+    secret = read_learning_confirmation_secret(project, challenge["confirmation_id"])
+    return decide_proposal(
+        project, proposal,
+        ProposalDecision(
+            proposal_id=proposal.proposal_id,
+            route=route,
+            actor="agent",
+            confirmation_id=challenge["confirmation_id"],
+            confirmation_secret=secret,
+        ),
+    )
+
+
 def test_p1d_routes_list_and_decide(project):
     from sopcontrol.learning import (LearningProposal, ProposalDecision,
                                      decide_proposal, list_proposals,
                                      save_proposals)
     from sopcontrol.dynamic_sop import select_rules
     from sopcontrol.model import RuleStatus
+    from sopcontrol.registry import Registry
     p = LearningProposal(window_id="w", statement="先台账后评分",
                          scope_summary="筛选阶段", non_goals=["不扩范围"])
     assert save_proposals(project, [p]) == 1
     assert len(list_proposals(project, status="proposed")) == 1
-    d = ProposalDecision(proposal_id=p.proposal_id, route="control")
-    out = decide_proposal(project, p, d)
+    # 无用户凭据：模型自调用不得晋升
+    denied = decide_proposal(
+        project, p,
+        ProposalDecision(proposal_id=p.proposal_id, route="control", actor="agent"),
+    )
+    assert denied["status"] == "needs_user"
+    assert Registry(project / ".sopcontrol" / "rules" / "registry.yaml").load() == []
+    out = _control_with_user_confirm(project, p)
     assert out["status"] == "confirmed" and "candidate_id" in out
-    # DS-05：用户选 control = 显式确认 → Registry 增长且 compiled，可被 select
-    from sopcontrol.registry import Registry
+    # DS-05：用户确认凭据核销后 → Registry 增长且 compiled，可被 select
     rules = Registry(project / ".sopcontrol" / "rules" / "registry.yaml").load()
     rule = next(r for r in rules if r.rule_id == out["rule_id"])
     assert rule.statement == "先台账后评分"
@@ -240,6 +273,62 @@ def test_p1d_routes_list_and_decide(project):
     selected, _, _ = select_rules(rules, {"action": "search"})
     assert any(r.rule_id == out["rule_id"] for r in selected)
     assert list_proposals(project, status="proposed") == []
+
+
+def test_agent_cannot_self_confirm_control(project):
+    """负向：actor=user 且无 confirmation 仍不得晋升永久规则。"""
+    from sopcontrol.learning import LearningProposal, ProposalDecision, decide_proposal, save_proposals
+    from sopcontrol.registry import Registry
+    p = LearningProposal(window_id="w", statement="以后都先筛选再评分",
+                         scope_summary="scan", non_goals=["n"])
+    save_proposals(project, [p])
+    out = decide_proposal(
+        project, p,
+        ProposalDecision(proposal_id=p.proposal_id, route="control", actor="user"),
+    )
+    assert out["status"] == "needs_user"
+    assert Registry(project / ".sopcontrol" / "rules" / "registry.yaml").load() == []
+
+
+def test_review_window_does_not_cross_tasks(project):
+    """task A review 不得串入 task B 的观察。"""
+    import json
+    from sopcontrol.learning import review_window
+    obs = project / ".sopcontrol-local" / "dynamic" / "observations.jsonl"
+    obs.parent.mkdir(parents=True, exist_ok=True)
+    rows = [
+        {"observation_id": "oa", "exact_quote": "以后筛选阶段先台账后评分",
+         "task_id": "task-A", "session_id": "s1", "kind": "correction",
+         "context": {"task_id": "task-A"}},
+        {"observation_id": "ob", "exact_quote": "以后导出前必须先审核",
+         "task_id": "task-B", "session_id": "s1", "kind": "correction",
+         "context": {"task_id": "task-B"}},
+    ]
+    obs.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in rows) + "\n",
+                   encoding="utf-8")
+    out = review_window(project, task_id="task-A", session_id="")
+    assert out["events"] == 1
+    assert out["skipped_out_of_scope"] == 1
+    # 提案正文不应出现 task-B 主题
+    from sopcontrol.learning import list_proposals
+    texts = " ".join(p.statement for p in list_proposals(project))
+    assert "导出" not in texts
+
+
+def test_once_only_durability_blocks_control_route(project):
+    from sopcontrol.learning import LearningProposal, ProposalDecision, decide_proposal, save_proposals
+    import pytest
+    p = LearningProposal(
+        window_id="w", statement="这一次先全量评分做实验",
+        scope_summary="scan", non_goals=["n"], durability="once_only",
+    )
+    save_proposals(project, [p])
+    with pytest.raises(ValueError, match="once_only"):
+        decide_proposal(
+            project, p,
+            ProposalDecision(proposal_id=p.proposal_id, route="control",
+                             confirmation_id="x", confirmation_secret="y"),
+        )
 
 
 def test_p1d_document_both_once_only_defer_reject(project):
@@ -252,7 +341,7 @@ def test_p1d_document_both_once_only_defer_reject(project):
     out = decide_proposal(project, p1, ProposalDecision(proposal_id=p1.proposal_id, route="document"))
     assert out["status"] == "confirmed" and out["doc_payload"]["statement"] == "文案A"
     p2 = mk("双轨B", "w2")
-    out2 = decide_proposal(project, p2, ProposalDecision(proposal_id=p2.proposal_id, route="both"))
+    out2 = _control_with_user_confirm(project, p2, route="both")
     assert "candidate_id" in out2 and "doc_payload" in out2
     assert out2.get("rule_id") and out2.get("compile_digest")
     p3 = mk("本次C", "w3")
@@ -267,11 +356,15 @@ def test_p1d_document_both_once_only_defer_reject(project):
     assert decide_proposal(project, p4, ProposalDecision(proposal_id=p4.proposal_id, route="defer"))["status"] == "deferred"
     p5 = mk("拒绝E", "w5")
     assert decide_proposal(project, p5, ProposalDecision(proposal_id=p5.proposal_id, route="reject"))["status"] == "rejected"
-    # once_only 证据禁 control
+    # once_only 证据禁 control（无凭据时先 needs_user；带假凭据则 raise）
     p6 = LearningProposal(window_id="w6", statement="临时F", scope_summary="sc",
                           non_goals=["n"], evidence_refs=["仅本次-obs-1"])
     with _pt.raises(ValueError, match="once_only"):
-        decide_proposal(project, p6, ProposalDecision(proposal_id=p6.proposal_id, route="control"))
+        decide_proposal(
+            project, p6,
+            ProposalDecision(proposal_id=p6.proposal_id, route="control",
+                             confirmation_id="x", confirmation_secret="y"),
+        )
     # 终态拒绝复决：先把 p4 定为 reject，再重决
     decide_proposal(project, list_proposals(project, status="deferred")[0],
                     ProposalDecision(proposal_id=p4.proposal_id, route="reject"))
@@ -300,7 +393,12 @@ def test_p1e_cli_json_outbox_and_unproven_host(project):
 def test_p2a_explicit_review_same_pipeline(project):
     from sopcontrol.dynamic_sop import observe_utterance
     from sopcontrol.learning import list_proposals, review_window
-    observe_utterance(project, quote="以后纠正先台账后评分", source_ref="s1")
+    observe_utterance(
+        project,
+        quote="以后纠正先台账后评分",
+        source_ref="s1",
+        context={"session_id": "sess-1", "task_id": "task-1"},
+    )
     out = review_window(project, session_id="sess-1")
     assert out["events"] >= 1 and out["proposals"] >= 1
     assert out["adapter"] in ("fake", "deterministic-rule-extractor")
@@ -401,8 +499,7 @@ def test_p3b_defer_pending_redecidable(project):
     out = decide_proposal(project, p, ProposalDecision(proposal_id=p.proposal_id, route="defer"))
     assert out["status"] == "deferred"
     pending = list_proposals(project, status="deferred")[0]
-    out2 = decide_proposal(project, pending,
-                           ProposalDecision(proposal_id=pending.proposal_id, route="control"))
+    out2 = _control_with_user_confirm(project, pending)
     assert out2["status"] == "confirmed" and "candidate_id" in out2
     assert out2.get("rule_id") and out2.get("rule_status") == "compiled"
 
@@ -451,15 +548,14 @@ def test_p3b_restart_persistence(project):
 
 def test_ds05_control_survives_reload_and_select(project):
     """DS-05/06：control 进 effective；新 Registry 实例可加载并 select。"""
-    from sopcontrol.learning import (LearningProposal, ProposalDecision,
-                                     decide_proposal, save_proposals)
+    from sopcontrol.learning import LearningProposal, save_proposals
     from sopcontrol.dynamic_sop import select_rules
     from sopcontrol.registry import Registry
     from sopcontrol.model import RuleStatus
     p = LearningProposal(window_id="w", statement="评分前必须先排除已入表",
                          scope_summary="筛选", non_goals=["不扩范围"])
     save_proposals(project, [p])
-    out = decide_proposal(project, p, ProposalDecision(proposal_id=p.proposal_id, route="control"))
+    out = _control_with_user_confirm(project, p)
     # 模拟新进程：全新 Registry 实例
     rules = Registry(project / ".sopcontrol" / "rules" / "registry.yaml").load()
     rule = next(r for r in rules if r.rule_id == out["rule_id"])
@@ -470,17 +566,16 @@ def test_ds05_control_survives_reload_and_select(project):
 
 def test_ds08_control_idempotent_no_duplicate_rule(project):
     """DS-08：重复确认不产生第二条等价规则（同 statement → 同 rule_id）。"""
-    from sopcontrol.learning import (LearningProposal, ProposalDecision,
-                                     decide_proposal, save_proposals)
+    from sopcontrol.learning import LearningProposal, save_proposals
     from sopcontrol.registry import Registry
     p1 = LearningProposal(window_id="w1", statement="审计最多一轮",
                           scope_summary="sc", non_goals=["n"])
     save_proposals(project, [p1])
-    out1 = decide_proposal(project, p1, ProposalDecision(proposal_id=p1.proposal_id, route="control"))
+    out1 = _control_with_user_confirm(project, p1)
     p2 = LearningProposal(window_id="w2", statement="审计最多一轮",
                           scope_summary="sc", non_goals=["n"])
     save_proposals(project, [p2])
-    out2 = decide_proposal(project, p2, ProposalDecision(proposal_id=p2.proposal_id, route="control"))
+    out2 = _control_with_user_confirm(project, p2)
     assert out1["rule_id"] == out2["rule_id"]
     rules = [r for r in Registry(project / ".sopcontrol" / "rules" / "registry.yaml").load()
              if r.statement == "审计最多一轮"]
