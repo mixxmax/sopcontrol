@@ -575,6 +575,11 @@ def decide_proposal(root: Path | str, proposal: LearningProposal,
                               "route": decision.route}
     if decision.route in ("control", "both"):
         from .dynamic_sop import compile_rule, confirm_candidate
+        # control 晋升需要权威 Registry；宿主若尚未 sopctl init，创建空表（不发明规则）。
+        reg_path = root / ".sopcontrol" / "rules" / "registry.yaml"
+        if not reg_path.is_file():
+            reg_path.parent.mkdir(parents=True, exist_ok=True)
+            reg_path.write_text("rules: []\n", encoding="utf-8")
         store = CandidateStore(root)
         record, _ = store.upsert(
             kind="dynamic_sop", statement=proposal.statement,
