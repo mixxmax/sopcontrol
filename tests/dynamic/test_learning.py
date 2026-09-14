@@ -448,3 +448,50 @@ def test_p3b_natural_logic_keeps_reverse_path(project):
                           ProposalDecision(proposal_id=p.proposal_id, route="document"))
     assert out["doc_payload"]["exceptions"] == ["用户明确改变目标", "存在真实依赖", "产品强规则要求"]
     assert p.rule_class == "natural_logic"
+
+
+def test_p4_different_goals_never_merged():
+    """§10.5：不同目标（phase 不同）不合并，各自成主题。"""
+    from sopcontrol.learning import LearningEvent, aggregate_window, open_window
+    w = open_window(task_id="T")
+    evs = [LearningEvent(kind="utterance", text="以后必须先台账", task_id="T",
+                         scope={"phase": "audit"}),
+           LearningEvent(kind="utterance", text="以后必须先台账", task_id="T",
+                         scope={"phase": "score"})]
+    b = aggregate_window(evs, w)
+    assert len(b.topics) == 2
+
+
+def test_p4_no_click_means_no_accept(project):
+    """§10.10：用户未点击≠接受——提案保持 proposed，通知不改变状态。"""
+    from sopcontrol.learning import (CliJsonAdapter, LearningProposal,
+                                     list_proposals, payload_from_proposal,
+                                     save_proposals)
+    p = LearningProposal(window_id="w", statement="待定事项", scope_summary="sc",
+                         non_goals=["n"])
+    save_proposals(project, [p])
+    CliJsonAdapter().notify(project, payload_from_proposal(p))
+    assert list_proposals(project, status="proposed")[0].proposal_id == p.proposal_id
+
+
+def test_p4_no_resident_supervisor_agent():
+    """§10.23：无常驻监督——learning 模块无后台线程/定时/常驻循环。"""
+    import sopcontrol.learning as _lm
+    import inspect as _ins
+    src = _ins.getsource(_lm)
+    assert "threading.Thread" not in src and "schedule." not in src
+    assert "while True" not in src and "daemon" not in src
+
+
+def test_p4_default_path_zero_llm(project):
+    """§10.19：默认路径零 LLM——review 默认 fake，结果可复算，无 token。"""
+    from sopcontrol.learning import (LearningEvent, LearningMetrics,
+                                     aggregate_window, open_window,
+                                     review_window_idempotent)
+    w = open_window(task_id="T", session_id="s")
+    b = aggregate_window([LearningEvent(kind="utterance", text="以后必须先台账",
+                                        task_id="T")], w)
+    r = review_window_idempotent(project, b)
+    assert r["adapter"] == "fake" and r["distill_calls"] == 1
+    m = LearningMetrics()
+    assert m.llm_tokens_in == 0 and m.llm_tokens_out == 0
