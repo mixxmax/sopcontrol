@@ -179,8 +179,10 @@ def load_legacy_rules(root: Path | str) -> list[Any]:
 # P1-A：窗口级聚合器（纯函数）
 # ---------------------------------------------------------------------------
 
+# 复查 F1：短标记是长标记的子串时（应该⊂不应该），必须计数比较，
+# 否则单句自己跟自己冲突；“要”噪声太大（需要/重要/只要），直接去掉。
 _OPPOSE_MARKERS = (("必须", "不得"), ("必须", "禁止"), ("必须", "不要"),
-                   ("应该", "不应该"), ("要", "别"))
+                   ("应该", "不应该"))
 
 
 def _loose(text: str) -> str:
@@ -230,7 +232,10 @@ def aggregate_window(events: list[LearningEvent], window: LearningWindow,
         topics.append(" / ".join(u[:60] for u in uniq[:3]))
         texts = " ".join(seen)
         for must, must_not in _OPPOSE_MARKERS:
-            if must in texts and must_not in texts:
+            n_must, n_not = texts.count(must), texts.count(must_not)
+            # 短标记⊂长标记时，只有短标记多出来的部分才算对立。
+            extra = n_must - n_not if must in must_not else n_must
+            if extra > 0 and n_not > 0:
                 conflicts.append(f"{'/'.join(k for k in key if k) or '通用'}: "
                                  f"“{must}”与“{must_not}”对立")
     related: list[str] = []
@@ -619,12 +624,21 @@ def review_window(root: Path | str, *, session_id: str = "",
     """显式窗口回顾：用户指定会话/任务→聚合→提炼→存提案。必须二选一指定。"""
     if not (session_id or task_id):
         raise ValueError("必须指定 session_id 或 task_id（显式回顾范围）")
+    import json as _json
     root = Path(root)
-    from .dynamic_sop import _load_jsonl
-    from pathlib import Path as _P
-    obs_path = _P(root) / ".sopcontrol-local" / "dynamic" / "observations.jsonl"
+    obs_path = root / ".sopcontrol-local" / "dynamic" / "observations.jsonl"
     events: list[LearningEvent] = []
-    for rec in _load_jsonl(obs_path):
+    recs: list[dict] = []
+    if obs_path.is_file():
+        for line in obs_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                recs.append(_json.loads(line))
+            except ValueError:
+                continue
+    for rec in recs:
         ev = LearningEvent(kind="utterance", session_id=session_id,
                            task_id=task_id,
                            message_ref=str(rec.get("observation_id", "")),

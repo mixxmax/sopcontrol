@@ -359,3 +359,16 @@ def test_p2c_diagnose_read_only(project):
                                               scope_summary="sc", non_goals=["n"])])
     d1 = learning_diagnose(project)
     assert d1["proposals_total"] == 1 and d1["decision_rate"] == 0.0
+
+
+def test_review_f1_no_self_conflict():
+    """复查F1：单句不应该不自冲突；需要+别不误报；真对立仍抓到。"""
+    from sopcontrol.learning import aggregate_window, open_window
+    w = open_window(task_id="T")
+    ev = lambda t: [__import__("sopcontrol.learning", fromlist=["LearningEvent"]).LearningEvent(kind="utterance", text=t, task_id="T")]
+    assert aggregate_window(ev("这事不应该这么做"), w).conflicts == []
+    assert aggregate_window(ev("需要先台账，别直接评分"), w).conflicts == []
+    both = ev("以后必须先台账") + ev("以后不得先台账")
+    assert len(aggregate_window(both, w).conflicts) == 1
+    mixed = ev("应该先台账") + ev("这里不应该跳过")
+    assert len(aggregate_window(mixed, w).conflicts) == 1
