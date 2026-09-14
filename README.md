@@ -47,6 +47,21 @@ SOP Control 把这些问题拆成两个空间：
 
 这不意味着把 Agent 变成僵硬脚本。它意味着把“是否遵守已定规则”和“如何在规则内完成任务”分开；模型可以灵活解决问题，但不能用灵活解法重新打开已经决定的约束。
 
+### 用户常见痛点 → 我们怎么解
+
+| 你可能遇到的情况 | 没有控制面时通常会怎样 | SOP Control 对应做法 |
+| :--- | :--- | :--- |
+| **换会话 / 换模型后，上周说好的约定又被重开** | 约定只在聊天里，新模型当成建议重新争论 | 写入 `.sopcontrol/` 权威规则并投影到 Agent 上下文；换模型 `rebind` 只收紧不放宽 |
+| **明明说了“只能改这些文件 / 必须走正式入口”，Agent 还是改到别处** | 靠提示词约束，发现时文件已经动了 | 任务契约 `allowed_writes` + hook / harness / gate 在动作边界拦截 |
+| **工作中随口纠正了一句，希望以后都这样，结果下次又忘了** | 纠正留在某一通对话里，进不了产品和控制系统 | 动态观察 / `learn` 生成提案；**你确认后**才进入永久动态 SOP |
+| **想“只这次例外”，却被写进长期规则；或反过来，长期偏好被当成一次性闲聊** | 没有 once_only / permanent 分流 | `once_only` 不进永久 registry；长期保留必须显式确认 |
+| **Agent 先对一大堆对象做昂贵处理，最后才发现大半不该做** | 默认计划浪费调用和等待 | 自然逻辑约束默认顺序（先过滤再昂贵步骤）；你明确要求反向时记为本次例外 |
+| **工具说“完成了”，但其实没走过产品检查，或只是模型自报** | 把声明当成成功 | 活动日志区分 verified / observed / declared / unproven；gate allow ≠ 工具已执行成功 |
+| **每个模型、每个宿主都要重写一套提示词和接入** | 规则散落在各处，换栈就失效 | 同一项目控制面 + 多 harness 适配；宿主（如 JobsFlow）可 vendored 同一 pin |
+| **装了很多“Agent 相关”工具，仍说不清规则有没有真的生效** | 提示词、编排、可观测性各管一段，没有动作边界证据 | `sopctl gate` / `log report` / coverage：报告哪些入口被控、哪些仍是 gap |
+| **担心控制面会不会每一步都多打一轮大模型、又贵又慢** | 再雇一个审查 Agent，或把所有检查塞进 prompt | **热路径默认零额外 LLM**；审查与 Distiller 只在冷路径/可选升级 |
+| **想要安全合规级沙箱，或自动替业务判断对错** | 期望控制面做 EDR / 内容审核 / 业务语义引擎 | 明确不做：我们管规则边界与证明；业务语义与对抗恶意进程不在 Beta 承诺内 |
+
 ---
 
 ## 一附、我们是什么 · 干什么 · 干不了什么
@@ -646,6 +661,21 @@ SOP Control separates two spaces:
 > **Autonomy belongs in solution space, not rule space.**
 
 The purpose is not to make agents rigid. It is to separate “follow the settled rule” from “choose how to solve the task under that rule.”
+
+### Pain points → how we address them
+
+| What you run into | What usually happens without a control plane | What SOP Control does |
+| :--- | :--- | :--- |
+| **A new session or model reopens last week’s agreement** | The agreement lived only in chat and becomes a suggestion again | Persist it in `.sopcontrol/`, project it into agent context; mid-task `rebind` only tightens permissions |
+| **You said “only these files / only the formal entrance,” but the agent still touches elsewhere** | Prompt-only limits; damage is noticed after the write | Task `allowed_writes` plus hooks / harness / gate intercept at the action boundary |
+| **You corrected something in passing and wanted it to stick; next time it’s gone** | The correction stayed in one conversation | Dynamic observe / `learn` create proposals; they become permanent **only after your confirmation** |
+| **A one-time exception becomes a forever rule — or a long-term preference is treated as chitchat** | No clear once_only vs permanent split | `once_only` never enters the permanent registry; long-term keep requires explicit confirmation |
+| **The agent does expensive work on a huge set, then discovers most of it was unnecessary** | Dominated plans waste calls and time | Natural logic prefers filter-then-expensive defaults; explicit reverse intent is recorded as a task exception |
+| **A tool says “done,” but required product checks never ran — or it was only a self-report** | Declarations are treated as success | Activity logs separate verified / observed / declared / unproven; gate-allow ≠ tool completed |
+| **Every model and host needs another prompt-and-adapter stack** | Rules scatter and break when you change tools | One project control plane with harness adapters; hosts like JobsFlow can vendor a pinned snapshot |
+| **You installed many “agent” tools and still can’t tell if rules actually fired** | Prompts, orchestration, and traces each cover a slice | `sopctl gate` / `log report` / coverage report which entrances were governed vs still a gap |
+| **You’re afraid the control plane will add an LLM round-trip (and cost) to every step** | A second reviewer agent, or stuffing every check into the prompt | **Hot path adds zero extra LLM calls by default**; review / Distiller stay optional cold paths |
+| **You need an OS sandbox or an engine that judges business correctness for you** | Expecting the control plane to be EDR, moderation, or a domain semantic judge | Out of Beta scope: we own rule boundaries and proof; business semantics and hostile-process defense are not promised |
 
 ---
 
