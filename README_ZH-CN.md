@@ -9,7 +9,8 @@
 <p align="center">
   <a href="https://github.com/mixxmax/sopcontrol"><img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=flat&logo=python&logoColor=white" alt="Python 3.10+"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License"></a>
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Version-v0.2.0-blue.svg" alt="Version"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Version-v0.4.0-blue.svg" alt="Version"></a>
+  <a href="LIMITATIONS.md"><img src="https://img.shields.io/badge/Status-Beta-orange.svg" alt="Beta"></a>
 </p>
 
 **让 Coding Agent 严格遵守已经确定的决定。**
@@ -18,7 +19,20 @@
 >
 > 它不是另一个 Coding Agent，也不是常驻的审查机器人。快速路径依靠本地确定性机制：约束任务、拦截未授权动作，只运行当前变更所需的检查。更强的语义审查只在高风险场景升级，不会成为每次修改都必须经历的仪式。
 
-**状态：** v0.2.0 · 活在项目里的闭环 · [LIMITATIONS](LIMITATIONS.md) · [CHANGELOG](CHANGELOG.md) · [PLAYBOOK](PLAYBOOK.md)
+**状态：** v0.4.0 · **Beta / 早期公开** · 活在项目里的闭环 · [LIMITATIONS](LIMITATIONS.md) · [CHANGELOG](CHANGELOG.md) · [PLAYBOOK](PLAYBOOK.md)
+
+### 运行可见性（活动日志）
+
+受控运行结束后，可查看哪些环节被 gate、放行、阻断，或仅有声明而无证明：
+
+```bash
+sopctl log list .
+sopctl log show . --run-id <run-id>
+sopctl log report . --run-id <run-id> --format markdown
+sopctl log health .
+```
+
+活动日志写在 `.sopcontrol-local/`（不进 Git），不保存 ticket secret 或完整 prompt。日志不能放行动作，也不能直接写入永久规则；学习仍须走现有确认链。
 
 ---
 

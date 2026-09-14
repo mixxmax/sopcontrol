@@ -21,26 +21,38 @@ git remote add origin git@github.com:mixxmax/sopcontrol.git 2>/dev/null || \
 # 方案 A — 先推当前分支，再在 GitHub 上开 PR / 设默认分支：
 git push -u origin zcode/living-project-batch1
 
-# 方案 B — 本地并到 main 再推（若你希望默认就是完整 0.2）：
+# 方案 B — 本地并到 main 再推：
 # git checkout main && git merge zcode/living-project-batch1
 # git push -u origin main
-# git tag -a v0.2.0 -m "sopcontrol 0.2.0 experimental public shell"
-# git push origin v0.2.0
+# git tag -a v0.4.0 -m "sopcontrol 0.4.0 Beta early public"
+# git push origin v0.4.0
+```
+
+发布前自检：
+
+```bash
+.venv/bin/sopctl project check .
+.venv/bin/pytest -q
+git diff --check
+python3 -m venv /tmp/sopcontrol-release-venv && \
+  /tmp/sopcontrol-release-venv/bin/pip install -e ".[dev]" && \
+  /tmp/sopcontrol-release-venv/bin/python -c 'import sopcontrol,importlib.metadata as m; assert sopcontrol.__version__==m.version("sopcontrol")=="0.4.0"'
 ```
 
 ## 卫生提醒
 
 - 勿把本仓 dogfood 的 `.sopcontrol/tasks/` / ledger 脏改当作发布内容（除非有意）
 - `corpus/fixtures/**/.sopcontrol/rules/candidates.yaml` 已 gitignore
+- 活动日志与报告在 `.sopcontrol-local/`，默认不进 Git
 
 ## 可选 PyPI
 
 尚未上架；安装用：
 
 ```bash
-pip install "git+https://github.com/mixxmax/sopcontrol.git"
+pip install "git+https://github.com/mixxmax/sopcontrol.git@v0.4.0"
 ```
 
 首发文案建议：
 
-> Experimental but real: a model-neutral control plane that lives in the project. v0.2 — see LIMITATIONS.md.
+> Experimental but real: a model-neutral control plane that lives in the project. v0.4.0 Beta — see LIMITATIONS.md. Run visibility via `sopctl log report`.

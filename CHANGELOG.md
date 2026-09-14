@@ -1,11 +1,19 @@
 # Changelog
 
-## 0.4.0
+## 0.4.0 — 2026-09-14 (Beta / early public)
 
-- Learn/dynamic permanent decisions require user confirmation envelopes
-- Review windows isolate by original task/session
-- once_only durability blocks control promotion
-- Release codename / workspace target: 0.4.0
+### Added / Fixed
+
+- Learn/dynamic permanent decisions require user confirmation envelopes (`actor=user` alone is not consent)
+- Review windows isolate by original task/session (no cross-task pollution)
+- `once_only` durability blocks control promotion into permanent registry
+- Activity log / run report loop (`sopctl log list|show|report|health`) under `.sopcontrol-local/`
+- JobsFlow vendor pin/manifest tooling for reproducible 0.4.0 snapshots
+
+### Status
+
+- Beta / early public — not GA
+- Platform matrix and sandbox limits unchanged; see LIMITATIONS.md
 
 
 ## 0.3.1 — 2026-09-14
