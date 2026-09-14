@@ -22,6 +22,7 @@ from .cli_surface import *
 from .bridge import MseBlocked
 from .cli_logic import *
 from .cli_dynamic import *
+from .cli_learn import cmd_learn
 from .cli_enter import *
 from .cli_effect import *
 from .cli_product import *
@@ -718,6 +719,43 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--scope", default="project")
     p.set_defaults(func=cmd_candidate)
 
+    learn = sub.add_parser(
+        "learn", help="显式 /learn：同一窗口提炼确认管道（review/list/show/decide/ingest）")
+    learn_sub = learn.add_subparsers(dest="sub", required=True)
+    p = learn_sub.add_parser("review", help="显式窗口回顾（须指定范围）")
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--session", default="", help="会话范围")
+    p.add_argument("--task", default="", help="任务范围")
+    p.set_defaults(func=cmd_learn)
+    p = learn_sub.add_parser("list", help="列出学习提案")
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--status", default="", help="按状态过滤")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_learn)
+    p = learn_sub.add_parser("show", help="提案详情")
+    p.add_argument("proposal_id")
+    p.add_argument("path", nargs="?", default=".")
+    p.set_defaults(func=cmd_learn)
+    p = learn_sub.add_parser("decide", help="提案决定：六选一")
+    p.add_argument("proposal_id")
+    p.add_argument("--route", required=True,
+                   choices=["control", "document", "both", "once_only",
+                            "defer", "reject"])
+    p.add_argument("--note", default="")
+    p.add_argument("path", nargs="?", default=".")
+    p.set_defaults(func=cmd_learn)
+    p = learn_sub.add_parser("ingest", help="外部提案导入（只成提案）")
+    p.add_argument("--json-data", required=True, help="提案 JSON 映射")
+    p.add_argument("path", nargs="?", default=".")
+    p.set_defaults(func=cmd_learn)
+    p = learn_sub.add_parser("diagnose", help="学习诊断（只读）")
+    p.add_argument("path", nargs="?", default=".")
+    p.set_defaults(func=cmd_learn)
+    p = learn_sub.add_parser("notify", help="通知卡片 JSON/本地 outbox")
+    p.add_argument("proposal_id")
+    p.add_argument("--json", action="store_true", help="只打印卡片 JSON")
+    p.add_argument("path", nargs="?", default=".")
+    p.set_defaults(func=cmd_learn)
     dynamic = sub.add_parser(
         "dynamic", help="动态 SOP：原话捕获 → 候选 → 确认（永久保存，无 TTL）")
     dynamic_sub = dynamic.add_subparsers(dest="sub", required=True)
