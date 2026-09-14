@@ -632,18 +632,32 @@ def evaluate_control_result(
     )
 
     # B6 接线：任务契约绑定 execution_plan_digest（B4）时，从冻结计划取
-    # required_postconditions；未绑定或文件缺失即空=不绑定（保兼容）。
+    # required_postconditions；未绑定或找不到即空=不绑定（保兼容）。
+    # 复查 F2：ref 可能是 plan_id——先按文件名直查，再扫描 plans 内层 plan_id。
     expected_post: list[str] = []
     _plan_ref = (getattr(task.contract, "execution_plan_digest", "") or "") if task is not None else ""
     if _plan_ref:
         try:
             import json as _json
+            _plan: dict = {}
             _pf = root / ".sopcontrol-local" / "logic" / "plans" / f"{_plan_ref}.json"
             if _pf.is_file():
                 _pd = _json.loads(_pf.read_text(encoding="utf-8"))
                 _plan = _pd.get("plan") or {}
-                _req = _plan.get("required_postconditions") or []
-                expected_post = [str(x) for x in _req]
+            else:
+                _pdir = root / ".sopcontrol-local" / "logic" / "plans"
+                if _pdir.is_dir():
+                    for _cand in sorted(_pdir.glob("*.json")):
+                        try:
+                            _dd = _json.loads(_cand.read_text(encoding="utf-8"))
+                        except (OSError, ValueError):
+                            continue
+                        _inner = _dd.get("plan") or {}
+                        if str(_inner.get("plan_id", "")) == _plan_ref:
+                            _plan = _inner
+                            break
+            _req = _plan.get("required_postconditions") or []
+            expected_post = [str(x) for x in _req]
         except Exception:
             expected_post = []
     state = GateState(

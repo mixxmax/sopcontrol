@@ -660,3 +660,38 @@ def test_wp_h_b6_unbound_plan_digest_compat(tmp_path):
         "created_at": datetime.now(timezone.utc).isoformat(), "postconditions": []})
     ev = evaluate_control_result(tmp_path, res, frozen)
     assert ev.outcome == "pass"
+
+
+def test_review_f2_plan_id_activates_postcondition_gate(tmp_path):
+    """复查F2：execution_plan_digest 填 plan_id 即可激活 B6 门（缺项 unknown，齐备放行）。"""
+    import json
+    from datetime import datetime, timezone
+    from sopcontrol.control_profile import freeze_profile, normalize_profile, save_draft
+    from sopcontrol.control_result import ControlResult, evaluate_control_result
+    from sopcontrol.task import Contract, TaskRecord, TaskStore
+    from sopcontrol.learning import LearningEvent  # noqa (确保 learning 层无循环依赖)
+    prof = normalize_profile(BASE)
+    save_draft(tmp_path, prof)
+    frozen = freeze_profile(tmp_path, "bind")
+    plans = tmp_path / ".sopcontrol-local" / "logic" / "plans"
+    plans.mkdir(parents=True, exist_ok=True)
+    (plans / "other-name.json").write_text(json.dumps(
+        {"plan": {"plan_id": "P-F2", "required_postconditions": ["done-a"]}}),
+        encoding="utf-8")
+    store = TaskStore(tmp_path)
+    task = TaskRecord(task_id=store.next_task_id(),
+                      contract=Contract(objective="o", allowed_writes=[],
+                                        required_rules=[], execution_plan_digest="P-F2"))
+    store.save(task)
+    mk = lambda pc: ControlResult.model_validate({
+        "result_id": "f2", "task_id": "TASK-B", "phase": "audit", "profile_id": "bind",
+        "profile_revision": frozen.revision, "effective_plan_digest": frozen.digest,
+        "input_digest": "in", "baseline_digest": "base",
+        "check_id": "jd_fit", "checked_dimensions": ["jd_fit"], "findings": [], "rounds_used": 0,
+        "producer": {"actor": "a", "independence": "self_check"},
+        "created_at": datetime.now(timezone.utc).isoformat(), "postconditions": pc})
+    # BASE scope.task 为 TASK-B：result 归属它，B6 门在 phase/绑定之后触发
+    ev_missing = evaluate_control_result(tmp_path, mk([]), frozen, task_id=task.task_id)
+    assert ev_missing.outcome == "unknown" and any("后置条件缺失" in r for r in ev_missing.reasons)
+    ev_ok = evaluate_control_result(tmp_path, mk(["done-a"]), frozen, task_id=task.task_id)
+    assert ev_ok.outcome == "pass"
