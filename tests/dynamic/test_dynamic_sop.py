@@ -14,6 +14,7 @@ from sopcontrol.dynamic_sop import (
     observe_utterance,
     select_rules,
 )
+from sopcontrol.learning import read_learning_confirmation_secret
 from sopcontrol.model import ActivationSelector, Modality, Rule, RuleStatus, SourceRef
 from sopcontrol.registry import Registry
 
@@ -22,6 +23,18 @@ from sopcontrol.registry import Registry
 def project(tmp_path):
     assert main(["init", str(tmp_path)]) == 0
     return tmp_path
+
+
+def _confirm_permanent(project, candidate_id: str, decision: str = "keep_longterm", **kwargs):
+    """Permanent dynamic confirm requires user confirmation envelope."""
+    first = confirm_candidate(project, candidate_id, decision, **kwargs)
+    assert first.get("status") == "needs_user", first
+    conf_id = first["confirmation_id"]
+    secret = read_learning_confirmation_secret(project, conf_id)
+    return confirm_candidate(
+        project, candidate_id, decision,
+        confirmation_id=conf_id, confirmation_secret=secret, **kwargs,
+    )
 
 
 def test_correction_without_permanence_keyword_becomes_candidate(project):
@@ -60,7 +73,7 @@ def test_confirm_keep_longterm_creates_permanent_rule(project):
     _o, cand, _ = observe_utterance(
         project, quote="审计最多修正一轮，达到后停止", source_ref="s1",
         context={"action": "materials.audit"})
-    result = confirm_candidate(
+    result = _confirm_permanent(
         project, cand.candidate_id, "keep_longterm",
         activation={"actions": ["materials.audit"]},
         flexibility={"max_correction_rounds": 1,
@@ -80,7 +93,7 @@ def test_dynamic_sop_survives_reload_and_no_ttl(project):
     """§12.1：进程重启（重新加载）后动态 SOP 仍在；无任何 TTL 字段。"""
     _o, cand, _ = observe_utterance(project, quote="不要重复验证已通过的检查",
                                     source_ref="s1")
-    result = confirm_candidate(project, cand.candidate_id, "keep_longterm")
+    result = _confirm_permanent(project, cand.candidate_id, "keep_longterm")
     # 模拟重启：全新 Registry 实例重新加载
     rules = Registry(project / ".sopcontrol" / "rules" / "registry.yaml").load()
     rule = next(r for r in rules if r.rule_id == result["rule_id"])
@@ -121,7 +134,7 @@ def test_model_suggestion_never_creates_rule_directly(project):
 def test_edit_keeps_original_quote_in_source(project):
     _o, cand, _ = observe_utterance(project, quote="先看哪些没入表再评分",
                                     source_ref="conv-99")
-    result = confirm_candidate(
+    result = _confirm_permanent(
         project, cand.candidate_id, "edit_keep_longterm",
         edited_statement="评分前必须先与台账比对，只对未入表岗位评分")
     rules = Registry(project / ".sopcontrol" / "rules" / "registry.yaml").load()
@@ -229,6 +242,12 @@ def test_select_cli_json_reports_unproven(project, capsys, monkeypatch):
     out = json.loads(capsys.readouterr().out)
     assert main(["dynamic", "confirm", out["candidate_id"],
                  "--decision", "keep_longterm",
+                 "--activation", json.dumps({"actions": ["materials.audit"]})]) == 3
+    challenge = json.loads(capsys.readouterr().out)
+    assert challenge["status"] == "needs_user"
+    assert main(["dynamic", "confirm", out["candidate_id"],
+                 "--decision", "keep_longterm",
+                 "--confirmation-id", challenge["confirmation_id"],
                  "--activation", json.dumps({"actions": ["materials.audit"]})]) == 0
     capsys.readouterr()
     assert main(["dynamic", "select", "--json"]) == 0
@@ -254,6 +273,12 @@ def test_dynamic_cli_flow_end_to_end(project, capsys, monkeypatch):
     cand_id = items[0]["candidate_id"]
     assert main(["dynamic", "confirm", cand_id,
                  "--decision", "keep_longterm",
+                 "--activation", json.dumps({"actions": ["materials.audit"]})]) == 3
+    challenge = json.loads(capsys.readouterr().out)
+    assert challenge["status"] == "needs_user"
+    assert main(["dynamic", "confirm", cand_id,
+                 "--decision", "keep_longterm",
+                 "--confirmation-id", challenge["confirmation_id"],
                  "--activation", json.dumps({"actions": ["materials.audit"]})]) == 0
     result = json.loads(capsys.readouterr().out)
     assert result["permanent"] is True
@@ -263,7 +288,7 @@ def _confirmed_rule(project):
     _o, cand, _ = observe_utterance(
         project, quote="审计不扩展到风格", source_ref="conv-9",
         context={"action": "materials.audit"})
-    result = confirm_candidate(
+    result = _confirm_permanent(
         project, cand.candidate_id, "keep_longterm",
         activation={"actions": ["materials.audit"]})
     assert result["rule_status"] == "accepted"
@@ -364,7 +389,7 @@ def test_dynamic_compile_cli(project, capsys, monkeypatch):
     _o, cand, _ = observe_utterance(
         project, quote="审计不扩展到风格", source_ref="conv-10",
         context={"action": "materials.audit"})
-    result = confirm_candidate(
+    result = _confirm_permanent(
         project, cand.candidate_id, "keep_longterm",
         activation={"actions": ["materials.audit"]})
     assert main(["dynamic", "compile", result["rule_id"], "--json"]) == 0
@@ -406,6 +431,19 @@ def test_explicit_once_only_blocked_from_permanent(project):
         confirm_candidate(project, cand.candidate_id, "keep_longterm")
     result = confirm_candidate(project, cand.candidate_id, "once_only")
     assert result["permanent"] is False
+
+
+def test_dynamic_confirm_without_user_credentials_is_needs_user(project):
+    """模型/agent 直接 keep_longterm 无凭据 → needs_user，Registry 不增长。"""
+    _o, cand, _ = observe_utterance(
+        project, quote="以后必须先筛选再评分", source_ref="s1")
+    before = len(Registry(project / ".sopcontrol" / "rules" / "registry.yaml").load())
+    out = confirm_candidate(
+        project, cand.candidate_id, "keep_longterm", actor="user")
+    assert out.get("status") == "needs_user"
+    assert out.get("permanent") is False
+    after = len(Registry(project / ".sopcontrol" / "rules" / "registry.yaml").load())
+    assert after == before
 
 
 def test_not_a_rule_never_reasks(project):
@@ -475,7 +513,7 @@ def test_cross_session_restore_with_source_chain(project):
     _o, cand, _ = observe_utterance(
         project, quote="审计顺序应该先台账后评分", source_ref="conv-42",
         context={"action": "materials.audit"})
-    result = confirm_candidate(
+    result = _confirm_permanent(
         project, cand.candidate_id, "keep_longterm",
         activation={"actions": ["materials.audit"]})
     # 模拟换会话：全新 Registry 实例

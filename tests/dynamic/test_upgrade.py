@@ -1,6 +1,8 @@
 """§12.5 升级矩阵：绑定清单、语义 diff 硬门、影子验证、原子切换、回滚。"""
 from __future__ import annotations
 
+from sopcontrol import __version__
+
 import json
 from pathlib import Path
 
@@ -53,7 +55,7 @@ def test_zero_diff_patch_upgrade_auto_switches(project):
     binding = init_binding(project)
     binding.core_version = "0.2.9"  # 模拟旧版本绑定
     save_binding(project, binding)
-    result = sync(project, target_version="0.3.0", assume_yes=True)
+    result = sync(project, target_version=__version__, assume_yes=True)
     assert result["outcome"] == "switched"
     assert result["semantic_diff"]["semantic_changes"] is False
     rules = Registry(project / ".sopcontrol" / "rules" / "registry.yaml").load()
@@ -66,7 +68,7 @@ def test_zero_diff_patch_upgrade_auto_switches(project):
 def test_rule_loss_blocks_auto_switch(project):
     """§8.4 硬门：升级导致动态 SOP 丢失 → 阻断切换，旧 runtime 保持。"""
     _add_dynamic_rule(project, "DR-KEEP")
-    before = SemanticProjection.capture(project, "0.3.0")
+    before = SemanticProjection.capture(project, __version__)
     after = before.model_copy(deep=True)
     after.dynamic_sop_ids = []  # 模拟 staged 运行时丢规则
     diff = semantic_diff(before, after)
@@ -95,7 +97,7 @@ def test_rule_loss_blocks_auto_switch(project):
 
 
 def test_block_downgrade_blocks_switch(project):
-    before = SemanticProjection.capture(project, "0.3.0")
+    before = SemanticProjection.capture(project, __version__)
     after = before.model_copy(deep=True)
     after.block_modalities = before.block_modalities - 1
     diff = semantic_diff(before, after)
@@ -123,13 +125,13 @@ def test_semantic_change_awaits_confirmation(project):
 
     up.SemanticProjection.capture = staticmethod(fake_capture)
     try:
-        result = sync(project, target_version="0.3.0", assume_yes=False)
+        result = sync(project, target_version=__version__, assume_yes=False)
     finally:
         up.SemanticProjection.capture = staticmethod(real)
     assert result["outcome"] == "awaiting_confirmation"
     assert result["switched"] is False
     # 用户确认（--yes）后切换
-    result2 = sync(project, target_version="0.3.0", assume_yes=True)
+    result2 = sync(project, target_version=__version__, assume_yes=True)
     assert result2["outcome"] == "switched"
 
 
@@ -139,7 +141,7 @@ def test_rollback_restores_previous_version(project):
     binding = init_binding(project)
     binding.core_version = "0.2.9"
     save_binding(project, binding)
-    result = sync(project, target_version="0.3.0", assume_yes=True)
+    result = sync(project, target_version=__version__, assume_yes=True)
     assert result["switched"] is True
     rb = rollback(project)
     assert rb["rolled_back"] is True
@@ -193,12 +195,12 @@ def test_sync_cli_end_to_end(project, capsys, monkeypatch):
 def _capture_with_mutation(project, mutate, *, expect_digest_change=True):
     from sopcontrol.upgrade import SemanticProjection as _SP
 
-    before = _SP.capture(project, "0.3.0")
+    before = _SP.capture(project, __version__)
     reg = Registry(project / ".sopcontrol" / "rules" / "registry.yaml")
     rules = reg.load()
     mutate(next(r for r in rules if r.rule_id == "SEM-1"))
     reg.save(rules)
-    after = _SP.capture(project, "0.3.0")
+    after = _SP.capture(project, __version__)
     if expect_digest_change:
         assert before.digest != after.digest  # harness 前提：digest 真变了
     return before, after
@@ -208,7 +210,7 @@ def _seed_sem_rule(project):
     _add_dynamic_rule(project, "SEM-1")
     from sopcontrol.upgrade import SemanticProjection as _SP
 
-    assert _SP.capture(project, "0.3.0").digest
+    assert _SP.capture(project, __version__).digest
 
 
 def test_semantic_change_statement_detected(project):
@@ -269,15 +271,15 @@ def test_semantic_change_scope_detected(project):
     from sopcontrol.upgrade import SemanticProjection as _SP
 
     _seed_sem_rule(project)
-    before = _SP.capture(project, "0.3.0")
+    before = _SP.capture(project, __version__)
     mutated = _sem_rule()
     mutated.scope_paths = ["docs/"]
     after = _SP(
-        core_version="0.3.0", rule_schema_version=before.rule_schema_version,
+        core_version=__version__, rule_schema_version=before.rule_schema_version,
         total_rules=1, active_rules=1,
         rules=[RuleProjection.of(mutated)],
         digest="x")
-    after2 = _SP.capture(project, "0.3.0")
+    after2 = _SP.capture(project, __version__)
     assert after2.digest == before.digest  # 仓库未变时 digest 稳定（对照）
     diff = semantic_diff(before, after)
     assert any("scope" in c["changed_fields"] for c in diff["changed_rules"])
@@ -289,10 +291,10 @@ def test_semantic_change_status_detected(project):
     from sopcontrol.upgrade import SemanticProjection as _SP
 
     _seed_sem_rule(project)
-    before = _SP.capture(project, "0.3.0")
+    before = _SP.capture(project, __version__)
     reg = Registry(project / ".sopcontrol" / "rules" / "registry.yaml")
     reg.transition("SEM-1", _RS.activated)  # 合法迁移路径
-    after = _SP.capture(project, "0.3.0")
+    after = _SP.capture(project, __version__)
     assert before.digest != after.digest
     diff = semantic_diff(before, after)
     assert any("status" in c["changed_fields"] for c in diff["changed_rules"])
@@ -340,10 +342,10 @@ def test_wp_e_plan_is_read_only(project):
     """§9.4：plan 前后项目目录（除 runtimes 外）完全不变。"""
     _add_dynamic_rule(project, "DR-PLAN")
     before = _tree_digest(project)
-    plan = plan_upgrade(project, target_version="0.3.0")
-    assert plan.to_version == "0.3.0"
+    plan = plan_upgrade(project, target_version=__version__)
+    assert plan.to_version == __version__
     assert _tree_digest(project) == before
-    assert not (project / ".sopcontrol-local" / "runtimes" / "0.3.0").exists()
+    assert not (project / ".sopcontrol-local" / "runtimes" / __version__).exists()
 
 
 def test_wp_e_staged_runtime_is_real(project):
@@ -353,9 +355,9 @@ def test_wp_e_staged_runtime_is_real(project):
     binding = init_binding(project)
     binding.core_version = "0.2.9"
     save_binding(project, binding)
-    result = sync(project, target_version="0.3.0", assume_yes=True)
+    result = sync(project, target_version=__version__, assume_yes=True)
     assert result["outcome"] == "switched", result
-    staged = Path(result["manifest"] and project / ".sopcontrol-local" / "runtimes" / "0.3.0")
+    staged = Path(result["manifest"] and project / ".sopcontrol-local" / "runtimes" / __version__)
     manifest = json.loads((staged / "runtime-manifest.json").read_text(encoding="utf-8"))
     assert manifest["file_count"] > 0 and manifest["package_digest"]
     loaded = load_binding(project)
@@ -380,7 +382,7 @@ def test_wp_e_corrupt_binding_fail_closed(project):
     """§9.7：binding 破坏时 fail-closed（blocked，不抛、不切换）。"""
     (project / ".sopcontrol-local").mkdir(parents=True, exist_ok=True)
     (project / ".sopcontrol-local" / "binding.yaml").write_text("{坏: [", encoding="utf-8")
-    result = sync(project, target_version="0.3.0", assume_yes=True)
+    result = sync(project, target_version=__version__, assume_yes=True)
     assert result["outcome"] == "blocked" and result["switched"] is False
 
 
@@ -391,7 +393,7 @@ def test_wp_e_rollback_keeps_dynamic_sop(project):
     binding = init_binding(project)
     binding.core_version = "0.2.9"
     save_binding(project, binding)
-    first = sync(project, target_version="0.3.0", assume_yes=True)
+    first = sync(project, target_version=__version__, assume_yes=True)
     assert first["outcome"] == "switched", first
     # 旧回滚点指向真实 staged runtime 时才可回滚； dev 同版本下探针版本一致即允许
     rb = rollback(project)
@@ -420,7 +422,7 @@ def test_wp_h_post_probe_failure_restores_binding(project, monkeypatch):
         raise RuntimeError("post-switch boom")  # 后验失败
 
     monkeypatch.setattr(up, "_probe_runtime_version", flaky)
-    result = up.sync(project, target_version="0.3.0", assume_yes=True)
+    result = up.sync(project, target_version=__version__, assume_yes=True)
     assert result["outcome"] == "blocked" and result["switched"] is False
     assert load_binding(project).runtime_path == old_path
 
@@ -442,10 +444,10 @@ def test_probe_dev_fallback_rejects_bogus_path(project):
     binding = init_binding(project)
     binding.core_version = "0.2.9"
     save_binding(project, binding)
-    assert up.sync(project, target_version="0.3.0", assume_yes=True)["switched"] is True
+    assert up.sync(project, target_version=__version__, assume_yes=True)["switched"] is True
     b = load_binding(project)
     b.previous_runtime_path = str(project / "不存在")
     save_binding(project, b)
     rb = up.rollback(project)
     assert rb["rolled_back"] is False
-    assert load_binding(project).core_version == "0.3.0"
+    assert load_binding(project).core_version == __version__
