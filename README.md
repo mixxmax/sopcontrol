@@ -572,7 +572,7 @@ Distributed under the [MIT License](LICENSE).
 >
 > It does not think for an agent and it does not perform a host product’s business-semantic review. It turns settled rules, user preferences that deserve to persist, and the most natural economical default execution logic into a project boundary that remains observable and testable across sessions, models, and harnesses.
 
-**In one sentence:** agents stay autonomous *inside* the solution space and faithful *inside* the rule space.
+**In one sentence:** agents stay autonomous in the *solution* space and faithful in the *rule* space.
 
 **Current status:** v0.4.0 · **Beta / early public**. Suitable for focused product integrations, evaluation, and dogfooding. It is not an operating-system sandbox, an enterprise compliance platform, or a hostile-process security boundary.
 
