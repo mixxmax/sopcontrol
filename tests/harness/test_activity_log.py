@@ -320,3 +320,204 @@ def test_redact_text_masks_home_and_email():
     out = redact_text(text)
     assert "/Users/alice" not in out
     assert "bob@example.com" not in out
+
+
+def test_top_level_free_text_fields_are_redacted(tmp_path):
+    root = _init(tmp_path)
+    secret = "sk-TOPLEVELSECRET999"
+    result = record_activity(
+        root,
+        "action_completed",
+        action=f"run with {secret}",
+        run_id="run-top",
+        operation_id="op-top",
+        source="runtime",
+        confidence="observed",
+        outcome="ok",
+        blocker=f"token={secret}",
+        next_action=f"see /Users/alice/secret and {secret}",
+        phase="apply",
+        decision="allow",
+        state_before=f"Bearer {secret}",
+        state_after="done",
+    )
+    assert result.ok and result.event is not None
+    raw = (result.path or Path()).read_text(encoding="utf-8")
+    assert secret not in raw
+    assert "/Users/alice" not in raw
+    assert "<redacted>" in raw or "<redacted-home>" in raw
+    assert secret not in result.event.blocker
+    assert secret not in result.event.next_action
+    assert secret not in result.event.action
+    assert secret not in result.event.state_before
+
+
+def test_fake_completed_and_cli_forged_verified_not_counted(tmp_path):
+    root = _init(tmp_path)
+    # Declared/self-reported completion must not inflate verified.
+    record_activity(
+        root,
+        "action_completed",
+        action="push",
+        run_id="run-fake",
+        operation_id="op-fake",
+        source="declared",
+        confidence="declared",
+        outcome="ok",
+    )
+    # CLI-forged verified completion is also untrusted.
+    record_activity(
+        root,
+        "action_completed",
+        action="push",
+        run_id="run-fake",
+        operation_id="op-cli",
+        source="cli",
+        confidence="verified",
+        outcome="ok",
+    )
+    # Gate allow alone is not executed/verified completion.
+    record_activity(
+        root,
+        "gate_evaluated",
+        action="push",
+        run_id="run-fake",
+        operation_id="op-gate",
+        source="runtime",
+        confidence="verified",
+        decision="allow",
+        outcome="allow",
+    )
+    # Real runtime completion with evidence does count.
+    record_activity(
+        root,
+        "operation_finished",
+        action="push",
+        run_id="run-fake",
+        operation_id="op-real",
+        source="runtime",
+        confidence="verified",
+        outcome="passed",
+        evidence_ids=["ev-1"],
+    )
+    report = aggregate_run_report(
+        load_activity(root, run_id="run-fake").events, run_id="run-fake",
+    )
+    assert report["coverage"]["eligible_units"] == "unknown"
+    assert report["rates"]["coverage_status"] == "partial_observation"
+    assert report["rates"]["gate_coverage"] is None
+    assert report["coverage"]["verified_units"] == 1
+    assert report["coverage"]["executed_units"] == 1
+    assert "op-fake" in report["unproven"] or report["coverage"]["unproven_units"] >= 1
+    assert "op-cli" in report["unproven"] or report["coverage"]["unproven_units"] >= 2
+
+
+def test_digest_mismatch_excluded_from_verified(tmp_path):
+    root = _init(tmp_path)
+    path = _events_file(root)
+    path.write_text(
+        json.dumps({
+            "schema_version": "2",
+            "event_type": "action_completed",
+            "action": "push",
+            "run_id": "run-mm",
+            "operation_id": "op-mm",
+            "source": "runtime",
+            "confidence": "verified",
+            "outcome": "ok",
+            "observed_at": "2026-09-14T00:00:00+00:00",
+            "event_id": "cev-mismatch",
+            "record_digest": "sha256:deadbeef",
+            "detail": {},
+            "cost": {},
+            "learning": {},
+            "rule_ids": [],
+            "evidence_ids": ["ev-x"],
+            "artifact_digests": [],
+        }) + "\n",
+        encoding="utf-8",
+    )
+    loaded = load_activity(root, run_id="run-mm")
+    assert loaded.digest_mismatch >= 1
+    assert "cev-mismatch" in loaded.untrusted_event_ids
+    report = aggregate_run_report(loaded.events, run_id="run-mm")
+    assert report["coverage"]["verified_units"] == 0
+    assert report["coverage"]["executed_units"] == 0
+    health = activity_health(root)
+    assert health.status == "degraded"
+
+
+def test_eligible_unknown_without_inventory(tmp_path):
+    root = _init(tmp_path)
+    for i in range(3):
+        record_activity(
+            root,
+            "gate_evaluated",
+            action="scan",
+            run_id="run-el",
+            operation_id=f"op-{i}",
+            source="runtime",
+            confidence="verified",
+            decision="allow",
+            outcome="allow",
+        )
+        record_activity(
+            root,
+            "operation_finished",
+            action="scan",
+            run_id="run-el",
+            operation_id=f"op-{i}",
+            source="runtime",
+            confidence="verified",
+            outcome="passed",
+        )
+    report = aggregate_run_report(
+        load_activity(root, run_id="run-el").events, run_id="run-el",
+    )
+    assert report["coverage"]["eligible_units"] == "unknown"
+    assert report["coverage"]["eligible_status"] == "partial_observation"
+    assert report["rates"]["coverage_status"] == "partial_observation"
+    assert report["rates"]["gate_coverage"] is None
+    assert report["rates"]["evidence_completeness"] is None
+    # With explicit inventory, rates become computable.
+    with_inv = aggregate_run_report(
+        load_activity(root, run_id="run-el").events,
+        run_id="run-el",
+        eligible_units=10,
+    )
+    assert with_inv["coverage"]["eligible_units"] == 10
+    assert with_inv["rates"]["coverage_status"] == "inventory"
+    assert with_inv["rates"]["gate_coverage"] is not None
+
+
+def test_health_not_healthy_on_log_degraded(tmp_path):
+    root = _init(tmp_path)
+    record_activity(
+        root,
+        "log_degraded",
+        action="activity_log.append",
+        source="system",
+        confidence="unknown",
+        outcome="degraded",
+        detail={"logging_status": "degraded", "error_class": "OSError"},
+    )
+    health = activity_health(root)
+    assert health.status == "degraded"
+    assert health.log_degraded_events >= 1
+
+
+def test_append_benchmark_reports_production_path(tmp_path):
+    root = _init(tmp_path)
+    # Warm identity / path resolution so the measured window is steady-state.
+    assert record_activity(
+        root, "request_received", action="warmup", confidence="unknown",
+    ).ok
+    result = benchmark_append(root, count=30, include_production_path=True)
+    assert result["ok"]
+    assert "production" in result
+    assert result["production"]["p95_ms"] is not None
+    assert result["direct"]["p95_ms"] is not None
+    # Direct append: handbook ≤5ms, CI noise budget 25ms.
+    assert result["p95_ms"] < 25.0, result
+    # Production path includes identity inject + flock; keep a separate ceiling.
+    assert result["production"]["p95_ms"] < 100.0, result

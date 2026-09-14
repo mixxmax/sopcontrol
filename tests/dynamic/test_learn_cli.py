@@ -37,8 +37,17 @@ def test_learn_review_list_show_decide(tmp_path, capsys):
 
 
 def test_learn_decide_control_requires_user_confirmation(tmp_path, capsys):
-    """CLI：无 confirmation 时 control 返回 needs_user；handoff 核销后才 compiled。"""
-    from sopcontrol.learning import LearningProposal, save_proposals
+    """CLI：无 confirmation 时 control 返回 needs_user；显式 secret 核销后才 compiled。
+
+    Agent 仅凭 confirmation_id 二次调用不得自动读 handoff 晋升。
+    """
+    from sopcontrol.learning import (
+        LearningProposal,
+        read_learning_confirmation_secret,
+        save_proposals,
+    )
+    from sopcontrol.registry import Registry
+
     root = _project(tmp_path)
     capsys.readouterr()
     p = LearningProposal(window_id="w", statement="以后必须先筛选再评分",
@@ -51,9 +60,21 @@ def test_learn_decide_control_requires_user_confirmation(tmp_path, capsys):
     assert challenge.get("confirmation_id")
     assert "confirmation_secret" not in challenge
     conf_id = challenge["confirmation_id"]
-    assert main([
+    # Second Agent call with only confirmation_id must NOT auto-promote.
+    rc2 = main([
         "learn", "decide", p.proposal_id, "--route", "control",
         "--confirmation-id", conf_id, str(root),
+    ])
+    assert rc2 == 3
+    denied_again = json.loads(capsys.readouterr().out)
+    assert denied_again["status"] == "needs_user"
+    assert Registry(root / ".sopcontrol" / "rules" / "registry.yaml").load() == []
+    secret = read_learning_confirmation_secret(root, conf_id)
+    assert main([
+        "learn", "decide", p.proposal_id, "--route", "control",
+        "--confirmation-id", conf_id,
+        "--confirmation-secret", secret,
+        str(root),
     ]) == 0
     decided = json.loads(capsys.readouterr().out)
     assert decided["status"] == "confirmed"

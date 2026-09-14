@@ -245,9 +245,17 @@ def test_select_cli_json_reports_unproven(project, capsys, monkeypatch):
                  "--activation", json.dumps({"actions": ["materials.audit"]})]) == 3
     challenge = json.loads(capsys.readouterr().out)
     assert challenge["status"] == "needs_user"
+    # confirmation_id alone must not auto-read handoff.
     assert main(["dynamic", "confirm", out["candidate_id"],
                  "--decision", "keep_longterm",
                  "--confirmation-id", challenge["confirmation_id"],
+                 "--activation", json.dumps({"actions": ["materials.audit"]})]) == 3
+    capsys.readouterr()
+    secret = read_learning_confirmation_secret(project, challenge["confirmation_id"])
+    assert main(["dynamic", "confirm", out["candidate_id"],
+                 "--decision", "keep_longterm",
+                 "--confirmation-id", challenge["confirmation_id"],
+                 "--confirmation-secret", secret,
                  "--activation", json.dumps({"actions": ["materials.audit"]})]) == 0
     capsys.readouterr()
     assert main(["dynamic", "select", "--json"]) == 0
@@ -276,9 +284,11 @@ def test_dynamic_cli_flow_end_to_end(project, capsys, monkeypatch):
                  "--activation", json.dumps({"actions": ["materials.audit"]})]) == 3
     challenge = json.loads(capsys.readouterr().out)
     assert challenge["status"] == "needs_user"
+    secret = read_learning_confirmation_secret(project, challenge["confirmation_id"])
     assert main(["dynamic", "confirm", cand_id,
                  "--decision", "keep_longterm",
                  "--confirmation-id", challenge["confirmation_id"],
+                 "--confirmation-secret", secret,
                  "--activation", json.dumps({"actions": ["materials.audit"]})]) == 0
     result = json.loads(capsys.readouterr().out)
     assert result["permanent"] is True

@@ -25,11 +25,34 @@ jobs:
       - run: pip install -e ".[dev]"
       - name: Ruff blocking checks
         run: ruff check sopcontrol plugins tests
+      - name: Diff whitespace hygiene
+        run: git diff --check
+      - name: EVENT_SCHEMA_VERSION aligned
+        run: |
+          python - <<'PY'
+          import sopcontrol
+          from sopcontrol.events import SCHEMA_VERSION
+          assert sopcontrol.EVENT_SCHEMA_VERSION == SCHEMA_VERSION == "2", (
+              sopcontrol.EVENT_SCHEMA_VERSION, SCHEMA_VERSION
+          )
+          print("EVENT_SCHEMA_VERSION=2")
+          PY
+      - name: Activity log trust regressions
+        run: pytest -q tests/harness/test_activity_log.py tests/dynamic/test_learn_cli.py
       - name: Tests and combined coverage
         # --cov-branch 必须显式传递：pytest-cov 只把该 flag（不读 pyproject）
         # 传播给子进程覆盖，否则子进程写 statement-only 数据导致 combine DataError。
         run: pytest -q --cov --cov-branch --cov-report=term-missing
       - run: sopctl self-test
+      - name: project check
+        run: |
+          sopctl identity init .
+          sopctl project all .
+          sopctl project check .
+      - name: gate on healthy fixture
+        run: sopctl gate corpus/fixtures/healthy-billing
+      - name: gate on repo
+        run: sopctl gate .
       - name: strict gate exits 1 on gap fixture
         run: |
           set +e
