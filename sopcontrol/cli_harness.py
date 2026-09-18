@@ -232,11 +232,14 @@ def cmd_harness_check(args) -> int:
             gate_status = gate_status_for_push(root)
         session = load_session_intent(root)
         bound_executor = ""
+        executor_unknown = False
         try:
             from .task import TaskStore, active_bound_executor
 
             bound_executor = active_bound_executor(TaskStore(root).list_all())
         except Exception:
+            # 任务账本不可读 ≠ 无绑定执行者（WP-C）：保留守卫，后续受控写升级。
+            executor_unknown = True
             bound_executor = ""
 
         action_decision = evaluate_payload(
@@ -246,6 +249,15 @@ def cmd_harness_check(args) -> int:
             bound_executor=bound_executor or None,
             claimed_model=extract_claimed_model(payload) or None,
         )
+        if (executor_unknown and action_decision.decision == "allow"
+                and action_decision.surface in {"filesystem_write", "shell"}):
+            # 解析失败路径保留守卫：账本坏了不能当成没人绑定就放行写动作。
+            action_decision = action_decision.model_copy(update={
+                "decision": "ask",
+                "reason": (action_decision.reason
+                           + "；但任务账本不可读，无法确认执行者绑定，写动作升级为需明确确认"
+                             "（下一步: 修复任务账本后重试，或明确本次放行意图）"),
+            })
         # Wire protocol: observe maps to allow (visible, not blocking)
         wire = (
             "allow" if action_decision.decision == "observe"
