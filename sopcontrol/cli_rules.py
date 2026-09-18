@@ -12,6 +12,7 @@ from .model import Modality, RiskLevel, Rule, RuleStatus, SourceRef, utcnow
 from .registry import Registry, RegistryError
 
 __all__ = [
+    "cmd_confirm",
     "cmd_rule_add",
     "cmd_rule_list",
     "cmd_rule_accept",
@@ -66,12 +67,80 @@ def cmd_rule_add(args) -> int:
     reg.add(rule)
     print(f"已登记规则 {rule.rule_id} [{rule.status.value}]：{rule.statement}")
     if rule.status == RuleStatus.accepted:
-        print("注意：规则已直接置为 accepted；常规流程应从 proposed 出发，经确认后 accept")
+        confirmation_id = getattr(args, "confirmation_id", "") or ""
+        if confirmation_id:
+            from .confirmation import ConfirmationError, approve_confirmation, change_digest
+
+            try:
+                from .identity import load_identity
+
+                ident = load_identity(root)
+                approval = approve_confirmation(
+                    root, confirmation_id,
+                    secret_file=getattr(args, "secret_file", "") or "",
+                    expected_digest=change_digest(rule.rule_id, rule.statement),
+                    expected_project_id=(ident.project_id if ident else ""))
+            except ConfirmationError as exc:
+                print(f"错误: 确认凭据无效: {exc}", file=sys.stderr)
+                return 2
+            print(f"确认凭据已消费: {approval['confirmation_id']} "
+                  f"(authority={approval['authority']}, "
+                  f"human_presence={approval['human_presence']})")
+        else:
+            print("注意：规则已直接置为 accepted；常规流程应从 proposed 出发，经确认后 accept")
+            print("authority: claimed(owner 自称) / human_presence: UNPROVEN —— "
+                  "无可信用户通道时视为自称；高影响变更请附 --confirmation-id")
     return 0
 
 
 def _scope_label(paths: list[str]) -> str:
     return ", ".join(paths) if paths else "project"
+
+
+def cmd_confirm(args) -> int:
+    """可信确认通道：request（预览）/ approve（一次性消费）/ show（只读）。"""
+    import json as _json
+
+    from .confirmation import (
+        ConfirmationError,
+        approve_confirmation,
+        request_confirmation,
+        show_confirmation,
+    )
+    from .identity import load_identity
+
+    root = _project(args.path)
+    sub = getattr(args, "sub", "")
+    try:
+        if sub == "request":
+            ident = load_identity(root)
+            record = request_confirmation(
+                root, kind=args.kind, subject_id=args.subject,
+                digest=args.digest, purpose=getattr(args, "purpose", "") or "",
+                project_id=(ident.project_id if ident else ""),
+                ttl_seconds=getattr(args, "ttl", 3600) or 3600)
+            print(_json.dumps(record, ensure_ascii=False, indent=2))
+            print("警告: secret_one_time 仅显示一次；批准方自行存入 0600 文件，"
+                  "不要粘贴回模型可见位置")
+            print("下一步: 用户侧批准后，用 secret 文件执行 "
+                  "sopctl confirm approve（无可信通道的宿主显示 needs_user 指引）")
+            return 0
+        if sub == "approve":
+            approval = approve_confirmation(
+                root, args.confirmation_id,
+                secret_file=getattr(args, "secret_file", "") or "",
+                expected_digest=getattr(args, "digest", "") or "")
+            print(_json.dumps(approval, ensure_ascii=False, indent=2))
+            return 0
+        if sub == "show":
+            print(_json.dumps(show_confirmation(root, args.confirmation_id),
+                              ensure_ascii=False, indent=2))
+            return 0
+    except ConfirmationError as exc:
+        print(f"错误: {exc}", file=sys.stderr)
+        return 2
+    print(f"未知子命令: {sub}", file=sys.stderr)
+    return 2
 
 
 def cmd_rule_list(args) -> int:
