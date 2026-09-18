@@ -758,8 +758,9 @@ def cmd_init(args) -> int:
     root = _project(args.path)
     sc = root / ".sopcontrol"
     if sc.exists():
-        print(f"已初始化，跳过: {sc}")
-        return 0
+        # 幂等布局验证：目录存在≠初始化完成。缺失件受控补齐；
+        # 已有规则/账本绝不覆盖；损坏文件只报告不伪造。
+        return _repair_init_layout(root, sc)
     (sc / "rules").mkdir(parents=True)
     (sc / "evidence").mkdir(parents=True)
     registry = sc / "rules" / "registry.yaml"
@@ -781,6 +782,56 @@ def cmd_init(args) -> int:
     print("下一步: sopctl rule add 登记规则，然后 sopctl audit")
     return 0
 
+
+
+def _repair_init_layout(root: Path, sc: Path) -> int:
+    """残缺 .sopcontrol 的受控修复（A2）：只补缺失件，不覆盖、不伪造。
+
+    - 缺 rules/、evidence/ 子目录 → 创建；
+    - 缺 registry.yaml → 建空库（无历史可丢）；
+    - registry.yaml 存在但损坏 → 报错退出，不写空文件冒充；
+    - 缺 manifest.yaml → 写默认模板；
+    - 身份缺失 → ensure_identity；账本只读检查，不断言重建。
+    返回 0（完整或已修复），2（损坏需人工）。
+    """
+    from .identity import ensure_identity, load_identity
+
+    fixed: list[str] = []
+    for sub in ("rules", "evidence"):
+        if not (sc / sub).is_dir():
+            (sc / sub).mkdir(parents=True, exist_ok=True)
+            fixed.append(f"{sub}/")
+    registry = sc / "rules" / "registry.yaml"
+    if not registry.exists():
+        registry.write_text("rules: []\n", encoding="utf-8")
+        fixed.append("rules/registry.yaml（空库新建）")
+    else:
+        try:
+            from .registry import Registry
+
+            Registry(registry).load()
+        except Exception as exc:
+            print(f"错误: {registry} 损坏（{exc}），未改动；"
+                  f"下一步: 备份后人工修复或 sopctl doctor {root}", file=sys.stderr)
+            return 2
+    manifest = sc / "manifest.yaml"
+    if not manifest.exists():
+        manifest.write_text(
+            "# controller_paths：本仓库中构成控制器/验证器自身的路径前缀。\n"
+            "controller_paths: []\n"
+            "\n# test_command：完成门会真的执行它，用退出码铸 E4 证据。\n"
+            "test_command: ''\n",
+            encoding="utf-8",
+        )
+        fixed.append("manifest.yaml（默认模板）")
+    if load_identity(root) is None:
+        ident = ensure_identity(root)
+        fixed.append(f"identity（{ident.project_id}）")
+    if fixed:
+        print(f"布局已修复 {sc}：补齐 {', '.join(fixed)}；现有规则与账本未动")
+    else:
+        print(f"已初始化，跳过: {sc}")
+    return 0
 
 
 def cmd_test_command(args) -> int:
