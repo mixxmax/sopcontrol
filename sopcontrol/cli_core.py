@@ -263,7 +263,7 @@ def cmd_doctor(args) -> int:
     ledger = Ledger(root / ".sopcontrol" / "evidence" / "ledger.jsonl")
     if ledger.path.exists():
         ok = ledger.verify()
-        print(f"账本完整性: {'OK' if ok else '被篡改或损坏'}")
+        print(f"账本完整性: {'OK' if ok else '完整性校验失败（损坏/不一致；不抵抗持写权伪造）'}")
         if not ok:
             report = ledger.diagnose()
             kinds = sorted({str(i.get("kind") or "unknown") for i in report.get("issues") or []})
