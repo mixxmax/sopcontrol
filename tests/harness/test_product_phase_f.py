@@ -170,11 +170,45 @@ def test_compat_measure_without_sys_regression(tmp_path, monkeypatch, capsys):
 
 
 def test_wp_j_verified_platform_honest():
-    """WP-J：本机 darwin-arm64+3.12 标 verified；未验证平台不冒充。"""
+    """WP-J/A1：declared 与探针 verified 分离；无证据不冒充 verified。"""
     from sopcontrol.product import compat_check
     report = compat_check()
-    assert report["platform"]["os_verified"] is True
-    assert report["platform"]["python_verified"] is True
+    plat = report["platform"]
+    assert plat["python_supported"] is True
+    # 本机 darwin-arm64 + 3.12：探针跑绿 → live_verified（带探针证据）
+    assert plat["os_support_level"] == "live_verified"
+    assert plat["python_support_level"] == "live_verified"
+    assert "spawn" in plat["python_probe"]
+    assert plat["os_probe"]
     assert report["matrix"]["verified"]["os"] == ["macOS arm64"]
     # 声明列表仍在（可装），但 verified 与其分离
     assert "Linux" in report["matrix"]["os"]
+    # harness 每格有等级与证据
+    for name, meta in report["matrix"]["harnesses"].items():
+        assert meta.get("support_level"), name
+        assert meta.get("evidence"), name
+
+
+def test_support_level_unproven_without_probe_evidence(monkeypatch):
+    """探针失败/跳过 → unproven；绝不从字符串铸造 verified。"""
+    from sopcontrol.product import current_platform_info
+    monkeypatch.setattr("sopcontrol.product._probe_python_subprocess",
+                        lambda: (False, "simulated failure"))
+    monkeypatch.setattr("sopcontrol.resolve_cli.hook_shell_available",
+                        lambda: (False, "simulated no shell"), raising=False)
+    info = current_platform_info()
+    assert info["python_support_level"] == "unproven"
+    assert info["os_support_level"] == "unproven"
+    assert "os_verified" not in info and "python_verified" not in info
+    info2 = current_platform_info(probe=False)
+    assert info2["python_support_level"] == "unproven"
+    assert info2["os_support_level"] == "unproven"
+
+
+def test_compat_text_never_claims_verified_true(tmp_path, capsys, monkeypatch):
+    """compat 文本输出不出现 verified=true；未验证格标 UNPROVEN 语义。"""
+    monkeypatch.chdir(tmp_path)
+    assert main(["compat", str(tmp_path)]) == 0
+    out = capsys.readouterr().out
+    assert "verified=true" not in out
+    assert "support_level=" in out

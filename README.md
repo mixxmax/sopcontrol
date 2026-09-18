@@ -8,8 +8,7 @@
 <p align="center">
   <a href="https://github.com/mixxmax/sopcontrol"><img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=flat&logo=python&logoColor=white" alt="Python 3.10+"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License"></a>
-  <a href="tests/"><img src="https://img.shields.io/badge/Tests-981%20Passed-brightgreen.svg" alt="Tests 981 Passed"></a>
-  <a href="pyproject.toml"><img src="https://img.shields.io/badge/Coverage-85%25%2B%20Branch-success.svg" alt="Branch Coverage 85%+"></a>
+  <a href="https://github.com/mixxmax/sopcontrol/actions/workflows/ci.yml"><img src="https://github.com/mixxmax/sopcontrol/actions/workflows/ci/badge.svg" alt="CI"></a>
   <a href="#一附-c哪里会调用大模型默认几乎不调用"><img src="https://img.shields.io/badge/Hot%20Path-Zero--LLM%20Local-blueviolet.svg" alt="Zero LLM Hot Path"></a>
   <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Version-v0.4.0-blue.svg" alt="Version"></a>
   <a href="LIMITATIONS.md"><img src="https://img.shields.io/badge/Status-Beta-orange.svg" alt="Beta"></a>
@@ -574,7 +573,8 @@ sopctl rollback .
 | 执行面 | 接入方式 | 当前说明 |
 | :--- | :--- | :--- |
 | **OpenCode** | 运行时插件拦截 | 已有 live-verified 证据 |
-| **Codex / Cursor** | 投影、wrap / enter | 依赖宿主入口和实际探针 |
+| **Codex** | 投影、wrap / enter | 依赖宿主入口和实际探针 |
+| **Cursor** | 仅发现标记，无专门实现 | 未验证（UNPROVEN），不列为已支持 |
 | **Claude Code** | PreToolUse 协议适配器 | 已适配，需按宿主环境验证 |
 
 这些执行面不是各自的规则源，而是同一个项目控制面的不同入口。换模型或换 harness 不应自动扩大权限。
@@ -663,8 +663,7 @@ Distributed under the [MIT License](LICENSE).
 <p align="center">
   <a href="https://github.com/mixxmax/sopcontrol"><img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=flat&logo=python&logoColor=white" alt="Python 3.10+"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License"></a>
-  <a href="tests/"><img src="https://img.shields.io/badge/Tests-981%20Passed-brightgreen.svg" alt="Tests 981 Passed"></a>
-  <a href="pyproject.toml"><img src="https://img.shields.io/badge/Coverage-85%25%2B%20Branch-success.svg" alt="Branch Coverage 85%+"></a>
+  <a href="https://github.com/mixxmax/sopcontrol/actions/workflows/ci.yml"><img src="https://github.com/mixxmax/sopcontrol/actions/workflows/ci/badge.svg" alt="CI"></a>
   <a href="#0c-where-large-models-are-called-almost-never-by-default"><img src="https://img.shields.io/badge/Hot%20Path-Zero--LLM%20Local-blueviolet.svg" alt="Zero LLM Hot Path"></a>
   <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Version-v0.4.0-blue.svg" alt="Version"></a>
   <a href="LIMITATIONS.md"><img src="https://img.shields.io/badge/Status-Beta-orange.svg" alt="Beta"></a>
@@ -1213,7 +1212,8 @@ sopctl rollback .
 | Surface | Integration | Current note |
 | :--- | :--- | :--- |
 | **OpenCode** | Runtime plugin interception | Live-verified evidence exists |
-| **Codex / Cursor** | Projection, wrap / enter | Depends on host entrances and real probes |
+| **Codex** | Projection, wrap / enter | Depends on host entrances and real probes |
+| **Cursor** | Discovery marker only, no dedicated implementation | UNPROVEN, not listed as supported |
 | **Claude Code** | PreToolUse protocol adapter | Adapted; verify in the target host |
 
 These surfaces are different entrances to one project control plane, not competing rule sources. Switching a model or harness must not silently widen permissions.
