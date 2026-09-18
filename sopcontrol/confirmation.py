@@ -1,28 +1,27 @@
 """可信确认通道（WP-C3）：预览→批准一次性绑定，防重放、防跨项目、防伪造。
 
+原语统一：底层一次性凭据复用 learning.py 的签发/核销（全仓唯一确认原语，
+secret 只落 0600 handoff、记录只存 digest）；本模块在其上补齐通用权威变更
+所需的绑定层——有效期、项目、变更摘要——三者任一不符即拒。
+
 权限模型（诚实边界）：
 - 确认凭据只能由 Agent 无法访问的用户侧签发才算“已验证的人类确认”。
   本地 CLI 没有宿主 UI 通道，因此所有经 CLI 到达的批准一律记为
   claimed（自称），人类在场为 UNPROVEN——如实标注，不伪装。
-- 本模块保证的是工作流绑定：一次预览（preview_id）只能批准与其绑定的
-  具体变更（rule_id + 内容摘要 + 项目 + 用途 + 期限），一次性消费，
-  过期/重放/跨项目/摘要不一致一律拒绝。
-- 复用 tickets.py 的签发/绑定/消费（锁+单次消费+过期），不另起炉灶。
-- 非交互 CI/迁移走维护者凭据（SOPCTL_MAINTAINER_TOKEN 文件路径），
-  记录 via=maintainer-token，可审计；单靠 TTY 或把 secret 打到模型可见
-  stdout 不构成人类证明（approve 要求 --secret-file，不接受命令行明文）。
+- secret 解析顺序：显式传入 > --secret-file（0600）> 拒绝；
+  永不自动读 handoff（与 learning.resolve_confirmation_secret 同约）。
+- 非交互 CI/迁移走维护者凭据（SOPCTL_MAINTAINER_TOKEN），记录
+  via=maintainer-token，可审计；单靠 TTY 或把 secret 打到模型可见
+  stdout 不构成人类证明。
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-CONFIRM_ACTION = "authority.confirm"
-CONFIRM_SIDE_EFFECT = "authority_change"
 PENDING_TTL_SECONDS = 3600
 
 
@@ -32,15 +31,20 @@ class ConfirmationError(ValueError):
 
 def change_digest(rule_id: str, statement: str, extra: dict[str, Any] | None = None) -> str:
     """变更内容摘要：rule_id + 规范化陈述 + 附加绑定字段。"""
+    import hashlib as _hashlib
+
     payload = {"rule_id": rule_id,
                "statement": " ".join(str(statement or "").split()),
                "extra": extra or {}}
     raw = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
-    return "chg-" + hashlib.sha256(raw).hexdigest()[:32]
+    return "chg-" + _hashlib.sha256(raw).hexdigest()[:32]
 
 
-def _pending_dir(root: Path) -> Path:
-    return Path(root) / ".sopcontrol-local" / "confirmations"
+def _binding_path(root: Path, confirmation_id: str) -> Path:
+    from .scope import validate_identifier
+
+    validate_identifier(confirmation_id, kind="confirmation id")
+    return Path(root) / ".sopcontrol-local" / "confirmations" / f"{confirmation_id}.json"
 
 
 def request_confirmation(
@@ -48,46 +52,32 @@ def request_confirmation(
     purpose: str, project_id: str = "", ttl_seconds: int = PENDING_TTL_SECONDS,
     actor_claim: str = "",
 ) -> dict[str, Any]:
-    """签发一次确认请求（预览）。返回绑定信息；secret 只写 0600 文件。"""
-    from .tickets import issue_ticket
+    """签发一次确认请求（预览）。底层凭据走统一原语；本层记录绑定。"""
+    from .learning import issue_learning_confirmation
 
     root = Path(root)
     if not kind.strip() or not subject_id.strip():
         raise ConfirmationError("确认请求需要 kind 与 subject_id")
     if not digest.strip():
         raise ConfirmationError("确认请求需要变更内容摘要（不得批空白变更）")
-    ticket = issue_ticket(
-        root, action=CONFIRM_ACTION, input_fingerprint=digest,
-        allowed_side_effects=[CONFIRM_SIDE_EFFECT],
-        task_id=f"{kind}:{subject_id}",
-        ttl_seconds=ttl_seconds, issued_by="sopctl-confirm",
-        capability_binding=json.dumps(
-            {"kind": kind, "subject_id": subject_id, "purpose": purpose,
-             "project_id": project_id, "actor_claim": actor_claim},
-            ensure_ascii=False, sort_keys=True),
-    )
-    d = _pending_dir(root)
-    d.mkdir(parents=True, exist_ok=True)
-    record = {"confirmation_id": ticket.ticket_id, "kind": kind,
-              "subject_id": subject_id, "change_digest": digest,
-              "purpose": purpose, "project_id": project_id,
-              "actor_claim": actor_claim, "expires_at": ticket.expires_at.isoformat(),
-              "consumed": False,
-              # 一次性 secret：仅此次返回（同 ticket issue 语义）。
-              # 批准方自行存入 0600 文件；此处不落盘、不进日志。
-              "secret_one_time": ticket.secret}
-    show = {k: v for k, v in record.items()}
-    (d / f"{ticket.ticket_id}.json").write_text(
-        json.dumps({k: v for k, v in record.items() if k != "secret_one_time"},
-                   ensure_ascii=False, indent=2), encoding="utf-8")
-    return show
+    proposal_id = f"{kind}:{subject_id}"
+    issued = issue_learning_confirmation(root, proposal_id)
+    confirmation_id = issued["confirmation_id"]
+    expires_at = (datetime.now(timezone.utc)
+                  + timedelta(seconds=int(ttl_seconds or PENDING_TTL_SECONDS))).isoformat()
+    binding = {"confirmation_id": confirmation_id, "kind": kind,
+               "subject_id": subject_id, "change_digest": digest,
+               "purpose": purpose, "project_id": project_id,
+               "actor_claim": actor_claim, "expires_at": expires_at,
+               "consumed": False}
+    path = _binding_path(root, confirmation_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(binding, ensure_ascii=False, indent=2), encoding="utf-8")
+    return binding
 
 
-def _load_pending(root: Path, confirmation_id: str) -> dict[str, Any]:
-    from .scope import validate_identifier
-
-    validate_identifier(confirmation_id, kind="confirmation id")
-    path = _pending_dir(Path(root)) / f"{confirmation_id}.json"
+def _load_binding(root: Path, confirmation_id: str) -> dict[str, Any]:
+    path = _binding_path(root, confirmation_id)
     if not path.is_file():
         raise ConfirmationError(f"未知确认请求: {confirmation_id}")
     try:
@@ -96,9 +86,13 @@ def _load_pending(root: Path, confirmation_id: str) -> dict[str, Any]:
         raise ConfirmationError(f"确认记录损坏: {exc}") from exc
 
 
-def _read_secret(secret_file: str) -> str:
+def _resolve_secret(*, secret: str = "", secret_file: str = "") -> str:
+    """secret 解析：显式传入 > 0600 文件 > 拒绝。永不自动读 handoff。"""
+    if str(secret or "").strip():
+        return str(secret).strip()
     if not secret_file:
-        raise ConfirmationError("批准需要 --secret-file（0600 文件），不接受命令行明文 secret")
+        raise ConfirmationError("批准需要显式 secret（--confirmation-secret）或 "
+                                "--secret-file（0600 文件），不自动读 handoff")
     try:
         mode = os.stat(secret_file).st_mode & 0o777
     except OSError as exc:
@@ -112,56 +106,57 @@ def _read_secret(secret_file: str) -> str:
 
 
 def approve_confirmation(
-    root: Path | str, confirmation_id: str, *, secret_file: str = "",
-    expected_digest: str = "", expected_project_id: str = "",
-    via: str = "user-channel", now: Optional[datetime] = None,
+    root: Path | str, confirmation_id: str, *, secret: str = "",
+    secret_file: str = "", expected_digest: str = "",
+    expected_project_id: str = "", via: str = "user-channel",
+    now: Optional[datetime] = None,
 ) -> dict[str, Any]:
     """批准（兑换，一次性）。成功返回批准记录（claimed，非已验证人类）。"""
-    from .tickets import TicketError, redeem_ticket
+    from .learning import redeem_learning_confirmation
 
     root = Path(root)
-    pending = _load_pending(root, confirmation_id)
-    if pending.get("consumed"):
+    binding = _load_binding(root, confirmation_id)
+    if binding.get("consumed"):
         raise ConfirmationError(f"确认 {confirmation_id} 已被使用：重放拒绝")
-    if expected_digest and pending["change_digest"] != expected_digest:
+    if expected_digest and binding["change_digest"] != expected_digest:
         raise ConfirmationError("变更摘要不一致：批准绑定的是另一份变更")
-    if expected_project_id and pending.get("project_id") \
-            and pending["project_id"] != expected_project_id:
+    if expected_project_id and binding.get("project_id") \
+            and binding["project_id"] != expected_project_id:
         raise ConfirmationError("项目不一致：跨项目凭据拒绝")
-    secret = _read_secret(secret_file)
+    exp = binding.get("expires_at") or ""
+    try:
+        exp_dt = datetime.fromisoformat(str(exp).replace("Z", "+00:00"))
+    except ValueError:
+        raise ConfirmationError("确认记录过期时间非法：拒绝") from None
+    if exp_dt.tzinfo is None:
+        raise ConfirmationError("确认记录过期时间无时区：拒绝") from None
+    if (now or datetime.now(timezone.utc)) >= exp_dt:
+        raise ConfirmationError("确认请求已过期：重发请求后批准") from None
+    raw_secret = _resolve_secret(secret=secret, secret_file=secret_file)
     maintainer = os.environ.get("SOPCTL_MAINTAINER_TOKEN", "").strip()
     via_label = via
-    redeem_secret = secret
-    if maintainer and secret == maintainer:
-        # 维护者凭据路径（CI/迁移）：凭据对上后，由本进程经 ticket store
-        # 取票据 secret 完成兑换——绑定检查与单次消费照常，不跳过。
-        from .tickets import _load_ticket
+    if maintainer and raw_secret == maintainer:
+        # 维护者凭据路径（CI/迁移）：凭据对上后，由本进程经统一原语的
+        # handoff 取实际 secret 完成兑换——绑定检查与单次消费照常，不跳过。
+        from .learning import read_learning_confirmation_secret
 
         via_label = "maintainer-token"
         try:
-            stored = _load_ticket(root, confirmation_id)
-        except Exception as exc:
-            raise ConfirmationError(f"批准失败: 票据不存在: {exc}") from exc
-        if stored.consumed_at is not None:
-            raise ConfirmationError(f"确认 {confirmation_id} 已被使用：重放拒绝")
-        redeem_secret = stored.secret
+            raw_secret = read_learning_confirmation_secret(root, confirmation_id)
+        except ValueError as exc:
+            raise ConfirmationError(f"批准失败: {exc}") from exc
     try:
-        redeem_ticket(
-            root, ticket_id=confirmation_id, secret=redeem_secret,
-            action=CONFIRM_ACTION, input_fingerprint=pending["change_digest"],
-            side_effect=CONFIRM_SIDE_EFFECT,
-            task_id=f"{pending['kind']}:{pending['subject_id']}",
-            expected_project_id=expected_project_id,
-            now=now,
-        )
-    except TicketError as exc:
+        redeem_learning_confirmation(
+            root, proposal_id=f"{binding['kind']}:{binding['subject_id']}",
+            confirmation_id=confirmation_id, secret=raw_secret)
+    except ValueError as exc:
         raise ConfirmationError(f"批准失败: {exc}") from exc
-    pending["consumed"] = True
-    (_pending_dir(root) / f"{confirmation_id}.json").write_text(
-        json.dumps(pending, ensure_ascii=False, indent=2), encoding="utf-8")
-    return {"confirmation_id": confirmation_id, "kind": pending["kind"],
-            "subject_id": pending["subject_id"],
-            "change_digest": pending["change_digest"],
+    binding["consumed"] = True
+    _binding_path(root, confirmation_id).write_text(
+        json.dumps(binding, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"confirmation_id": confirmation_id, "kind": binding["kind"],
+            "subject_id": binding["subject_id"],
+            "change_digest": binding["change_digest"],
             "approved_via": via_label,
             "authority": "claimed",
             "human_presence": "UNPROVEN",
@@ -170,4 +165,4 @@ def approve_confirmation(
 
 def show_confirmation(root: Path | str, confirmation_id: str) -> dict[str, Any]:
     """只读查看确认请求状态（不消费）。"""
-    return _load_pending(Path(root), confirmation_id)
+    return _load_binding(Path(root), confirmation_id)

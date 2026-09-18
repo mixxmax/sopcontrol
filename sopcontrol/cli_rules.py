@@ -77,6 +77,7 @@ def cmd_rule_add(args) -> int:
                 ident = load_identity(root)
                 approval = approve_confirmation(
                     root, confirmation_id,
+                    secret=getattr(args, "confirmation_secret", "") or "",
                     secret_file=getattr(args, "secret_file", "") or "",
                     expected_digest=change_digest(rule.rule_id, rule.statement),
                     expected_project_id=(ident.project_id if ident else ""))
@@ -128,6 +129,7 @@ def cmd_confirm(args) -> int:
         if sub == "approve":
             approval = approve_confirmation(
                 root, args.confirmation_id,
+                secret=getattr(args, "confirmation_secret", "") or "",
                 secret_file=getattr(args, "secret_file", "") or "",
                 expected_digest=getattr(args, "digest", "") or "")
             print(_json.dumps(approval, ensure_ascii=False, indent=2))

@@ -1,9 +1,12 @@
-"""WP-C3：可信确认通道——绑定、一次性、防重放、防跨项目、自称标注。"""
+"""WP-C3：可信确认通道——统一原语之上的绑定层（有效期/项目/摘要）。
+
+底层一次性凭据复用 learning.py（全仓唯一确认原语）；本层补齐通用权威变更
+所需的绑定。secret 经测试 helper 读取（测试专用通道，CLI 永不自动读）。
+"""
 from __future__ import annotations
 
 import json
 import os
-import stat
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -16,12 +19,7 @@ from sopcontrol.confirmation import (
     request_confirmation,
     show_confirmation,
 )
-
-
-def _secret_file_for(rec, path) -> str:
-    path.write_text(rec["secret_one_time"], encoding="utf-8")
-    os.chmod(path, 0o600)
-    return str(path)
+from sopcontrol.learning import read_learning_confirmation_secret
 
 
 def _request(tmp_path, **kw):
@@ -32,14 +30,23 @@ def _request(tmp_path, **kw):
     return request_confirmation(tmp_path, **base)
 
 
+def _secret(tmp_path, confirmation_id: str, path_name: str = "s.key") -> str:
+    p = tmp_path / path_name
+    p.write_text(read_learning_confirmation_secret(tmp_path, confirmation_id),
+                 encoding="utf-8")
+    os.chmod(p, 0o600)
+    return str(p)
+
+
 def test_request_approve_verify_roundtrip(tmp_path):
     rec = _request(tmp_path)
     assert rec["consumed"] is False
+    assert "secret_one_time" not in rec  # secret 永不进返回值
     shown = show_confirmation(tmp_path, rec["confirmation_id"])
     assert shown["change_digest"] == rec["change_digest"]
-    sf = _secret_file_for(rec, tmp_path / "s.key")
+    sf = _secret(tmp_path, rec["confirmation_id"])
     approval = approve_confirmation(tmp_path, rec["confirmation_id"],
-                                    secret_file=str(sf))
+                                    secret_file=sf)
     assert approval["authority"] == "claimed"
     assert approval["human_presence"] == "UNPROVEN"
     assert show_confirmation(tmp_path, rec["confirmation_id"])["consumed"] is True
@@ -47,26 +54,26 @@ def test_request_approve_verify_roundtrip(tmp_path):
 
 def test_replay_rejected(tmp_path):
     rec = _request(tmp_path)
-    sf = _secret_file_for(rec, tmp_path / "s.key")
-    approve_confirmation(tmp_path, rec["confirmation_id"], secret_file=str(sf))
+    sf = _secret(tmp_path, rec["confirmation_id"])
+    approve_confirmation(tmp_path, rec["confirmation_id"], secret_file=sf)
     with pytest.raises(ConfirmationError, match="重放"):
-        approve_confirmation(tmp_path, rec["confirmation_id"], secret_file=str(sf))
+        approve_confirmation(tmp_path, rec["confirmation_id"], secret_file=sf)
 
 
 def test_wrong_digest_rejected(tmp_path):
     rec = _request(tmp_path)
-    sf = _secret_file_for(rec, tmp_path / "s.key")
+    sf = _secret(tmp_path, rec["confirmation_id"])
     with pytest.raises(ConfirmationError, match="摘要不一致"):
-        approve_confirmation(tmp_path, rec["confirmation_id"], secret_file=str(sf),
+        approve_confirmation(tmp_path, rec["confirmation_id"], secret_file=sf,
                              expected_digest="chg-deadbeef")
 
 
 def test_expired_rejected(tmp_path):
     rec = _request(tmp_path, ttl_seconds=1)
-    sf = _secret_file_for(rec, tmp_path / "s.key")
+    sf = _secret(tmp_path, rec["confirmation_id"])
     future = datetime.now(timezone.utc) + timedelta(hours=2)
-    with pytest.raises(ConfirmationError, match="批准失败"):
-        approve_confirmation(tmp_path, rec["confirmation_id"], secret_file=str(sf),
+    with pytest.raises(ConfirmationError, match="过期"):
+        approve_confirmation(tmp_path, rec["confirmation_id"], secret_file=sf,
                              now=future)
 
 
@@ -75,17 +82,17 @@ def test_cross_project_rejected(tmp_path):
     from pathlib import Path
 
     rec = _request(tmp_path)
-    sf = _secret_file_for(rec, tmp_path / "s.key")
+    sf = _secret(tmp_path, rec["confirmation_id"])
     other = Path(tempfile.mkdtemp())
     assert main(["init", str(other)]) == 0
     with pytest.raises(ConfirmationError):
-        approve_confirmation(other, rec["confirmation_id"], secret_file=str(sf),
+        approve_confirmation(other, rec["confirmation_id"], secret_file=sf,
                              expected_project_id="proj-other")
 
 
 def test_plaintext_secret_and_wide_perms_rejected(tmp_path):
     rec = _request(tmp_path)
-    with pytest.raises(ConfirmationError, match="secret-file"):
+    with pytest.raises(ConfirmationError, match="secret-file|secret"):
         approve_confirmation(tmp_path, rec["confirmation_id"], secret_file="")
     loose = tmp_path / "loose.key"
     loose.write_text("x", encoding="utf-8")
@@ -117,12 +124,14 @@ def test_rule_add_with_confirmation_consumes(tmp_path, capsys, monkeypatch):
     assert main(["confirm", "request", "--kind", "rule-accept",
                  "--subject", "C3-2", "--digest", digest,
                  "--purpose", "t"]) == 0
-    req = json.loads(capsys.readouterr().out.split("\n警告:")[0])
-    sf = _secret_file_for(req, work / "s.key")
+    out = capsys.readouterr().out
+    req = json.loads(out.split("\n警告:")[0] if "\n警告:" in out else out)
+    assert "secret_one_time" not in req
+    sf = _secret(work, req["confirmation_id"], "s.key")
     assert main(["rule", "add", "--id", "C3-2", "--statement", "审计不扩范围",
                  "--status", "accepted", "--source-ref", "s",
                  "--confirmation-id", req["confirmation_id"],
-                 "--secret-file", str(sf)]) == 0
+                 "--secret-file", sf]) == 0
     out = capsys.readouterr().out
     assert "确认凭据已消费" in out
     assert show_confirmation(work, req["confirmation_id"])["consumed"] is True
