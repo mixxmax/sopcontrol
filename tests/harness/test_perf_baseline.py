@@ -496,11 +496,15 @@ def test_reference_host_worker_contract() -> None:
     assert [item["id"] for item in batch["outputs"]] == ["a", "b"]
     descriptor = module.expensive_op_descriptor()
     assert descriptor["is_expensive"] is True and descriptor["needs_admission"] is True
+    # B3 顺序：先缩小范围，再对剩余子集做昂贵操作（禁止先全集昂贵再过滤）。
+    narrowed_first = module.narrow(batch["outputs"], lambda item: item["score"] > 0)
+    assert [item["id"] for item in narrowed_first] == ["a"]
     calls: list[dict[str, object]] = []
     expensive = module.run_expensive(
-        batch["outputs"], admit=lambda context: calls.append(context) is None
+        narrowed_first, admit=lambda context: calls.append(context) is None
     )
-    assert len(expensive["outputs"]) == 2 and calls
+    assert len(expensive["outputs"]) == 1 and calls
+    assert calls[0]["input_ids"] == ["a"], "昂贵操作只能看到缩小后的子集"
     narrowed = module.narrow(expensive["outputs"], lambda item: item["score"] > 0)
     assert [item["id"] for item in narrowed] == ["a"]
     assert module.business_check([{"id": "z", "score": -1}])[0]["severity"] == "blocking"

@@ -81,3 +81,21 @@ def test_cli_positional_paths_stable(tmp_path, capsys, monkeypatch):
     ns2 = build_parser().parse_args(
         ["logic", "plan", str(plan), "--freeze", str(work)])
     assert ns2.file == str(plan) and ns2.path == str(work) and ns2.freeze is True
+
+
+def test_init_permission_denied_fails_cleanly(tmp_path, capsys):
+    """A2：无写权限时干净失败（无 traceback、无半截布局）。"""
+    import traceback as _tb
+
+    work = tmp_path / "p"
+    work.mkdir()
+    work.chmod(0o555)
+    try:
+        rc = main(["init", str(work)])
+    finally:
+        work.chmod(0o755)
+    assert rc != 0
+    err = capsys.readouterr().err
+    assert "Traceback" not in err
+    assert "写权限" in err
+    assert not (work / ".sopcontrol").exists()

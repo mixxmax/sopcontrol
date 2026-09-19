@@ -8,16 +8,16 @@
 1. 权威在项目 `.sopcontrol/`；模型上下文不是记忆本体。
 2. 只推进「当前链头」里的合法动作；不要重做已交付副作用。
 3. 全量历史与接手包：`sopctl task list` / `task show <id>` / `task takeover <id>`。
-4. 本切片摘要: `9ed432ba4ee99358`（漂移时 `sopctl project check` 会报 stale）。
+4. 本切片摘要: `97191bf219b2e33e`（漂移时 `sopctl project check` 会报 stale）。
 5. 项目何以至此：见下节；全量编年 `sopctl chronicle`。
 
 ## 何以至此（换模型/换会话）
-- 编年 662 条（完整性 OK）；下列为最近 5 条治理动作：
-- [2026-09-19T10:13] TASK-0162 verified→delivered（deliver）
-- [2026-09-19T10:20] TASK-0159 verification_pending→verified（verify）
-- [2026-09-19T10:20] TASK-0159 verified→delivered（deliver）
-- [2026-09-19T10:27] TASK-0161 verification_pending→verified（verify）
-- [2026-09-19T10:27] TASK-0161 verified→delivered（deliver）
+- 编年 680 条（完整性 OK）；下列为最近 5 条治理动作：
+- [2026-09-19T13:21] TASK-0164 verification_pending→verified（verify）
+- [2026-09-19T13:21] TASK-0164 verified→delivered（deliver）
+- [2026-09-19T13:31] TASK-0165 executing→verification_pending（submit）
+- [2026-09-19T13:34] TASK-0166 executing→verification_pending（submit）
+- [2026-09-19T14:33] TASK-0167 executing→verification_pending（submit）
 - 全量：`sopctl chronicle`；核对：`sopctl chronicle check`。
 
 ## 空间生长（无感观察；定型需人）
@@ -37,15 +37,24 @@
 - [CTRL-001][MUST] 控制器状态目录 .sopcontrol/ 内任何文件不得直接读写或修改，一切写入必须经 sopctl 子命令 （生产消费者标记: touches_protected_path, check_tool_call）
 
 ## 当前链头（可执行切片）
-- 上限 5 条明细；verified 折叠；摘要 `9ed432ba4ee99358`
+- 上限 5 条明细；verified 折叠；摘要 `97191bf219b2e33e`
+- TASK-0167 [verification_pending] P1收尾：perf参考宿主先筛后做+init权限干净失败+3.11本地验证（3.10标UNPROVEN）
+  执行者: （未绑定）；完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: verify
+  为何在切片: 待完成门：task verify
+- TASK-0166 [verification_pending] P1 scope选择：scope_paths参与选择，范围外not_applicable，目标未知unproven
+  执行者: （未绑定）；完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: verify
+  为何在切片: 待完成门：task verify
+- TASK-0165 [verification_pending] P0-2+P0-3入口硬化：host_proofs结构绑定时效单次消费并接入正式harness；注册表损坏受控写fail
+  执行者: （未绑定）；完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: verify
+  为何在切片: 待完成门：task verify
+- TASK-0168 [verification_pending] rule accept解析器确认旗标：--confirmation-id/--secret二选一（0164功能必需）
+  执行者: （未绑定）；完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: verify
+  为何在切片: 待完成门：task verify
 - TASK-0077 [blocked] 细分市场发布准备：关闭 REL-001（cli_product 缺 sys 导入+超预算分支测试）、REL-002（co
   执行者: （未绑定）；完成定义: CTRL-001, SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）人工裁决后另开任务
   为何在切片: 未接替阻断（other）；需 --resolves 另开决议
   ⚠ 已阻断（other）；另开决议任务：`sopctl task open --resolves TASK-0077 ...`
-- TASK-0002 [blocked] 骨架收口两件：1) 判定输出带证据强度自曝（structural/lexical/mixed）——跨语言 pass 必须
-  执行者: （未绑定）；完成定义: SELF-001, SELF-002 全部 pass；修复预算: 0/1；合法动作: （终态）人工裁决后另开任务
-  为何在切片: 未接替阻断（other）；需 --resolves 另开决议
-  ⚠ 已阻断（other）；另开决议任务：`sopctl task open --resolves TASK-0002 ...`
+- （另有 1 条活跃/阻断未展开；超出链头上限 5；`sopctl task list`）
 
 ## 硬约束
 - 不得直接读写或修改 `.sopcontrol/` 内任何文件；一切经 `sopctl` 子命令。

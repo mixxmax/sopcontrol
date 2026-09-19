@@ -757,6 +757,16 @@ def cmd_init(args) -> int:
 
     root = _project(args.path)
     sc = root / ".sopcontrol"
+    try:
+        return _init_inner(root, sc, ensure_identity)
+    except OSError as exc:
+        # 权限/IO 失败干净退出：无 traceback，不留半截布局（A2 验收）。
+        print(f"错误: 初始化失败（{exc}）；未写入任何控制数据。"
+              f"下一步: 检查目录写权限后重试", file=sys.stderr)
+        return 1
+
+
+def _init_inner(root: Path, sc: Path, ensure_identity) -> int:
     if sc.exists():
         # 幂等布局验证：目录存在≠初始化完成。缺失件受控补齐；
         # 已有规则/账本绝不覆盖；损坏文件只报告不伪造。

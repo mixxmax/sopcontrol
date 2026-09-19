@@ -1,0 +1,63 @@
+task_id: TASK-0167
+contract:
+  objective: P1收尾：perf参考宿主先筛后做+init权限干净失败+3.11本地验证（3.10标UNPROVEN）
+  allowed_writes:
+  - tests/harness/test_perf_baseline.py
+  - sopcontrol/cli_core.py
+  - tests/harness/test_init_repair.py
+  required_rules:
+  - CTRL-001
+  - SELF-001
+  - SELF-002
+  required_fields:
+  - tail_report
+  max_repairs: 1
+  repairs_fingerprint: null
+  write_granularity: file
+  strict_schema: true
+  capability_note: 当前模型未声明（已有画像 vertical-backbone 不适用） tier=unknown：模型能力未知：按保守边界执行，文件级写入
+    + 强制 MUST 字段清单；行为事件触发 weak 上限（近期任务迁移被拒）
+  model_identity: ''
+  control_profile_id: ''
+  control_profile_revision: 0
+  effective_plan_digest: ''
+  goal_digest: ''
+  execution_plan_digest: ''
+status: verification_pending
+repair_count: 0
+changed_paths:
+- sopcontrol/cli_core.py
+- tests/harness/test_init_repair.py
+- tests/harness/test_perf_baseline.py
+submit_input_digest: in-04f364f05a6be10d918e75ecf6a3882c
+revision: 4
+created_at: '2026-09-19T12:57:04.593766Z'
+updated_at: '2026-09-19T14:33:41.611262Z'
+history:
+- at: '2026-09-19T12:57:06.603496Z'
+  action: accept
+  from_status: contract_proposed
+  to_status: executing
+  allowed: true
+  reason: 契约完整：目标、写入范围与可验证完成定义齐备
+  detail:
+    next_action: 执行变更后 task submit 提交改动路径
+- at: '2026-09-19T14:33:34.377928Z'
+  action: submit
+  from_status: executing
+  to_status: null
+  allowed: false
+  reason: 漏掉 MUST 字段 [tail_report]（契约 required_fields；14.1 场景8 弱模型字段遗漏）
+  detail:
+    next_action: 补全 --field key=value 后重新 submit，不得省略必填字段
+- at: '2026-09-19T14:33:41.603051Z'
+  action: submit
+  from_status: executing
+  to_status: verification_pending
+  allowed: true
+  reason: 改动 3 个路径，全部在写入范围内；MUST 字段齐备 [tail_report]
+  detail:
+    next_action: 运行 task verify 由控制器独立审计
+resolution_of: []
+superseded_by_task: ''
+blocked_reason_code: ''
