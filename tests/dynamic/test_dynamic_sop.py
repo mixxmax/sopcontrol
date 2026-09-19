@@ -255,7 +255,7 @@ def test_select_cli_json_reports_unproven(project, capsys, monkeypatch):
     assert main(["dynamic", "confirm", out["candidate_id"],
                  "--decision", "keep_longterm",
                  "--confirmation-id", challenge["confirmation_id"],
-                 "--confirmation-secret", secret,
+                 f"--confirmation-secret={secret}",
                  "--activation", json.dumps({"actions": ["materials.audit"]})]) == 0
     capsys.readouterr()
     assert main(["dynamic", "select", "--json"]) == 0
@@ -288,7 +288,7 @@ def test_dynamic_cli_flow_end_to_end(project, capsys, monkeypatch):
     assert main(["dynamic", "confirm", cand_id,
                  "--decision", "keep_longterm",
                  "--confirmation-id", challenge["confirmation_id"],
-                 "--confirmation-secret", secret,
+                 f"--confirmation-secret={secret}",
                  "--activation", json.dumps({"actions": ["materials.audit"]})]) == 0
     result = json.loads(capsys.readouterr().out)
     assert result["permanent"] is True
