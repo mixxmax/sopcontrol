@@ -183,12 +183,16 @@ def decide_action_with_rules(
     worktree_id: str = "",
     task_id: str = "",
     run_id: str = "",
+    host_proofs: dict[str, Any] | None = None,
 ) -> Any:
     """选择→评估统一入口：先选规则，再判动作，标识链一次贯穿。
 
     适用规则 ID 与选择证据标识写入 decision.rule_ids / selection_evidence，
     由 commit_action_result 落账，形成 selected→decision→evidence 同一标识链。
     冲突时返回 ask（needs_user），列出双方与下一步，不自行裁决。
+    host_proofs 为 None 时保持旧行为（宿主未参与证明通道）；
+    一旦宿主参与（传入 dict，哪怕空 dict），被选中的 host_check 规则必须有
+    对应证明（键为 rule_id），缺失即 ask——宿主检查无证明不得静默放行。
     """
     from .action_plane import build_envelope, evaluate_action
 
@@ -217,6 +221,25 @@ def decide_action_with_rules(
     decision = evaluate_action(
         envelope, gate_status=gate_status, session_intent=session_intent,
         bound_executor=bound_executor, tool_input=tool_input or {})
+    if host_proofs is not None and decision.decision in ("allow", "observe"):
+        # 宿主参与证明通道：host_check 规则无证明不得静默放行（P1 消费者门）。
+        missing = [s.rule_id for s in selection.selected
+                   if s.effect == "host_check" and not host_proofs.get(s.rule_id)]
+        if missing:
+            from .action_model import ActionDecision
+
+            return ActionDecision(
+                decision="ask",
+                reason=(f"宿主检查 {', '.join(missing)} 缺少执行证明："
+                        f"规则已选中但宿主未提供对应证明，不得静默放行。"
+                        f"下一步: 宿主在 host_proofs 中按 rule_id 提交证明后重试"),
+                rule_ids=list(decision.rule_ids) + [
+                    rid for rid in missing if rid not in decision.rule_ids],
+                surface=envelope.surface,
+                operation=envelope.operation,
+                envelope=envelope,
+                selection_evidence=selection.evidence_id,
+            )
     if not rules:
         # Empty/failed registry is the pre-selector compatibility path: do not
         # manufacture a selection evidence ID for a rule set that was not run.
