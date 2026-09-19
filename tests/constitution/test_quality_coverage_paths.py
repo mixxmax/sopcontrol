@@ -23,10 +23,17 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def _init_with_rule(work: Path, *, source_ref: str = "docs/sop.md") -> None:
+    from sopcontrol.confirmation import change_digest, request_confirmation
+    from sopcontrol.learning import read_learning_confirmation_secret
+
     assert main(["init", str(work)]) == 0
     docs = work / "docs"
     docs.mkdir(exist_ok=True)
     (docs / "sop.md").write_text("变更必须经 demo_gate。\n", encoding="utf-8")
+    _rec = request_confirmation(work, kind="rule-accept", subject_id="COV-001",
+                                digest=change_digest("COV-001", "变更必须经 demo_gate"),
+                                purpose="test")
+    _sec = read_learning_confirmation_secret(work, _rec["confirmation_id"])
     assert main([
         "rule", "add", str(work),
         "--id", "COV-001",
@@ -34,6 +41,8 @@ def _init_with_rule(work: Path, *, source_ref: str = "docs/sop.md") -> None:
         "--status", "accepted",
         "--source-ref", source_ref,
         "--consumer-marker", "demo_gate",
+        "--confirmation-id", _rec["confirmation_id"],
+        f"--confirmation-secret={_sec}",
     ]) == 0
 
 

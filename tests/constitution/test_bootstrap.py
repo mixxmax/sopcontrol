@@ -70,8 +70,21 @@ def _managed(tmp_path):
         "rule", "add", str(work), "--id", "PUSH-001",
         "--statement", "推送前必须经过网关",
         "--source-ref", "docs/tracker-sop.md", "--status", "accepted",
-    ]) == 0
+    ] + _accepted_flags(work, "PUSH-001", "推送前必须经过网关")) == 0
     return work
+
+
+def _accepted_flags(work, rule_id: str, statement: str) -> list[str]:
+    """accepted 写入必须附可信确认（测试内走统一原语）。"""
+    from sopcontrol.confirmation import change_digest, request_confirmation
+    from sopcontrol.learning import read_learning_confirmation_secret
+
+    rec = request_confirmation(work, kind="rule-accept", subject_id=rule_id,
+                               digest=change_digest(rule_id, statement),
+                               purpose="test")
+    secret = read_learning_confirmation_secret(work, rec["confirmation_id"])
+    return ["--confirmation-id", rec["confirmation_id"],
+            f"--confirmation-secret={secret}"]
 
 
 # ---------- 7.3 阶梯：该升就升 ----------
@@ -101,7 +114,7 @@ def test_ladder_climbs_as_mechanisms_appear(tmp_path):
         "--statement", "部署前必须确认",
         "--source-ref", "README.md",
         "--status", "accepted",
-    ]) == 0
+    ] + _accepted_flags(work, "SHIP-001", "部署前必须确认")) == 0
     assert assess_maturity(work).level == "L1"          # 有生效规则 → 秩序1
 
     assert main(["test-command", str(work), "--set", "pytest -q"]) == 0
@@ -122,7 +135,7 @@ def test_l3_needs_both_interceptor_and_guard(tmp_path):
         "rule", "add", str(work), "--id", "SHIP-001",
         "--statement", "部署前必须确认", "--source-ref", "README.md",
         "--status", "accepted",
-    ])
+    ] + _accepted_flags(work, "SHIP-001", "部署前必须确认"))
     (work / ".git" / "hooks").mkdir(parents=True)
     (work / ".git" / "hooks" / "pre-push").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
 
@@ -135,7 +148,7 @@ def test_l3_needs_both_interceptor_and_guard(tmp_path):
         "rule", "add", str(work), "--id", "SHIP-002",
         "--statement", "推送必须经过终点门", "--source-ref", "README.md",
         "--status", "accepted", "--guard-id", GUARD_PUSH_GATE,
-    ])
+    ] + _accepted_flags(work, "SHIP-002", "推送必须经过终点门"))
     assert assess_maturity(work).level == "L3"
 
 
@@ -156,7 +169,7 @@ def test_skipped_rung_suspends_level(tmp_path):
         "rule", "add", str(work), "--id", "SHIP-001",
         "--statement", "部署前必须确认", "--source-ref", "docs/sop.md",
         "--status", "accepted",
-    ])
+    ] + _accepted_flags(work, "SHIP-001", "部署前必须确认"))
     assert main([
         "rule", "attest", "SHIP-001", str(work),
         "--bypass-note", "可手改 yaml 绕过；由 pre-push 账本校验覆盖",

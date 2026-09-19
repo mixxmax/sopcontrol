@@ -102,16 +102,42 @@ def test_plaintext_secret_and_wide_perms_rejected(tmp_path):
                              secret_file=str(loose))
 
 
-def test_rule_add_without_confirmation_marks_claimed(tmp_path, capsys, monkeypatch):
+def test_rule_add_without_confirmation_refused_zero_write(tmp_path, capsys, monkeypatch):
+    """P0-1：无确认凭据的 accepted 写入必须拒绝，且零写入（原子性）。"""
+    from sopcontrol.registry import Registry
+
     work = tmp_path / "p"
     work.mkdir()
     assert main(["init", str(work)]) == 0
     capsys.readouterr()
     monkeypatch.chdir(work)
     assert main(["rule", "add", "--id", "C3-1", "--statement", "审计不扩范围",
-                 "--status", "accepted", "--source-ref", "s"]) == 0
-    out = capsys.readouterr().out
-    assert "authority: claimed" in out and "UNPROVEN" in out
+                 "--status", "accepted", "--source-ref", "s"]) == 2
+    assert "确认凭据" in capsys.readouterr().err
+    rules = Registry(work / ".sopcontrol" / "rules" / "registry.yaml").load()
+    assert [r.rule_id for r in rules] == []
+
+
+def test_rule_add_with_bad_confirmation_zero_write(tmp_path, capsys, monkeypatch):
+    """P0-1：错误凭据同样零写入（先验后写，无需回滚）。"""
+    from sopcontrol.registry import Registry
+
+    work = tmp_path / "p"
+    work.mkdir()
+    assert main(["init", str(work)]) == 0
+    capsys.readouterr()
+    monkeypatch.chdir(work)
+    digest = change_digest("C3-9", "审计不扩范围")
+    assert main(["confirm", "request", "--kind", "rule-accept",
+                 "--subject", "C3-9", "--digest", digest,
+                 "--purpose", "t"]) == 0
+    capsys.readouterr()
+    assert main(["rule", "add", "--id", "C3-9", "--statement", "审计不扩范围",
+                 "--status", "accepted", "--source-ref", "s",
+                 "--confirmation-id", "lconf-deadbeef",
+                 "--secret-file", str(work / "s.key")]) == 2
+    rules = Registry(work / ".sopcontrol" / "rules" / "registry.yaml").load()
+    assert [r.rule_id for r in rules] == []
 
 
 def test_rule_add_with_confirmation_consumes(tmp_path, capsys, monkeypatch):
@@ -125,7 +151,7 @@ def test_rule_add_with_confirmation_consumes(tmp_path, capsys, monkeypatch):
                  "--subject", "C3-2", "--digest", digest,
                  "--purpose", "t"]) == 0
     out = capsys.readouterr().out
-    req = json.loads(out.split("\n警告:")[0] if "\n警告:" in out else out)
+    req = json.loads(out.split("\n下一步:")[0] if "\n下一步:" in out else out)
     assert "secret_one_time" not in req
     sf = _secret(work, req["confirmation_id"], "s.key")
     assert main(["rule", "add", "--id", "C3-2", "--statement", "审计不扩范围",
@@ -148,3 +174,29 @@ def test_maintainer_token_path_recorded(tmp_path, monkeypatch):
                                     secret_file=str(sf))
     assert approval["approved_via"] == "maintainer-token"
     assert approval["authority"] == "claimed"
+
+
+def test_rule_accept_cli_requires_confirmation(tmp_path, capsys, monkeypatch):
+    """P0-1：rule accept 同门——无凭据拒绝且不迁移，有凭据才接受。"""
+    from sopcontrol.learning import read_learning_confirmation_secret
+    from sopcontrol.registry import Registry
+
+    work = tmp_path / "p"
+    work.mkdir()
+    assert main(["init", str(work)]) == 0
+    capsys.readouterr()
+    monkeypatch.chdir(work)
+    assert main(["rule", "add", "--id", "C3-A", "--statement", "审计不扩范围",
+                 "--source-ref", "s"]) == 0
+    capsys.readouterr()
+    assert main(["rule", "accept", "C3-A"]) == 2
+    reg = Registry(work / ".sopcontrol" / "rules" / "registry.yaml")
+    assert reg.load()[0].status.value == "proposed"
+    digest = change_digest("C3-A", "审计不扩范围")
+    rec = request_confirmation(work, kind="rule-accept", subject_id="C3-A",
+                               digest=digest, purpose="t")
+    secret = read_learning_confirmation_secret(work, rec["confirmation_id"])
+    assert main(["rule", "accept", "C3-A",
+                 "--confirmation-id", rec["confirmation_id"],
+                 f"--confirmation-secret={secret}"]) == 0
+    assert reg.load()[0].status.value == "accepted"

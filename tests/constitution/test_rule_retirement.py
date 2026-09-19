@@ -29,6 +29,19 @@ def _preview_id(output: str) -> str:
     return match.group(1)
 
 
+def _accepted_flags(work, rule_id: str, statement: str) -> list[str]:
+    """accepted 写入必须附可信确认（测试内走统一原语）。"""
+    from sopcontrol.confirmation import change_digest, request_confirmation
+    from sopcontrol.learning import read_learning_confirmation_secret
+
+    rec = request_confirmation(work, kind="rule-accept", subject_id=rule_id,
+                               digest=change_digest(rule_id, statement),
+                               purpose="test")
+    secret = read_learning_confirmation_secret(work, rec["confirmation_id"])
+    return ["--confirmation-id", rec["confirmation_id"],
+            f"--confirmation-secret={secret}"]
+
+
 def _add_replacement(work, *, rule_id="DEPLOY-NEW"):
     assert main([
         "rule", "add", str(work),
@@ -39,7 +52,7 @@ def _add_replacement(work, *, rule_id="DEPLOY-NEW"):
         "--scope", "ci.deploy",
         "--source-ref", "docs/sop.md",
         "--consumer-marker", "deploy_gate",
-    ]) == 0
+    ] + _accepted_flags(work, rule_id, "部署必须经过新的 deploy_gate")) == 0
 
 
 def test_deprecate_requires_matching_preview_and_updates_projection(tmp_path, capsys):
@@ -475,7 +488,7 @@ def test_supersede_rejects_third_party_conflict_before_accepting_replacement(tmp
             "--scope", "ci.deploy",
             "--source-ref", "docs/runbook.md",
             "--consumer-marker", "deploy_gate",
-        ]) == 0
+        ] + _accepted_flags(work, rule_id, f"{rule_id} 部署策略")) == 0
     capsys.readouterr()
 
     command = [
@@ -758,7 +771,7 @@ def test_retired_rule_no_longer_blocks_opposite_replacement_rule(tmp_path, capsy
         "--scope", "ci.deploy",
         "--source-ref", "docs/runbook.md",
         "--consumer-marker", "deploy_gate",
-    ]) == 0
+    ] + _accepted_flags(work, "DEPLOY-OPPOSITE", "部署不得再经过旧 deploy_gate")) == 0
     assert Registry(work / ".sopcontrol/rules/registry.yaml").get(
         "DEPLOY-OPPOSITE"
     ).status == RuleStatus.accepted

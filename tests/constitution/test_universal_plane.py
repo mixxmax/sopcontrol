@@ -34,6 +34,19 @@ def _git_init(path: Path) -> None:
     )
 
 
+def _accepted_flags(work, rule_id: str, statement: str) -> list[str]:
+    """accepted 写入必须附可信确认（测试内走统一原语）。"""
+    from sopcontrol.confirmation import change_digest, request_confirmation
+    from sopcontrol.learning import read_learning_confirmation_secret
+
+    rec = request_confirmation(work, kind="rule-accept", subject_id=rule_id,
+                               digest=change_digest(rule_id, statement),
+                               purpose="test")
+    secret = read_learning_confirmation_secret(work, rec["confirmation_id"])
+    return ["--confirmation-id", rec["confirmation_id"],
+            f"--confirmation-secret={secret}"]
+
+
 def test_discovery_defers_over_1000_md_without_raising(tmp_path):
     work = tmp_path / "big"
     work.mkdir()
@@ -116,7 +129,7 @@ def test_accepted_source_unreadable_fails_enforcement(tmp_path):
         "--status", "accepted",
         "--source-ref", "docs/sop.md",
         "--consumer-marker", "gate_fn",
-    ]) == 0
+    ] + _accepted_flags(work, "SRC-001", "必须经 gate_fn")) == 0
     (work / "docs" / "sop.md").unlink()
     report = run_enforcement(work, SENSORS, DETECTORS, persist=False)
     fails = [v for v in report.verdicts if v.status == "fail" and v.rule_id == "SRC-001"]
@@ -139,7 +152,7 @@ def test_accepted_consumer_removed_fails_or_gaps(tmp_path):
         "--status", "accepted",
         "--source-ref", "docs/sop.md",
         "--consumer-marker", "gate_fn",
-    ]) == 0
+    ] + _accepted_flags(work, "CON-001", "必须经 gate_fn")) == 0
     app.write_text("def other():\n    return 0\n", encoding="utf-8")
     report = run_enforcement(work, SENSORS, DETECTORS, persist=False)
     bad = [v for v in report.verdicts if v.rule_id == "CON-001" and v.status in {"gap", "fail"}]

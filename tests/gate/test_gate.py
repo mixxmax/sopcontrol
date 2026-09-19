@@ -55,6 +55,13 @@ def test_gate_does_not_miss_legacy_entry_after_500_code_files(tmp_path, capsys):
         encoding="utf-8",
     )
 
+    from sopcontrol.confirmation import change_digest, request_confirmation
+    from sopcontrol.learning import read_learning_confirmation_secret
+
+    _rec = request_confirmation(work, kind="rule-accept", subject_id="SCAN-001",
+                                digest=change_digest("SCAN-001", "发货必须经过 safe_entry"),
+                                purpose="test")
+    _sec = read_learning_confirmation_secret(work, _rec["confirmation_id"])
     assert main([
         "rule", "add", str(work),
         "--id", "SCAN-001",
@@ -63,6 +70,8 @@ def test_gate_does_not_miss_legacy_entry_after_500_code_files(tmp_path, capsys):
         "--source-ref", "docs/sop.md",
         "--consumer-marker", "safe_entry",
         "--legacy-marker", "legacy_entry",
+        "--confirmation-id", _rec["confirmation_id"],
+        f"--confirmation-secret={_sec}",
     ]) == 0
 
     assert main(["gate", str(work)]) == 1
