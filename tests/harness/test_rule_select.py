@@ -85,13 +85,13 @@ def test_conflict_must_vs_must_not_asks():
     b = _rule("B-MUSTNOT", modality=Modality.MUST_NOT,
               activation=ActivationSelector(actions=["audit"]),
               scope_paths=["docs/"])
-    sel = select_rules_for_action([a, b], {"action": "audit"})
+    sel = select_rules_for_action([a, b], {"action": "audit", "target": "docs/x.md"})
     assert len(sel.conflicts) == 1
     assert sel.conflicts[0]["rule_a"] == "A-MUST"
     assert "需用户决定" in sel.conflicts[0]["reason"]
     decision = decide_action_with_rules(
         [a, b], {"tool_name": "Read", "tool_input": {"file_path": "docs/x.md"}},
-        {"action": "audit"})
+        {"action": "audit", "target": "docs/x.md"})
     assert decision.decision == "ask"
     assert "A-MUST" in decision.rule_ids and "B-MUSTNOT" in decision.rule_ids
     assert decision.selection_evidence.startswith("sel-")
@@ -102,6 +102,38 @@ def test_no_conflict_when_scopes_disjoint():
     b = _rule("B", modality=Modality.MUST_NOT, scope_paths=["src/"])
     sel = select_rules_for_action([a, b], {})
     assert sel.conflicts == []
+
+
+def test_scoped_rule_out_of_scope_not_selected(tmp_path=None):
+    """P1-4：docs/ 规则遇 src/ 目标 → not_applicable（范围解释），不选中。"""
+    from sopcontrol.rule_select import select_rules_for_action as _sel
+
+    a = _rule("A", modality=Modality.MUST, scope_paths=["docs/"],
+              activation=ActivationSelector(actions=["audit"]))
+    sel = _sel([a], {"action": "audit", "target": "src/a.py"})
+    assert [s.rule_id for s in sel.selected] == []
+    assert any("不在规则范围" in i["reason"] for i in sel.not_applicable)
+
+
+def test_scoped_rule_unknown_target_unproven():
+    """P1-4：目标未知 → unproven，不伪装不适用也不选中。"""
+    from sopcontrol.rule_select import select_rules_for_action as _sel
+
+    a = _rule("A", modality=Modality.MUST, scope_paths=["docs/"],
+              activation=ActivationSelector(actions=["audit"]))
+    sel = _sel([a], {"action": "audit"})
+    assert [s.rule_id for s in sel.selected] == []
+    assert any(i["missing_field"] == "target" for i in sel.unproven)
+
+
+def test_scoped_rule_in_scope_selected():
+    """P1-4：范围内目标正常选中。"""
+    from sopcontrol.rule_select import select_rules_for_action as _sel
+
+    a = _rule("A", modality=Modality.MUST, scope_paths=["docs/"],
+              activation=ActivationSelector(actions=["audit"]))
+    sel = _sel([a], {"action": "audit", "target": "docs/x.md"})
+    assert [s.rule_id for s in sel.selected] == ["A"]
 
 
 def test_identifier_chain_select_decide_evidence(tmp_path, monkeypatch):

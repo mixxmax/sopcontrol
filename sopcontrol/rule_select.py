@@ -91,6 +91,42 @@ def _selection_evidence(selected_ids: list[str], context: dict[str, str],
     })[:16]
 
 
+def _scope_check(rule: Rule, context: dict[str, str]
+                 ) -> tuple[str, dict[str, str] | None]:
+    """scope_paths 参与选择（P1）：空 scope 不限；有 scope 时：
+    - 目标未知/不可判定 → unproven（不选中，不伪装）；
+    - 目标在范围外 → not_applicable（范围解释）；
+    - 目标在范围内 → ok。
+    """
+    from .scope import path_in_scope
+
+    scope = list(getattr(rule, "scope_paths", None) or [])
+    if not scope:
+        return "ok", None
+    target = str(context.get("target") or context.get("path") or "")
+    if not target:
+        return ("unproven", {
+            "rule_id": rule.rule_id, "missing_field": "target",
+            "reason": (f"规则 {rule.rule_id} 未激活：无法证明目标路径，"
+                       f"规则范围要求 {scope}。"),
+            "rule_class": rule.rule_class})
+    try:
+        inside = path_in_scope(scope, target)
+    except ValueError:
+        return ("unproven", {
+            "rule_id": rule.rule_id, "missing_field": "target",
+            "reason": (f"规则 {rule.rule_id} 未激活：目标路径无法判定归属 "
+                       f"({target})。"),
+            "rule_class": rule.rule_class})
+    if not inside:
+        return ("not_applicable", {
+            "rule_id": rule.rule_id,
+            "reason": (f"规则 {rule.rule_id} 存在且 {rule.status.value}；"
+                       f"本次未选择，因为目标 {target} 不在规则范围 {scope} 内。"),
+            "rule_class": rule.rule_class})
+    return "ok", None
+
+
 def select_rules_for_action(
     rules: list[Rule], context: dict[str, str], *,
     rules_digest: str = "",
@@ -136,9 +172,15 @@ def select_rules_for_action(
             not_applicable.append({"rule_id": rule.rule_id, "reason": reason,
                                    "rule_class": rule.rule_class})
         else:
-            selected.append(SelectedRule(
-                rule_id=rule.rule_id, effect=rule_effect_kind(rule),
-                rule_class=rule.rule_class))
+            verdict, item = _scope_check(rule, context)
+            if verdict == "unproven" and item is not None:
+                unproven.append(item)
+            elif verdict == "not_applicable" and item is not None:
+                not_applicable.append(item)
+            else:
+                selected.append(SelectedRule(
+                    rule_id=rule.rule_id, effect=rule_effect_kind(rule),
+                    rule_class=rule.rule_class))
     unwired = [s.rule_id for s in selected if s.effect == EFFECT_UNWIRED]
     conflicts = _find_conflicts(rules, [s.rule_id for s in selected])
     evidence_id = _selection_evidence([s.rule_id for s in selected], context,
