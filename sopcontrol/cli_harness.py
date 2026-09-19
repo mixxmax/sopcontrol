@@ -207,8 +207,8 @@ def cmd_harness_check(args) -> int:
     落 trace / Action Plane receipt 在这一层：决策函数是纯的（宪法测试守卫），
     写盘只能由调用方做。未知工具也必须留下事件，不得静默消失（Phase B）。
     """
-    from .action_plane import commit_action_result, evaluate_payload
-    from .harness import extract_claimed_model, gate_status_for_push
+    from .action_plane import commit_action_result
+    from .harness import decide_harness_action, extract_claimed_model, gate_status_for_push
     from .intent import load_session_intent
     from .trace import append_event
 
@@ -242,8 +242,9 @@ def cmd_harness_check(args) -> int:
             executor_unknown = True
             bound_executor = ""
 
-        action_decision = evaluate_payload(
+        action_decision = decide_harness_action(
             payload,
+            root=root,
             gate_status=gate_status,
             session_intent=session.intent,
             bound_executor=bound_executor or None,
@@ -283,13 +284,16 @@ def cmd_harness_check(args) -> int:
             pass
     from .capability_events import CapabilityEvent, append_capability_event
 
+    capability_detail = {"rule_ids": decision.rule_ids}
+    if action_decision is not None and action_decision.selection_evidence:
+        capability_detail["selection_evidence"] = action_decision.selection_evidence
     append_capability_event(
         root,
         CapabilityEvent(
             kind="guard.decision",
             subject=tool,
             outcome=decision.permissionDecision,
-            detail={"rule_ids": decision.rule_ids},
+            detail=capability_detail,
         ),
     )
     # 无感生长：拒绝即记账，不跑全仓 audit
@@ -472,4 +476,3 @@ def cmd_wrap(args) -> int:
     if gate_code != 0:
         print("[sopctl wrap] 事后门未过：变更未获信任，git 推送将被 pre-push 钩子与 CI 阻断", file=sys.stderr)
     return code if code != 0 else gate_code
-

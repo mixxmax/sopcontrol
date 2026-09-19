@@ -179,6 +179,10 @@ def decide_action_with_rules(
     tool_input: dict[str, Any] | None = None,
     harness: str = "",
     rules_digest: str = "",
+    project_id: str = "",
+    worktree_id: str = "",
+    task_id: str = "",
+    run_id: str = "",
 ) -> Any:
     """选择→评估统一入口：先选规则，再判动作，标识链一次贯穿。
 
@@ -189,7 +193,14 @@ def decide_action_with_rules(
     from .action_plane import build_envelope, evaluate_action
 
     selection = select_rules_for_action(rules, context, rules_digest=rules_digest)
-    envelope = build_envelope(payload, harness=harness)
+    envelope = build_envelope(
+        payload,
+        harness=harness,
+        project_id=project_id,
+        worktree_id=worktree_id,
+        task_id=task_id,
+        run_id=run_id,
+    )
     if selection.conflicts:
         from .action_model import ActionDecision
 
@@ -206,8 +217,29 @@ def decide_action_with_rules(
     decision = evaluate_action(
         envelope, gate_status=gate_status, session_intent=session_intent,
         bound_executor=bound_executor, tool_input=tool_input or {})
+    if not rules:
+        # Empty/failed registry is the pre-selector compatibility path: do not
+        # manufacture a selection evidence ID for a rule set that was not run.
+        return decision
     selected_ids = [s.rule_id for s in selection.selected]
     decision.rule_ids = list(decision.rule_ids) + [
         rid for rid in selected_ids if rid not in decision.rule_ids]
     decision.selection_evidence = selection.evidence_id
+    selection_notes: list[str] = []
+    if selection.selected:
+        selected = ", ".join(
+            f"{item.rule_id}({item.effect})" for item in selection.selected
+        )
+        selection_notes.append(f"已选择规则 {selected}")
+    if selection.not_applicable:
+        selection_notes.extend(item["reason"] for item in selection.not_applicable)
+    if selection.unproven:
+        selection_notes.extend(item["reason"] for item in selection.unproven)
+    if selection.unwired:
+        selection_notes.append(
+            "规则 " + ", ".join(selection.unwired)
+            + " 已选择但未接线，仅 observe/unwired，不改变内置 admission"
+        )
+    if selection_notes:
+        decision.reason += "；规则选择：" + "；".join(selection_notes)
     return decision

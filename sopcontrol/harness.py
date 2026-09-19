@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import re
 import shlex
-from pathlib import PurePosixPath
-from typing import Literal, Optional
+from pathlib import Path, PurePosixPath
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -160,6 +160,178 @@ def extract_claimed_model(payload: dict) -> str:
     return ""
 
 
+def _first_text(*values: object) -> str:
+    """Return the first scalar, non-empty value without inventing context."""
+    for value in values:
+        if isinstance(value, (str, int, float)) and str(value).strip():
+            return str(value).strip()
+    return ""
+
+
+def build_harness_selection_context(
+    payload: dict,
+    *,
+    root: Path | None,
+    operation: str,
+    target: str,
+    task_id: str,
+) -> dict[str, str]:
+    """Build one stable selector context for every runtime harness admission.
+
+    The selector context is deliberately derived from the incoming payload and
+    short project metadata only.  It contains no timestamps, random IDs, or
+    absolute paths, so the selection evidence remains reproducible for the same
+    admission.  Missing dimensions stay empty; the selector then reports them
+    as ``unproven`` instead of treating them as a match.
+    """
+    tool_input = payload.get("tool_input")
+    tool_input = tool_input if isinstance(tool_input, dict) else {}
+    supplied = payload.get("selection_context")
+    supplied = supplied if isinstance(supplied, dict) else {}
+    project_name = root.name if root is not None else ""
+
+    project = _first_text(
+        payload.get("project"), supplied.get("project"),
+        payload.get("project_id"), supplied.get("project_id"), project_name,
+    )
+    product = _first_text(
+        payload.get("product"), supplied.get("product"),
+        payload.get("project"), supplied.get("project"), project_name,
+    )
+    action = _first_text(
+        payload.get("action"), supplied.get("action"),
+        payload.get("operation"), supplied.get("operation"), operation,
+    )
+    selected_target = _first_text(
+        payload.get("target"), payload.get("path"),
+        supplied.get("target"), supplied.get("path"),
+        tool_input.get("target"), tool_input.get("path"),
+        tool_input.get("file_path"), tool_input.get("filePath"),
+        tool_input.get("url"), target,
+    )
+    selected_task = _first_text(
+        payload.get("task_id"), supplied.get("task_id"),
+        tool_input.get("task_id"), task_id,
+    )
+    return {
+        "product": product,
+        "project": project,
+        "action": action,
+        "operation": _first_text(
+            payload.get("operation"), supplied.get("operation"), operation,
+        ),
+        "phase": _first_text(
+            payload.get("phase"), payload.get("sop_phase"),
+            supplied.get("phase"), supplied.get("sop_phase"),
+            tool_input.get("phase"), tool_input.get("sop_phase"),
+        ),
+        "target": selected_target,
+        "path": selected_target,
+        "task_id": selected_task,
+        "artifact_kind": _first_text(
+            payload.get("artifact_kind"), supplied.get("artifact_kind"),
+            tool_input.get("artifact_kind"),
+        ),
+        "actor": _first_text(
+            payload.get("actor"), supplied.get("actor"),
+        ),
+    }
+
+
+def _load_effective_harness_rules(root: Path | None) -> tuple[list[Any], str]:
+    """Load the fixed-time effective rule set, degrading to no selection on error.
+
+    A malformed or absent registry must not create a false claim that a rule
+    ran.  The caller therefore receives an empty set and the legacy Action
+    Plane decision, while a healthy non-empty registry gets one content digest
+    for the selection evidence chain.
+    """
+    if root is None:
+        return [], ""
+    try:
+        from .model import content_hash, effective_rules, utcnow
+        from .registry import Registry
+
+        rules = effective_rules(
+            Registry(root / ".sopcontrol" / "rules" / "registry.yaml").load(),
+            at=utcnow(),
+        )
+        if not rules:
+            return [], ""
+        digest = content_hash({
+            "rules": [
+                rule.model_dump(mode="json")
+                for rule in sorted(rules, key=lambda item: item.rule_id)
+            ],
+        })
+        return rules, digest
+    except Exception:
+        # Admission keeps the existing Action Plane risk semantics.  In
+        # particular, it must not attach selection_evidence to a failed load.
+        return [], ""
+
+
+def decide_harness_action(
+    payload: dict,
+    *,
+    root: Path | str | None = None,
+    gate_status: Optional[str] = None,
+    session_intent: Optional[str] = None,
+    bound_executor: Optional[str] = None,
+    claimed_model: Optional[str] = None,
+    harness: str = "",
+) -> Any:
+    """Run the real harness admission through the unified rule selector.
+
+    ``root=None`` keeps the compatibility adapter pure and preserves the
+    no-registry behavior.  The CLI admission supplies the project root, which
+    enables the effective registry and the same selector context used by this
+    adapter.
+    """
+    from .action_plane import build_envelope
+    from .rule_select import decide_action_with_rules
+
+    project_root = Path(root).resolve() if root is not None else None
+    decision_payload = dict(payload)
+    if claimed_model is not None and claimed_model.strip():
+        decision_payload["model"] = claimed_model.strip()
+    tool_input = decision_payload.get("tool_input")
+    tool_input = tool_input if isinstance(tool_input, dict) else {}
+    envelope = build_envelope(decision_payload, harness=harness)
+    task_id = _first_text(
+        decision_payload.get("task_id"), tool_input.get("task_id"),
+    )
+    project_id = _first_text(
+        decision_payload.get("project_id"), decision_payload.get("project"),
+        project_root.name if project_root is not None else "",
+    )
+    worktree_id = _first_text(decision_payload.get("worktree_id"))
+    run_id = _first_text(decision_payload.get("run_id"))
+    context = build_harness_selection_context(
+        decision_payload,
+        root=project_root,
+        operation=envelope.operation,
+        target=envelope.target,
+        task_id=task_id,
+    )
+    rules, rules_digest = _load_effective_harness_rules(project_root)
+    return decide_action_with_rules(
+        rules,
+        decision_payload,
+        context,
+        gate_status=gate_status,
+        session_intent=session_intent,
+        bound_executor=bound_executor,
+        tool_input=tool_input,
+        harness=harness,
+        rules_digest=rules_digest,
+        project_id=project_id,
+        worktree_id=worktree_id,
+        task_id=task_id,
+        run_id=run_id,
+    )
+
+
 def check_tool_call(
     payload: dict,
     gate_status: Optional[str] = None,
@@ -167,22 +339,26 @@ def check_tool_call(
     *,
     bound_executor: Optional[str] = None,
     claimed_model: Optional[str] = None,
+    project_root: Path | str | None = None,
+    harness: str = "",
 ) -> HookDecision:
     """Compatibility wrapper over Action Plane (Phase B).
 
-    Still a pure function (no I/O). Claude/OpenCode protocol only speaks
-    allow/deny/ask — ActionDecision.observe maps to allow for the wire format
-    while commit_action_result (CLI layer) records the observe event.
+    It remains pure when ``project_root`` is omitted. Claude/OpenCode protocol
+    only speaks allow/deny/ask — ActionDecision.observe maps to allow for the
+    wire format while commit_action_result (CLI layer) records the observe
+    event. Supplying a project root is the explicit runtime-admission path and
+    loads the effective registry through decide_harness_action.
     """
-    from .action_plane import evaluate_payload
-
     intent = session_intent or str(payload.get("session_intent") or "")
-    decision = evaluate_payload(
+    decision = decide_harness_action(
         payload,
+        root=project_root,
         gate_status=gate_status,
         session_intent=intent,
         bound_executor=bound_executor,
         claimed_model=claimed_model,
+        harness=harness,
     )
     # Protocol mapping: observe is visible-but-not-blocking on the wire.
     if decision.decision == "observe":
