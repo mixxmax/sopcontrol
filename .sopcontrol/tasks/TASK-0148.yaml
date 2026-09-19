@@ -1,0 +1,93 @@
+task_id: TASK-0148
+contract:
+  objective: WP-A1 平台证据分级：拆supported/declared与探针verified；无证据unknown；harness逐格支持等级；compat不伪verified；README徽章止血与双语一致
+  allowed_writes:
+  - sopcontrol/product.py
+  - sopcontrol/cli_product.py
+  - tests/harness/test_product_phase_f.py
+  - README.md
+  - README_ZH-CN.md
+  required_rules:
+  - CTRL-001
+  - SELF-001
+  - SELF-002
+  required_fields:
+  - wp_a1_report
+  max_repairs: 1
+  repairs_fingerprint: null
+  write_granularity: file
+  strict_schema: true
+  capability_note: 当前模型未声明（已有画像 vertical-backbone 不适用） tier=unknown：模型能力未知：按保守边界执行，文件级写入
+    + 强制 MUST 字段清单；行为事件触发 weak 上限（近期任务迁移被拒）
+  model_identity: ''
+  control_profile_id: ''
+  control_profile_revision: 0
+  effective_plan_digest: ''
+  goal_digest: ''
+  execution_plan_digest: ''
+status: failed_unverified
+repair_count: 2
+changed_paths:
+- sopcontrol/product.py
+- sopcontrol/cli_product.py
+- tests/harness/test_product_phase_f.py
+- README.md
+- README_ZH-CN.md
+submit_input_digest: in-ece94982519f6100bcfed40c1d2391bb
+revision: 8
+created_at: '2026-09-18T15:36:07.710085Z'
+updated_at: '2026-09-18T18:33:09.101618Z'
+history:
+- at: '2026-09-18T15:36:16.501749Z'
+  action: accept
+  from_status: contract_proposed
+  to_status: executing
+  allowed: true
+  reason: 契约完整：目标、写入范围与可验证完成定义齐备
+  detail:
+    next_action: 执行变更后 task submit 提交改动路径
+- at: '2026-09-18T15:41:27.413011Z'
+  action: submit
+  from_status: executing
+  to_status: verification_pending
+  allowed: true
+  reason: 改动 5 个路径，全部在写入范围内；MUST 字段齐备 [wp_a1_report]
+  detail:
+    next_action: 运行 task verify 由控制器独立审计
+- at: '2026-09-18T16:54:58.466672Z'
+  action: verify
+  from_status: verification_pending
+  to_status: repair_required
+  allowed: true
+  reason: '第 1 轮修复：测试未通过（E4 实测）：.venv/bin/python -m pytest -q 退出码 -1；末行: 命令超过 900s
+    未结束'
+  detail:
+    next_action: 修复测试失败后 task submit 重新提交（完成门不接受红着的测试）
+- at: '2026-09-18T18:01:27.008259Z'
+  action: verify
+  from_status: repair_required
+  to_status: null
+  allowed: false
+  reason: 任务处于 repair_required，无可验证的提交
+  detail:
+    next_action: sopctl task show 查看当前状态与契约
+- at: '2026-09-18T18:12:58.684504Z'
+  action: submit
+  from_status: repair_required
+  to_status: verification_pending
+  allowed: true
+  reason: 改动 5 个路径，全部在写入范围内；MUST 字段齐备 [wp_a1_report]
+  detail:
+    next_action: 运行 task verify 由控制器独立审计
+- at: '2026-09-18T18:28:53.714849Z'
+  action: verify
+  from_status: verification_pending
+  to_status: failed_unverified
+  allowed: true
+  reason: '测试未通过（E4 实测）：.venv/bin/python -m pytest -q 退出码 -1；末行: 命令超过 900s 未结束；修复预算耗尽（1
+    轮未收敛）——转终态（14.1 场景11 熔断）'
+  detail:
+    next_action: 人工介入分析测试失败根因后另开任务
+resolution_of: []
+superseded_by_task: TASK-0154
+blocked_reason_code: budget

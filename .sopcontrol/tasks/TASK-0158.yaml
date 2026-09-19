@@ -1,0 +1,79 @@
+task_id: TASK-0158
+contract:
+  objective: CandidateStore并发锁：upsert/triage load-modify-save加文件锁，原子化防丢失更新
+  allowed_writes:
+  - sopcontrol/candidate.py
+  - tests/dynamic/test_dynamic_sop.py
+  required_rules:
+  - CTRL-001
+  - SELF-001
+  - SELF-002
+  required_fields:
+  - candlock_report
+  max_repairs: 1
+  repairs_fingerprint: null
+  write_granularity: file
+  strict_schema: true
+  capability_note: 当前模型未声明（已有画像 vertical-backbone 不适用） tier=unknown：模型能力未知：按保守边界执行，文件级写入
+    + 强制 MUST 字段清单；行为事件触发 weak 上限（近期任务迁移被拒）
+  model_identity: ''
+  control_profile_id: ''
+  control_profile_revision: 0
+  effective_plan_digest: ''
+  goal_digest: ''
+  execution_plan_digest: ''
+status: failed_unverified
+repair_count: 2
+changed_paths:
+- sopcontrol/candidate.py
+- tests/dynamic/test_dynamic_sop.py
+submit_input_digest: in-81048b8986e7d9fed5feebdfd81431cf
+revision: 7
+created_at: '2026-09-19T05:57:25.535496Z'
+updated_at: '2026-09-19T09:05:30.511152Z'
+history:
+- at: '2026-09-19T05:57:33.532018Z'
+  action: accept
+  from_status: contract_proposed
+  to_status: executing
+  allowed: true
+  reason: 契约完整：目标、写入范围与可验证完成定义齐备
+  detail:
+    next_action: 执行变更后 task submit 提交改动路径
+- at: '2026-09-19T06:01:59.846292Z'
+  action: submit
+  from_status: executing
+  to_status: verification_pending
+  allowed: true
+  reason: 改动 1 个路径，全部在写入范围内；MUST 字段齐备 [candlock_report]
+  detail:
+    next_action: 运行 task verify 由控制器独立审计
+- at: '2026-09-19T08:05:45.043677Z'
+  action: verify
+  from_status: verification_pending
+  to_status: repair_required
+  allowed: true
+  reason: '第 1 轮修复：测试未通过（E4 实测）：.venv/bin/python -m pytest -q 退出码 -1；末行: 命令超过 900s
+    未结束'
+  detail:
+    next_action: 修复测试失败后 task submit 重新提交（完成门不接受红着的测试）
+- at: '2026-09-19T08:07:11.033690Z'
+  action: submit
+  from_status: repair_required
+  to_status: verification_pending
+  allowed: true
+  reason: 改动 2 个路径，全部在写入范围内；MUST 字段齐备 [candlock_report]
+  detail:
+    next_action: 运行 task verify 由控制器独立审计
+- at: '2026-09-19T08:54:03.307555Z'
+  action: verify
+  from_status: verification_pending
+  to_status: failed_unverified
+  allowed: true
+  reason: '测试未通过（E4 实测）：.venv/bin/python -m pytest -q 退出码 -1；末行: 命令超过 900s 未结束；修复预算耗尽（1
+    轮未收敛）——转终态（14.1 场景11 熔断）'
+  detail:
+    next_action: 人工介入分析测试失败根因后另开任务
+resolution_of: []
+superseded_by_task: TASK-0162
+blocked_reason_code: budget
