@@ -239,8 +239,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("path", nargs="?", default=".")
     p.set_defaults(func=cmd_rule_list)
 
-    p = rule_sub.add_parser("accept", help="接受一条规则（生命周期迁移）")
+    p = rule_sub.add_parser("accept", help="接受一条规则（生命周期迁移，需可信确认凭据）")
     p.add_argument("rule_id")
+    p.add_argument("--confirmation-id", default="", help="可信确认凭据 ID（必填）")
+    p.add_argument("--confirmation-secret", default="",
+                   help="显式 secret（必填显式传入；不自动读 handoff）")
+    p.add_argument("--secret-file", default="",
+                   help="secret 文件（0600；与 --confirmation-secret 二选一）")
     p.add_argument("path", nargs="?", default=".")
     p.set_defaults(func=cmd_rule_accept)
 
