@@ -13,6 +13,7 @@ Registry、`dynamic_sop.select_rules`、任务契约、`control_result`、
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -171,6 +172,55 @@ def _find_conflicts(rules: list[Rule], selected_ids: list[str]) -> list[dict[str
     return conflicts
 
 
+def _parse_time(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    try:
+        text = str(value or "")
+        dt = datetime.fromisoformat(text.replace("Z", "+00:00")) if text else None
+        return dt if dt is None or dt.tzinfo else (dt.replace(tzinfo=timezone.utc) if dt else None)
+    except ValueError:
+        return None
+
+
+def validate_host_proof(
+    proof: Any, *, rule_id: str, task_id: str = "", target: str = "",
+    input_digest: str = "", run_id: str = "", rules_digest: str = "",
+    now: datetime | None = None,
+) -> tuple[bool, str]:
+    """结构化宿主证明校验（纯函数）。全部硬项，缺一即无效：
+
+    - 必须是映射（任意字符串/标量一律无效——truthy 不算证明）；
+    - verdict 必须为 "pass"（fail/其他值不能当通过用）；
+    - proof_id 非空（单次消费的键）；
+    - expires_at 可解析、带时区、晚于 now；
+    - task_id/target/input_digest/run_id 必须与当前上下文一致；
+    - rules_digest 若调用方提供当前值，证明缺失或不一致即无效；
+    - producer 非空（记录可信来源；本地无 PKI，见模块 residual 说明）。
+    """
+    if not isinstance(proof, dict):
+        return False, "证明必须是结构化对象（标量 truthy 不算证明）"
+    if proof.get("verdict") != "pass":
+        return False, f"证明 verdict 不是 pass（{proof.get('verdict')!r}）：不能作为通过依据"
+    if not str(proof.get("proof_id") or "").strip():
+        return False, "证明缺少 proof_id（无法单次消费）"
+    exp = _parse_time(proof.get("expires_at"))
+    moment = now or datetime.now(timezone.utc)
+    if exp is None:
+        return False, "证明 expires_at 非法或无时区：无法证明有效期"
+    if moment >= exp:
+        return False, "证明已过期"
+    for field, expected in (("task_id", task_id), ("target", target),
+                            ("input_digest", input_digest), ("run_id", run_id)):
+        if expected and str(proof.get(field) or "") != expected:
+            return False, f"证明 {field} 与当前上下文不一致"
+    if rules_digest and str(proof.get("rules_digest") or "") != rules_digest:
+        return False, "证明 rules_digest 与当前规则版本不一致"
+    if not str(proof.get("producer") or "").strip():
+        return False, "证明缺少可信生产者标识"
+    return True, ""
+
+
 def decide_action_with_rules(
     rules: list[Rule], payload: dict[str, Any], context: dict[str, str], *,
     gate_status: str | None = None,
@@ -184,6 +234,8 @@ def decide_action_with_rules(
     task_id: str = "",
     run_id: str = "",
     host_proofs: dict[str, Any] | None = None,
+    rejected_proofs: dict[str, str] | None = None,
+    now: datetime | None = None,
 ) -> Any:
     """选择→评估统一入口：先选规则，再判动作，标识链一次贯穿。
 
@@ -193,6 +245,8 @@ def decide_action_with_rules(
     host_proofs 为 None 时保持旧行为（宿主未参与证明通道）；
     一旦宿主参与（传入 dict，哪怕空 dict），被选中的 host_check 规则必须有
     对应证明（键为 rule_id），缺失即 ask——宿主检查无证明不得静默放行。
+    rejected_proofs 为调用方（I/O 层）预结算的不合格证明（已消费/过期/非法），
+    同样逐条 ask 具名，不静默丢弃。
     """
     from .action_plane import build_envelope, evaluate_action
 
@@ -222,19 +276,44 @@ def decide_action_with_rules(
         envelope, gate_status=gate_status, session_intent=session_intent,
         bound_executor=bound_executor, tool_input=tool_input or {})
     if host_proofs is not None and decision.decision in ("allow", "observe"):
-        # 宿主参与证明通道：host_check 规则无证明不得静默放行（P1 消费者门）。
-        missing = [s.rule_id for s in selection.selected
-                   if s.effect == "host_check" and not host_proofs.get(s.rule_id)]
-        if missing:
+        # 宿主参与证明通道：host_check 规则无证明/证明无效不得静默放行。
+        # 绑定以调用方显式传入的 task_id/run_id 与 envelope 派生的 target/
+        # 指纹为准；调用方未提供维度即不校验该维度（由 harness 层全量提供）。
+        moment = now or datetime.now(timezone.utc)
+        bad: list[str] = []
+        rejected = rejected_proofs or {}
+        for s in selection.selected:
+            if s.effect != "host_check":
+                continue
+            if s.rule_id in rejected:
+                # 预结算的不合格证明（已消费/过期/非法）优先具名，不被缺证明遮蔽。
+                bad.append(f"{s.rule_id}（{rejected[s.rule_id]}）")
+                continue
+            proof = host_proofs.get(s.rule_id)
+            if proof is None:
+                bad.append(f"{s.rule_id}（缺证明）")
+                continue
+            ok, why = validate_host_proof(
+                proof, rule_id=s.rule_id,
+                task_id=task_id, target=envelope.target,
+                input_digest=envelope.input_fingerprint,
+                run_id=run_id, rules_digest=rules_digest, now=moment)
+            if not ok:
+                bad.append(f"{s.rule_id}（{why}）")
+        for rid, why in (rejected_proofs or {}).items():
+            if rid not in bad and f"{rid}（" not in " ".join(bad):
+                bad.append(f"{rid}（{why}）")
+        if bad:
             from .action_model import ActionDecision
 
             return ActionDecision(
                 decision="ask",
-                reason=(f"宿主检查 {', '.join(missing)} 缺少执行证明："
-                        f"规则已选中但宿主未提供对应证明，不得静默放行。"
-                        f"下一步: 宿主在 host_proofs 中按 rule_id 提交证明后重试"),
+                reason=(f"宿主检查缺少有效执行证明：{'; '.join(bad)}。"
+                        f"规则已选中但证明不合格，不得静默放行。"
+                        f"下一步: 宿主在 host_proofs 中按 rule_id 提交有效证明后重试"),
                 rule_ids=list(decision.rule_ids) + [
-                    rid for rid in missing if rid not in decision.rule_ids],
+                    s.rule_id for s in selection.selected
+                    if s.effect == "host_check" and s.rule_id not in decision.rule_ids],
                 surface=envelope.surface,
                 operation=envelope.operation,
                 envelope=envelope,

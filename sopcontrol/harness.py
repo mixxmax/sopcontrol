@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import re
 import shlex
+from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any, Literal, Optional
 
@@ -238,37 +239,114 @@ def build_harness_selection_context(
     }
 
 
-def _load_effective_harness_rules(root: Path | None) -> tuple[list[Any], str]:
-    """Load the fixed-time effective rule set, degrading to no selection on error.
+def _load_effective_harness_rules(root: Path | None) -> tuple[list[Any], str, str]:
+    """Load the fixed-time effective rule set.
 
-    A malformed or absent registry must not create a false claim that a rule
-    ran.  The caller therefore receives an empty set and the legacy Action
-    Plane decision, while a healthy non-empty registry gets one content digest
-    for the selection evidence chain.
+    Returns (rules, digest, status) with status in {"ok", "empty", "corrupt"}:
+    - "empty": 无注册表文件或零规则——旧项目兼容路径（legacy observe 语义）；
+    - "corrupt": 文件存在但无法解析——调用方必须对受控写 fail-closed，
+      不得折叠为空规则集继续放行；
+    - "ok": 健康非空。
+    A malformed registry must not create a false claim that rules ran.
     """
     if root is None:
-        return [], ""
+        return [], "", "empty"
+    from pathlib import Path as _Path
+
+    registry_path = _Path(root) / ".sopcontrol" / "rules" / "registry.yaml"
+    if not registry_path.is_file():
+        return [], "", "empty"
     try:
         from .model import content_hash, effective_rules, utcnow
         from .registry import Registry
 
         rules = effective_rules(
-            Registry(root / ".sopcontrol" / "rules" / "registry.yaml").load(),
+            Registry(registry_path).load(),
             at=utcnow(),
         )
         if not rules:
-            return [], ""
+            return [], "", "empty"
         digest = content_hash({
             "rules": [
                 rule.model_dump(mode="json")
                 for rule in sorted(rules, key=lambda item: item.rule_id)
             ],
         })
-        return rules, digest
+        return rules, digest, "ok"
     except Exception:
-        # Admission keeps the existing Action Plane risk semantics.  In
-        # particular, it must not attach selection_evidence to a failed load.
-        return [], ""
+        # 文件存在但无法解析：corrupt。调用方不得折叠为空规则集，
+        # 必须不对失败的加载附加 selection_evidence，且受控写 fail-closed。
+        return [], "", "corrupt"
+
+
+def _consumed_proofs_path(root: Path) -> Path:
+    return Path(root) / ".sopcontrol-local" / "consumed_proofs.jsonl"
+
+
+def settle_host_proofs(
+    root: Path | str | None, proofs: dict[str, Any], *,
+    rule_ids: list[str] | None = None,
+) -> tuple[dict[str, Any], dict[str, str]]:
+    """一次性消费结算（I/O 层，fcntl 锁下读-验-记）。
+
+    返回 (usable, refused)：已消费的 proof_id 直接拒绝（重放），其余原样
+    交回调用方做结构校验。root 为空（纯兼容路径）时无法持久化消费记录，
+    全部拒绝——不能在无法保证单次性的地方接受一次性证明。
+    """
+    import fcntl
+    import json as _json
+
+    refused: dict[str, str] = {}
+    if not isinstance(proofs, dict):
+        return {}, {}
+    if root is None:
+        return {}, {str(k): "无项目上下文，无法保证单次消费" for k in proofs}
+    root = Path(root)
+    path = _consumed_proofs_path(root)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd = path.open("a+")
+    except OSError:
+        return {}, {str(k): "消费记录不可写" for k in proofs}
+    usable: dict[str, Any] = {}
+    try:
+        fcntl.flock(fd.fileno(), fcntl.LOCK_EX)
+        fd.seek(0)
+        consumed: set[str] = set()
+        for line in fd.read().splitlines():
+            try:
+                record = _json.loads(line)
+            except ValueError:
+                continue
+            pid = record.get("proof_id")
+            if pid:
+                consumed.add(str(pid))
+        now_iso = datetime.now(timezone.utc).isoformat()
+        for rule_id, proof in proofs.items():
+            pid = proof.get("proof_id") if isinstance(proof, dict) else ""
+            if not pid or not str(pid).strip():
+                refused[str(rule_id)] = "证明缺少 proof_id（无法单次消费）"
+                continue
+            if str(pid) in consumed:
+                refused[str(rule_id)] = f"证明 {pid} 已被消费：重放拒绝"
+                continue
+            usable[str(rule_id)] = proof
+            consumed.add(str(pid))
+            fd.write(_json.dumps({"proof_id": str(pid), "rule_id": str(rule_id),
+                                  "at": now_iso}, ensure_ascii=False) + "\n")
+        fd.flush()
+        try:
+            import os as _os
+
+            _os.fsync(fd.fileno())
+        except OSError:
+            pass
+        return usable, refused
+    finally:
+        try:
+            fcntl.flock(fd.fileno(), fcntl.LOCK_UN)
+        finally:
+            fd.close()
 
 
 def decide_harness_action(
@@ -314,8 +392,30 @@ def decide_harness_action(
         target=envelope.target,
         task_id=task_id,
     )
-    rules, rules_digest = _load_effective_harness_rules(project_root)
-    return decide_action_with_rules(
+    rules, rules_digest, rules_status = _load_effective_harness_rules(project_root)
+    from datetime import datetime as _dt
+    from datetime import timezone as _tz
+
+    now = _dt.now(_tz.utc)
+    raw_proofs = decision_payload.get("host_proofs")
+    usable_proofs: dict[str, Any] | None = None
+    refused_proofs: dict[str, str] = {}
+    if raw_proofs is not None:
+        # host_proofs 在场即进入证明通道：非 dict 载荷直接 ask，不静默忽略。
+        if not isinstance(raw_proofs, dict):
+            from .action_model import ActionDecision as _ActionDecision
+
+            return _ActionDecision(
+                decision="ask",
+                reason="host_proofs 必须是对象（rule_id→证明）：畸形证明载荷不得忽略",
+                rule_ids=[],
+                surface=envelope.surface,
+                operation=envelope.operation,
+                envelope=envelope,
+            )
+        usable_proofs, refused_proofs = settle_host_proofs(
+            project_root, raw_proofs)
+    decision = decide_action_with_rules(
         rules,
         decision_payload,
         context,
@@ -329,7 +429,27 @@ def decide_harness_action(
         worktree_id=worktree_id,
         task_id=task_id,
         run_id=run_id,
+        host_proofs=usable_proofs,
+        rejected_proofs=refused_proofs,
+        now=now,
     )
+    if (rules_status == "corrupt" and envelope.surface in {"filesystem_write", "shell"}
+            and decision.decision in ("allow", "observe")):
+        # 注册表损坏：受控写 fail-closed（读侧仍走 legacy observe；
+        # 已有 deny 等更强判定优先保留，不降级为 ask）。
+        from .action_model import ActionDecision as _ActionDecision2
+
+        return _ActionDecision2(
+            decision="ask",
+            reason=("规则库损坏，无法加载有效规则：受控写动作不得按“无规则”放行。"
+                    "下一步: 修复注册表后重试，或明确本次放行意图"),
+            rule_ids=list(decision.rule_ids),
+            surface=envelope.surface,
+            operation=envelope.operation,
+            gap="registry_corrupt",
+            envelope=envelope,
+        )
+    return decision
 
 
 def check_tool_call(

@@ -45,11 +45,21 @@ def test_host_check_without_proof_asks_when_host_participates():
     asked = decide_action_with_rules([rule], payload, ctx, host_proofs={})
     assert asked.decision == "ask"
     assert "AUDIT-H" in asked.rule_ids
-    assert "缺少执行证明" in asked.reason
+    assert "缺少有效执行证明" in asked.reason
     assert "host_proofs" in asked.reason
     # 宿主提供证明：恢复旧判定
+    from datetime import datetime, timedelta, timezone
+
+    from sopcontrol.action_plane import build_envelope
+
+    _env = build_envelope(payload, harness="t")
+    full_proof = {"proof_id": "pf-1", "verdict": "pass",
+                  "target": _env.target, "input_digest": _env.input_fingerprint,
+                  "expires_at": (datetime.now(timezone.utc)
+                                 + timedelta(minutes=5)).isoformat(),
+                  "producer": "audit-checker"}
     proved = decide_action_with_rules(
-        [rule], payload, ctx, host_proofs={"AUDIT-H": {"verdict": "pass"}})
+        [rule], payload, ctx, host_proofs={"AUDIT-H": full_proof})
     assert proved.decision == plain.decision
     assert "AUDIT-H" in proved.rule_ids
 
@@ -76,7 +86,7 @@ def test_corrupt_registry_read_observe_write_ask_or_deny(tmp_path):
          "claimed_side_effects": ["external_write"]},
         root=tmp_path)
     assert write.decision == "ask"
-    assert write.rule_ids == []
+    assert [i for i in write.rule_ids if not i.startswith("GUARD-")] == []
     # 控制器写：deny（与规则库状态无关的硬守卫）
     protected = decide_harness_action(
         {"tool_name": "Write",
