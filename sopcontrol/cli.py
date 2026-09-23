@@ -31,7 +31,7 @@ from .registry import RegistryError
 from .repair import RepairError
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = _CompatArgumentParser(
         prog="sopctl",
         description="SOP Control 行走骨架：规则—证据—判定控制平面（观察模式）",
     )
@@ -1695,6 +1695,39 @@ def _normalize_learn_argv(argv: list[str] | None) -> list[str] | None:
     if ident is None:
         return ["learn", sub, path, *middle]
     return ["learn", sub, ident, path, *middle]
+
+
+def _hoist_trailing_positionals(argv: list[str], unknown: list[str]) -> list[str]:
+    """Move leftover non-option tokens to before the first flag.
+
+    Python 3.10/3.11 argparse leaves an optional positional that follows
+    options as unrecognized. Placing it with the other positionals parses.
+    """
+    body = list(argv)
+    for tok in unknown:
+        for i in range(len(body) - 1, -1, -1):
+            if body[i] == tok:
+                del body[i]
+                break
+    insert_at = len(body)
+    for i, tok in enumerate(body):
+        if tok.startswith("-") and tok != "-":
+            insert_at = i
+            break
+    return body[:insert_at] + list(unknown) + body[insert_at:]
+
+
+class _CompatArgumentParser(argparse.ArgumentParser):
+    """parse_args that accepts `cmd ID --flag value PATH` on Python 3.10/3.11."""
+
+    def parse_args(self, args=None, namespace=None):
+        if args is None or sys.version_info >= (3, 12):
+            return super().parse_args(args, namespace)
+        argv = list(args)
+        _, unknown = self.parse_known_args(argv)
+        if not unknown or any(tok.startswith("-") and tok != "-" for tok in unknown):
+            return super().parse_args(argv, namespace)
+        return super().parse_args(_hoist_trailing_positionals(argv, unknown), namespace)
 
 
 def main(argv=None) -> int:

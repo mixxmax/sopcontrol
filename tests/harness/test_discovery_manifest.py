@@ -37,6 +37,15 @@ def _fixture_project(work: Path) -> None:
     (hooks / "pre-commit").write_text("#!/bin/sh\necho third-party\n", encoding="utf-8")
 
 
+def test_py310_toml_scripts_without_tomllib():
+    """3.10 has no tomllib; the fallback must still see [project.scripts]."""
+    from sopcontrol.discovery_manifest import _toml_scripts_fallback
+
+    text = '[project]\nname = "demo"\n[project.scripts]\ndemoscan = "demo:scan"\n'
+    data = _toml_scripts_fallback(text)
+    assert data["project"]["scripts"]["demoscan"] == "demo:scan"
+
+
 def test_manifest_discovers_cli_config_scripts_and_hints(tmp_path):
     work = tmp_path / "p"
     _fixture_project(work)

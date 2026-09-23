@@ -72,16 +72,39 @@ def _is_git(root: Path) -> bool:
         return False
 
 
+def _toml_scripts_fallback(text: str) -> dict:
+    """Read [project.scripts] when tomllib is absent (Python 3.10)."""
+    scripts: dict[str, str] = {}
+    in_scripts = False
+    for raw in text.splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if not line:
+            continue
+        if line.startswith("[") and line.endswith("]"):
+            in_scripts = line.strip("[]").strip() == "project.scripts"
+            continue
+        if not in_scripts or "=" not in line:
+            continue
+        key, val = line.split("=", 1)
+        scripts[key.strip()] = val.strip().strip('"').strip("'")
+    return {"project": {"scripts": scripts}}
+
+
+def _load_toml(text: str) -> dict:
+    """tomllib on 3.11+; a [project.scripts] reader on 3.10 (no stdlib TOML)."""
+    try:
+        import tomllib
+    except ImportError:
+        return _toml_scripts_fallback(text)
+    return tomllib.loads(text)
+
+
 def _toml_project_scripts(root: Path, entries: list[IntegrationCandidate]) -> None:
     pyproject = root / "pyproject.toml"
     if not pyproject.is_file():
         return
     try:
-        import tomllib
-    except ImportError:
-        return
-    try:
-        data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+        data = _load_toml(pyproject.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return
     project = data.get("project") or {}
