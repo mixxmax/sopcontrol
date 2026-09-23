@@ -20,6 +20,15 @@ from .testrun import declaration_evidence
 from .verdict import evaluate_all, latest_test_run
 
 
+def _ensure_evidence_dir(root: Path) -> None:
+    """Create the evidence sink before maturity is snapshotted.
+
+    L0 is "the directory exists", not "a ledger row exists". Persist creates
+    that directory; doing it first keeps the snapshot equal to a later recompute.
+    """
+    (Path(root) / ".sopcontrol" / "evidence").mkdir(parents=True, exist_ok=True)
+
+
 @dataclass
 class AuditReport:
     rules: list[Rule]
@@ -81,6 +90,9 @@ def run_discovery(
     root = Path(root)
     ctx = ProjectScope(root, mode="discovery")
     audit_at = at or utcnow()
+    # 成熟度 L0 看 evidence 目录在不在。持久化会创建该目录；若先铸成熟度再创建，
+    # 刚写入的 project.maturity 立刻与重算结果不一致（CI 干净夹具无 evidence/）。
+    _ensure_evidence_dir(root)
     rules = Registry(root / ".sopcontrol" / "rules" / "registry.yaml").load()
     current_rules = effective_rules(rules, at=audit_at)
     ident = load_identity(root)
@@ -161,6 +173,7 @@ def run_enforcement(
     root = Path(root)
     ctx = ProjectScope(root, mode="enforcement")
     audit_at = at or utcnow()
+    _ensure_evidence_dir(root)
     rules = Registry(root / ".sopcontrol" / "rules" / "registry.yaml").load()
     current_rules = effective_rules(rules, at=audit_at)
 

@@ -114,6 +114,8 @@ def _upgrade(
     # Probe failures / adapter-removed must be allowed to downgrade.
     if force or _STATE_RANK.get(state, 0) >= _STATE_RANK.get(record.state, 0):
         record.state = state  # type: ignore[assignment]
+        if record.state == "verified":
+            record.gap_reason = ""
     if source not in record.sources:
         record.sources.append(source)  # type: ignore[arg-type]
     for key, value in fields.items():

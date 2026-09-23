@@ -1655,8 +1655,52 @@ def cmd_attach_verify(args) -> int:
     return 0 if not report["gaps"] else 2
 
 
+_LEARN_VALUE_FLAGS = frozenset({
+    "--session", "--task", "--status", "--route", "--note", "--actor",
+    "--confirmation-id", "--confirmation-secret", "--json-data",
+})
+_LEARN_ID_SUBS = frozenset({"show", "decide", "notify"})
+
+
+def _normalize_learn_argv(argv: list[str] | None) -> list[str] | None:
+    """Put the project path before flags.
+
+    Python 3.10/3.11 argparse rejects ``learn notify ID --json PATH`` because
+    an optional positional cannot follow options. 3.12 accepts it. Normalize
+    so both orders work on the CI matrix.
+    """
+    if not argv or argv[0] != "learn" or len(argv) < 3:
+        return argv
+    sub = argv[1]
+    rest = list(argv[2:])
+    if sub in _LEARN_ID_SUBS:
+        if not rest:
+            return argv
+        ident, tail = rest[0], rest[1:]
+    else:
+        ident, tail = None, rest
+    if len(tail) < 1:
+        return argv
+    last = tail[-1]
+    if last.startswith("-"):
+        return argv
+    if len(tail) >= 2 and tail[-2] in _LEARN_VALUE_FLAGS:
+        return argv
+    # Already path-then-flags: first tail token is not a flag.
+    if ident is None and tail and not tail[0].startswith("-"):
+        return argv
+    if ident is not None and tail and not tail[0].startswith("-"):
+        return argv
+    path, middle = tail[-1], tail[:-1]
+    if ident is None:
+        return ["learn", sub, path, *middle]
+    return ["learn", sub, ident, path, *middle]
+
+
 def main(argv=None) -> int:
     parser = build_parser()
+    if argv is not None:
+        argv = _normalize_learn_argv(list(argv))
     args = parser.parse_args(argv)
     try:
         return args.func(args)

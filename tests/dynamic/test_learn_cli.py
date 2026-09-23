@@ -3,12 +3,24 @@ from __future__ import annotations
 
 import json
 
-from sopcontrol.cli import main
+from sopcontrol.cli import _normalize_learn_argv, main
 
 
 def _project(tmp_path):
     assert main(["init", str(tmp_path)]) == 0
     return tmp_path
+
+
+def test_learn_argv_path_after_flags_is_normalized():
+    """3.10/3.11 argparse rejects a trailing path after options."""
+    argv = ["learn", "notify", "pid-1", "--json", "/tmp/proj"]
+    assert _normalize_learn_argv(argv) == [
+        "learn", "notify", "pid-1", "/tmp/proj", "--json",
+    ]
+    review = ["learn", "review", "--session", "sess-1", "/tmp/proj"]
+    assert _normalize_learn_argv(review) == [
+        "learn", "review", "/tmp/proj", "--session", "sess-1",
+    ]
 
 
 def test_learn_review_list_show_decide(tmp_path, capsys):

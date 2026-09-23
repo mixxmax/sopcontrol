@@ -55,7 +55,8 @@ from sopcontrol.tickets import (
 
 
 ROOT = Path(__file__).resolve().parents[2]
-PYTHON = ROOT / ".venv" / "bin" / "python"
+# CI installs the package into the runner interpreter; there is no project .venv.
+PYTHON = Path(sys.executable)
 SAMPLES = max(100, int(os.environ.get("SOPCONTROL_PERF_SAMPLES", "100")))
 # 慢组（子进程/落盘型）样本数：p95 取 28th 有序值仍有效；E4 总时长须进 900s
 # 控制器上限，100 样本会把单文件推到 ~400s。断言与统计口径不变，只减 N。

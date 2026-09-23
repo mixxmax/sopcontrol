@@ -9,9 +9,13 @@ from sopcontrol.ledger import Ledger
 def test_scenario14_input_change_stales_ledger_evidence(tmp_path, capsys):
     work = tmp_path / "work"
     shutil.copytree("corpus/fixtures/shop-checkout", work)
-    # 夹具可能自带历史账本（旧 hash）——场景14测的是本轮写入后输入再变
-    ledger_path = work / ".sopcontrol" / "evidence" / "ledger.jsonl"
-    ledger_path.unlink(missing_ok=True)
+    # 夹具可能自带历史账本（旧 hash）——场景14测的是本轮写入后输入再变。
+    # CI 检出不含 evidence/（gitignore）；本地工作树常有。两边都先删掉，
+    # 确认审计在创建 sink 之前不会铸出立刻过期的成熟度证据。
+    evidence_dir = work / ".sopcontrol" / "evidence"
+    if evidence_dir.exists():
+        shutil.rmtree(evidence_dir)
+    ledger_path = evidence_dir / "ledger.jsonl"
 
     assert main(["audit", str(work)]) == 0
     ledger = Ledger(ledger_path)
