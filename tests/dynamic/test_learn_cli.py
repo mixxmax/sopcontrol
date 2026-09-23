@@ -19,8 +19,17 @@ def test_learn_argv_path_after_flags_is_normalized():
     ]
     review = ["learn", "review", "--session", "sess-1", "/tmp/proj"]
     assert _normalize_learn_argv(review) == [
-        "learn", "review", "/tmp/proj", "--session", "sess-1",
+        "learn", "review", "/tmp/proj", "--session=sess-1",
     ]
+    secret = "-starts-with-dash"
+    decided = [
+        "learn", "decide", "pid-1", "--route", "control",
+        "--confirmation-secret", secret, "/tmp/proj",
+    ]
+    norm = _normalize_learn_argv(decided)
+    assert norm is not None
+    assert "--confirmation-secret=-starts-with-dash" in norm
+    assert norm[3] == "/tmp/proj"
 
 
 def test_learn_review_list_show_decide(tmp_path, capsys):

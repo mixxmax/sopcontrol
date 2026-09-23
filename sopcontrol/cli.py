@@ -1662,17 +1662,33 @@ _LEARN_VALUE_FLAGS = frozenset({
 _LEARN_ID_SUBS = frozenset({"show", "decide", "notify"})
 
 
+def _bind_learn_flag_values(tokens: list[str]) -> list[str]:
+    """Attach flag values with ``=`` so a secret starting with ``-`` is not a new option."""
+    out: list[str] = []
+    i = 0
+    while i < len(tokens):
+        tok = tokens[i]
+        if tok in _LEARN_VALUE_FLAGS and i + 1 < len(tokens):
+            out.append(f"{tok}={tokens[i + 1]}")
+            i += 2
+            continue
+        out.append(tok)
+        i += 1
+    return out
+
+
 def _normalize_learn_argv(argv: list[str] | None) -> list[str] | None:
     """Put the project path before flags.
 
     Python 3.10/3.11 argparse rejects ``learn notify ID --json PATH`` because
     an optional positional cannot follow options. 3.12 accepts it. Normalize
-    so both orders work on the CI matrix.
+    so both orders work on the CI matrix. Flag values are bound with ``=``
+    because confirmation secrets can start with ``-``.
     """
     if not argv or argv[0] != "learn" or len(argv) < 3:
         return argv
     sub = argv[1]
-    rest = list(argv[2:])
+    rest = _bind_learn_flag_values(list(argv[2:]))
     if sub in _LEARN_ID_SUBS:
         if not rest:
             return argv
@@ -1680,17 +1696,13 @@ def _normalize_learn_argv(argv: list[str] | None) -> list[str] | None:
     else:
         ident, tail = None, rest
     if len(tail) < 1:
-        return argv
+        return ["learn", sub, *rest] if ident is None else ["learn", sub, ident, *tail]
     last = tail[-1]
     if last.startswith("-"):
-        return argv
-    if len(tail) >= 2 and tail[-2] in _LEARN_VALUE_FLAGS:
-        return argv
+        return ["learn", sub, *rest] if ident is None else ["learn", sub, ident, *tail]
     # Already path-then-flags: first tail token is not a flag.
-    if ident is None and tail and not tail[0].startswith("-"):
-        return argv
-    if ident is not None and tail and not tail[0].startswith("-"):
-        return argv
+    if tail and not tail[0].startswith("-"):
+        return ["learn", sub, *rest] if ident is None else ["learn", sub, ident, *tail]
     path, middle = tail[-1], tail[:-1]
     if ident is None:
         return ["learn", sub, path, *middle]
