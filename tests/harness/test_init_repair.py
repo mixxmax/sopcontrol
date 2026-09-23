@@ -56,6 +56,22 @@ def test_init_complete_layout_skips_cleanly(tmp_path, capsys):
     assert "已初始化，跳过" in capsys.readouterr().out
 
 
+def test_py310_parser_hoists_path_after_flags(monkeypatch):
+    """3.12 skips the hoist; force the 3.11 branch so CI coverage still runs it."""
+    import sys
+
+    from sopcontrol.cli import _hoist_trailing_positionals, build_parser
+
+    monkeypatch.setattr(sys, "version_info", (3, 11, 0))
+    work = "/tmp/proj"
+    ns = build_parser().parse_args(
+        ["task", "rebind", "TASK-0001", "--model", "m", work])
+    assert ns.task_id == "TASK-0001" and ns.model == "m" and ns.path == work
+    hoisted = _hoist_trailing_positionals(
+        ["logic", "plan", "plan.yaml", "--freeze", work], [work])
+    assert hoisted == ["logic", "plan", "plan.yaml", work, "--freeze"]
+
+
 def test_cli_positional_paths_stable(tmp_path, capsys, monkeypatch):
     """项目既定语法回归：logic plan <file> [--flags] [path]；task rebind <id> --model [path]。"""
     work = tmp_path / "p"
