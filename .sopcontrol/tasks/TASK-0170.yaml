@@ -1,0 +1,50 @@
+task_id: TASK-0170
+contract:
+  objective: 发布 SOP Control 0.4.1：版本号 0.4.0→0.4.1，CHANGELOG 定版，README/LIMITATIONS/PUBLISH
+    的安装固定版本与状态行更新到 v0.4.1，发布前清单标记进度
+  allowed_writes:
+  - pyproject.toml
+  - sopcontrol/__init__.py
+  - CHANGELOG.md
+  - README.md
+  - README_ZH-CN.md
+  - LIMITATIONS.md
+  - PUBLISH.md
+  - docs/launch/prelaunch-checklist.md
+  required_rules:
+  - CTRL-001
+  - SELF-001
+  - SELF-002
+  required_fields:
+  - release_checks
+  max_repairs: 1
+  repairs_fingerprint: null
+  write_granularity: file
+  strict_schema: true
+  capability_note: 当前模型未声明（已有画像 vertical-backbone 不适用） tier=unknown：模型能力未知：按保守边界执行，文件级写入
+    + 强制 MUST 字段清单；行为事件触发 weak 上限（近期任务迁移被拒）
+  model_identity: ''
+  control_profile_id: ''
+  control_profile_revision: 0
+  effective_plan_digest: ''
+  goal_digest: ''
+  execution_plan_digest: ''
+status: executing
+repair_count: 0
+changed_paths: []
+submit_input_digest: ''
+revision: 2
+created_at: '2026-09-26T07:12:04.249834Z'
+updated_at: '2026-09-26T07:12:09.035019Z'
+history:
+- at: '2026-09-26T07:12:09.032699Z'
+  action: accept
+  from_status: contract_proposed
+  to_status: executing
+  allowed: true
+  reason: 契约完整：目标、写入范围与可验证完成定义齐备
+  detail:
+    next_action: 执行变更后 task submit 提交改动路径
+resolution_of: []
+superseded_by_task: ''
+blocked_reason_code: ''

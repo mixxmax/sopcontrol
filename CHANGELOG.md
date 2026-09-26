@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.4.1 — 2026-09-26 (Beta / early public)
+
+Pre-launch hardening. Upgrade from 0.4.0 is recommended: the bypasses below
+work against 0.4.0.
 
 ### Security
 
@@ -13,6 +16,10 @@
 
 - `scripts/demo.sh`: a 60-second, model-free demo that feeds `sopctl` real Claude Code PreToolUse payloads and exits non-zero on any unexpected decision; run in CI. `scripts/demo.tape` records it with vhs.
 - README five-minute start (Chinese and English) and launch drafts under `docs/launch/`.
+
+### Status
+
+- Beta / early public — not GA; platform matrix and sandbox limits unchanged (LIMITATIONS.md)
 
 ## 0.4.0 — 2026-09-14 (Beta / early public)
 

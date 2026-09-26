@@ -10,7 +10,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License"></a>
   <a href="https://github.com/mixxmax/sopcontrol/actions/workflows/ci.yml"><img src="https://github.com/mixxmax/sopcontrol/actions/workflows/ci/badge.svg" alt="CI"></a>
   <a href="#一附-c哪里会调用大模型默认几乎不调用"><img src="https://img.shields.io/badge/Hot%20Path-Zero--LLM%20Local-blueviolet.svg" alt="Zero LLM Hot Path"></a>
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Version-v0.4.0-blue.svg" alt="Version"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Version-v0.4.1-blue.svg" alt="Version"></a>
   <a href="LIMITATIONS.md"><img src="https://img.shields.io/badge/Status-Beta-orange.svg" alt="Beta"></a>
 </p>
 
@@ -31,7 +31,7 @@
 
 **再一句话（给长期重度用户）：** SOP Control 是 Agent 的**可审计记忆**——你随口纠正的每一条经验，带着哪句话来的、谁确认的、适用什么范围、现在第几版，永久保存、换模型不丢、升级不丢；没确认的东西，永远只是建议。
 
-**当前状态：** v0.4.0 · **Beta / early public**。适合细分产品接入、评估和狗粮测试；还不宣称是操作系统级沙箱、企业合规平台或对抗恶意进程的安全边界。请同时阅读 [LIMITATIONS.md](LIMITATIONS.md)、[RESIDUAL_RISKS.md](RESIDUAL_RISKS.md) 和 [CHANGELOG.md](CHANGELOG.md)。
+**当前状态：** v0.4.1 · **Beta / early public**。适合细分产品接入、评估和狗粮测试；还不宣称是操作系统级沙箱、企业合规平台或对抗恶意进程的安全边界。请同时阅读 [LIMITATIONS.md](LIMITATIONS.md)、[RESIDUAL_RISKS.md](RESIDUAL_RISKS.md) 和 [CHANGELOG.md](CHANGELOG.md)。
 
 ---
 
@@ -61,7 +61,7 @@ scripts/demo.sh            # 英文旁白：scripts/demo.sh --en
 **接到你自己的项目（Claude Code）：**
 
 ~~~bash
-pip install "git+https://github.com/mixxmax/sopcontrol.git@v0.4.0"
+pip install "git+https://github.com/mixxmax/sopcontrol.git@v0.4.1"
 cd /path/to/your-repo
 sopctl init .           # 在项目里建立 .sopcontrol/（规则与证据账本，随仓库走）
 sopctl hook claude .    # Claude Code 每次调用工具前先经过 sopctl 判定
@@ -561,7 +561,7 @@ flowchart TD
 
 ~~~bash
 git clone https://github.com/mixxmax/sopcontrol.git && cd sopcontrol
-git checkout v0.4.0
+git checkout v0.4.1
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 sopctl gate examples/minimal
@@ -570,7 +570,7 @@ sopctl gate examples/minimal
 ### B. 接入已有产品
 
 ~~~bash
-pip install "git+https://github.com/mixxmax/sopcontrol.git@v0.4.0"
+pip install "git+https://github.com/mixxmax/sopcontrol.git@v0.4.1"
 cd /path/to/your-app
 
 sopctl attach .

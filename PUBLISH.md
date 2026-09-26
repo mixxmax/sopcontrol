@@ -24,8 +24,8 @@ git push -u origin zcode/living-project-batch1
 # 方案 B — 本地并到 main 再推：
 # git checkout main && git merge zcode/living-project-batch1
 # git push -u origin main
-# git tag -a v0.4.0 -m "sopcontrol 0.4.0 Beta early public"
-# git push origin v0.4.0
+# git tag -a v0.4.1 -m "sopcontrol 0.4.1 Beta early public"
+# git push origin v0.4.1
 ```
 
 发布前自检：
@@ -36,7 +36,7 @@ git push -u origin zcode/living-project-batch1
 git diff --check
 python3 -m venv /tmp/sopcontrol-release-venv && \
   /tmp/sopcontrol-release-venv/bin/pip install -e ".[dev]" && \
-  /tmp/sopcontrol-release-venv/bin/python -c 'import sopcontrol,importlib.metadata as m; assert sopcontrol.__version__==m.version("sopcontrol")=="0.4.0"'
+  /tmp/sopcontrol-release-venv/bin/python -c 'import sopcontrol,importlib.metadata as m; assert sopcontrol.__version__==m.version("sopcontrol")=="0.4.1"'
 ```
 
 ## 卫生提醒
@@ -50,9 +50,9 @@ python3 -m venv /tmp/sopcontrol-release-venv && \
 尚未上架；安装用：
 
 ```bash
-pip install "git+https://github.com/mixxmax/sopcontrol.git@v0.4.0"
+pip install "git+https://github.com/mixxmax/sopcontrol.git@v0.4.1"
 ```
 
 首发文案建议：
 
-> Experimental but real: a model-neutral control plane that lives in the project. v0.4.0 Beta — see LIMITATIONS.md. Run visibility via `sopctl log report`.
+> Experimental but real: a model-neutral control plane that lives in the project. v0.4.1 Beta — see LIMITATIONS.md. Run visibility via `sopctl log report`.

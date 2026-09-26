@@ -1,6 +1,6 @@
 # Limitations（诚实边界）
 
-SOP Control **v0.4.0（Beta / early public）** 是可用的实验性控制平面，不是企业治理套件，也不是 GA。
+SOP Control **v0.4.1（Beta / early public）** 是可用的实验性控制平面，不是企业治理套件，也不是 GA。
 
 ## 它是什么
 
