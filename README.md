@@ -35,6 +35,49 @@
 
 ---
 
+## ⚡ 5 分钟上手：先亲眼看它拦住 Agent
+
+**60 秒演示**（不需要模型、不需要 API key，只在临时目录里运行）：
+
+~~~bash
+git clone https://github.com/mixxmax/sopcontrol.git && cd sopcontrol
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e .
+scripts/demo.sh            # 英文旁白：scripts/demo.sh --en
+~~~
+
+脚本把 Claude Code 调用工具时发给钩子的真实请求逐个交给 `sopctl`，打印它的真实决定：
+
+| Agent 想做的事 | SOP Control |
+| :--- | :--- |
+| 正常修改业务代码 | ✅ 放行 |
+| 你说了「先讨论，不要修改代码」，它还是要写文件（Write/Edit 或 Bash 都一样） | ⛔ 拒绝，直到你说「可以改了」；只读命令照常可用 |
+| 自己执行 `sopctl intent clear` 把讨论锁解开 | ⛔ 拒绝（讨论锁只能由人设置或解除） |
+| `git push --no-verify` 绕过推送前检查 | ⛔ 拒绝 |
+| 删掉 `.git/hooks/pre-push`，或用 `git -c core.hooksPath=… push` 跳过它 | ⛔ 拒绝 |
+| 直接改 `.sopcontrol/` 里的规则文件，给自己放宽限制 | ⛔ 拒绝（规则只能经 `sopctl` 命令变更） |
+| 改 `.claude/settings.json`，卸掉拦截钩子 | ⛔ 拒绝（卸载属于提权，需要人来做） |
+
+**接到你自己的项目（Claude Code）：**
+
+~~~bash
+pip install "git+https://github.com/mixxmax/sopcontrol.git@v0.4.0"
+cd /path/to/your-repo
+sopctl init .           # 在项目里建立 .sopcontrol/（规则与证据账本，随仓库走）
+sopctl hook claude .    # Claude Code 每次调用工具前先经过 sopctl 判定
+sopctl hook install .   # git push 前自动运行 sopctl gate
+~~~
+
+用 OpenCode 时把第三行换成 `sopctl hook opencode .`。之后写你自己的规则、记录长期偏好，见下方[十、快速开始](#十快速开始)。
+
+> 如实说明：
+> - 「只讨论」锁目前由你在终端执行 `sopctl intake . --conversation <对话摘录文件>` 设置，Claude Code 里还不会自动从你的消息中识别；
+> - 写到任务范围之外的文件，是在 `sopctl task submit` 时被拒绝，而不是写入的那一刻。
+>
+> 它约束的是合作的 Agent，不是沙箱，详见 [LIMITATIONS.md](LIMITATIONS.md)。
+
+---
+
 ## 一、它要解决的根本问题
 
 一个协作中的大模型经常不是“不会做”，而是会在不该重新思考的地方重新思考：
@@ -681,6 +724,49 @@ Distributed under the [MIT License](LICENSE).
 **In one sentence:** agents stay autonomous in the *solution* space and faithful in the *rule* space.
 
 **Current status:** v0.4.0 · **Beta / early public**. Suitable for focused product integrations, evaluation, and dogfooding. It is not an operating-system sandbox, an enterprise compliance platform, or a hostile-process security boundary.
+
+---
+
+## ⚡ Five-minute start: watch it stop an agent first
+
+**60-second demo** (no model, no API key; runs in a temp directory only):
+
+~~~bash
+git clone https://github.com/mixxmax/sopcontrol.git && cd sopcontrol
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e .
+scripts/demo.sh --en
+~~~
+
+The script hands `sopctl` the exact requests Claude Code sends to its hook before each tool call, and prints the real decisions:
+
+| What the agent tries | SOP Control |
+| :--- | :--- |
+| Edit application code as usual | ✅ allow |
+| You said "just discuss, do not modify any code", it writes a file anyway (Write/Edit or Bash alike) | ⛔ deny, until you say "go ahead and change it"; read-only commands still work |
+| Run `sopctl intent clear` itself to lift the discuss lock | ⛔ deny (only a human sets or lifts it) |
+| `git push --no-verify` to skip the pre-push checks | ⛔ deny |
+| Delete `.git/hooks/pre-push`, or skip it with `git -c core.hooksPath=… push` | ⛔ deny |
+| Edit the rule files under `.sopcontrol/` to loosen its own limits | ⛔ deny (rules change only through `sopctl` commands) |
+| Edit `.claude/settings.json` to remove the hook | ⛔ deny (uninstalling is an escalation a human performs) |
+
+**Attach it to your own project (Claude Code):**
+
+~~~bash
+pip install "git+https://github.com/mixxmax/sopcontrol.git@v0.4.0"
+cd /path/to/your-repo
+sopctl init .           # creates .sopcontrol/ (rules and evidence ledger, versioned with the repo)
+sopctl hook claude .    # every Claude Code tool call is decided by sopctl first
+sopctl hook install .   # git push runs sopctl gate first
+~~~
+
+For OpenCode, use `sopctl hook opencode .` instead of the third line. To write your own rules and keep long-lived preferences, continue with the quick start further below.
+
+> Honest notes:
+> - You set the discuss-only lock by running `sopctl intake . --conversation <transcript file>` in your terminal; Claude Code does not yet detect it from your messages automatically.
+> - A write outside the task's allowed paths is refused at `sopctl task submit`, not at the moment of writing.
+>
+> This constrains a cooperating agent; it is not a sandbox. See [LIMITATIONS.md](LIMITATIONS.md).
 
 ---
 

@@ -1,0 +1,75 @@
+task_id: TASK-0169
+contract:
+  objective: 发布前硬化：讨论锁覆盖 Bash、禁止 agent 自行解锁、推送门不可被 Bash 卸载或绕过；附 60 秒演示与发布材料
+  allowed_writes:
+  - sopcontrol/harness.py
+  - sopcontrol/action_plane.py
+  - sopcontrol/cli_harness.py
+  - tests/harness/test_bypass_hardening.py
+  - scripts/demo.sh
+  - scripts/demo.tape
+  - README.md
+  - README_ZH-CN.md
+  - docs/launch/show-hn.md
+  - docs/launch/post-zh.md
+  - docs/launch/prelaunch-checklist.md
+  - .github/workflows/ci.yml
+  - CHANGELOG.md
+  required_rules:
+  - CTRL-001
+  - SELF-001
+  - SELF-002
+  required_fields:
+  - bypass_report
+  max_repairs: 1
+  repairs_fingerprint: null
+  write_granularity: file
+  strict_schema: true
+  capability_note: 当前模型未声明（已有画像 vertical-backbone 不适用） tier=unknown：模型能力未知：按保守边界执行，文件级写入
+    + 强制 MUST 字段清单；行为事件触发 weak 上限（近期任务迁移被拒）
+  model_identity: ''
+  control_profile_id: ''
+  control_profile_revision: 0
+  effective_plan_digest: ''
+  goal_digest: ''
+  execution_plan_digest: ''
+status: verification_pending
+repair_count: 0
+changed_paths:
+- sopcontrol/harness.py
+- sopcontrol/action_plane.py
+- sopcontrol/cli_harness.py
+- tests/harness/test_bypass_hardening.py
+- scripts/demo.sh
+- scripts/demo.tape
+- README.md
+- README_ZH-CN.md
+- docs/launch/show-hn.md
+- docs/launch/post-zh.md
+- docs/launch/prelaunch-checklist.md
+- .github/workflows/ci.yml
+- CHANGELOG.md
+submit_input_digest: in-32882c7c840364f57f6c910f29062846
+revision: 3
+created_at: '2026-09-26T06:36:03.284970Z'
+updated_at: '2026-09-26T07:00:41.915930Z'
+history:
+- at: '2026-09-26T06:36:13.914371Z'
+  action: accept
+  from_status: contract_proposed
+  to_status: executing
+  allowed: true
+  reason: 契约完整：目标、写入范围与可验证完成定义齐备
+  detail:
+    next_action: 执行变更后 task submit 提交改动路径
+- at: '2026-09-26T07:00:41.908163Z'
+  action: submit
+  from_status: executing
+  to_status: verification_pending
+  allowed: true
+  reason: 改动 13 个路径，全部在写入范围内；MUST 字段齐备 [bypass_report]
+  detail:
+    next_action: 运行 task verify 由控制器独立审计
+resolution_of: []
+superseded_by_task: ''
+blocked_reason_code: ''

@@ -66,6 +66,276 @@ def command_touches_controller(command: str) -> bool:
     return protected and not _is_single_sopctl_command(command)
 
 
+# --- shell 命令结构分析（纯函数）--------------------------------------------
+# 讨论锁、会话意图和推送门都不能只看 Write/Edit：合作的 agent 同样会用 Bash 改文件、
+# 调 sopctl、或换一种写法推送。这里把命令拆成简单命令序列再判断；拆不开的一律按
+# 「无法证明安全」处理（fail-closed），而不是按「没看到危险字样」放行。
+
+_PUNCTUATION = ";&|<>()"
+_SEPARATOR_CHARS = frozenset(";&|")
+_OPERATOR_CHARS = frozenset(";&|<>")
+_SHELL_WRAPPERS = frozenset({"sh", "bash", "zsh", "dash", "ksh"})
+_PREFIX_COMMANDS = frozenset({"command", "exec", "nohup", "time", "builtin"})
+_ENV_ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+_PUSH_FALLBACK_RE = re.compile(r"\bgit\b[^;&|\n]*\bpush\b")
+
+# discuss_only 期间允许的只读命令。白名单而不是黑名单：无法穷举「会写文件的命令」，
+# 但可以穷举「讨论时需要的查看命令」。
+_READ_ONLY_TOOLS = frozenset({
+    "ls", "cat", "head", "tail", "wc", "grep", "egrep", "fgrep", "rg", "pwd", "cd",
+    "echo", "printf", "which", "type", "file", "stat", "tree", "du", "df", "cut", "tr",
+    "diff", "cmp", "jq", "date", "true", "false", "basename", "dirname", "realpath",
+    "readlink",
+})
+_FIND_WRITE_FLAGS = frozenset({
+    "-delete", "-exec", "-execdir", "-ok", "-okdir", "-fprint", "-fprint0", "-fprintf", "-fls",
+})
+_GIT_READ_ONLY = frozenset({
+    "status", "diff", "log", "show", "blame", "grep", "ls-files", "ls-tree", "rev-parse",
+    "describe", "shortlog", "cat-file", "show-ref", "rev-list",
+})
+_GIT_BRANCH_READ_FLAGS = frozenset({
+    "--list", "-l", "-a", "--all", "-r", "--remotes", "-v", "-vv", "--verbose",
+    "--show-current", "--no-color", "--color",
+})
+_GIT_CONFIG_READ_FLAGS = frozenset({"--get", "--get-all", "--get-regexp", "--list", "-l"})
+_GIT_CONFIG_WRITE_FLAGS = frozenset({
+    "--unset", "--unset-all", "--add", "--replace-all", "--rename-section",
+    "--remove-section", "-e", "--edit",
+})
+_SOPCTL_READ_ONLY = {
+    "task": frozenset({"show", "list", "takeover"}),
+    "intent": frozenset({"show"}),
+    "rule": frozenset({"list"}),
+    "dynamic": frozenset({"list"}),
+}
+_SOPCTL_READ_ONLY_TOP = frozenset({"chronicle", "attach-status", "explain"})
+
+
+def _shell_segments(command: str) -> list[list[str]] | None:
+    """把命令拆成简单命令的 token 序列；无法安全分析时返回 None。
+
+    换行、反引号、``$(``/``${`` 与括号（子 shell、进程替换）都可能藏入任意命令，
+    直接视为不可分析。重定向 token（``>``、``2>&1`` 的 ``>&`` 等）保留在所属段内。
+    """
+    if not command.strip():
+        return None
+    if any(mark in command for mark in ("\n", "\r", "`", "$(", "${")):
+        return None
+    try:
+        lexer = shlex.shlex(command, posix=True, punctuation_chars=_PUNCTUATION)
+        lexer.whitespace_split = True
+        tokens = list(lexer)
+    except ValueError:
+        return None
+    segments: list[list[str]] = []
+    current: list[str] = []
+    for token in tokens:
+        if token and set(token) <= set("()"):
+            return None
+        if token and set(token) <= _OPERATOR_CHARS and not ({"<", ">"} & set(token)):
+            if current:
+                segments.append(current)
+                current = []
+            continue
+        current.append(token)
+    if current:
+        segments.append(current)
+    return segments
+
+
+def _is_redirect(token: str) -> bool:
+    return bool(token) and set(token) <= _OPERATOR_CHARS and bool({"<", ">"} & set(token))
+
+
+def _words(segment: list[str]) -> list[str]:
+    """去掉重定向及其目标，只留命令词。"""
+    words: list[str] = []
+    skip = False
+    for token in segment:
+        if skip:
+            skip = False
+            continue
+        if _is_redirect(token):
+            skip = True
+            continue
+        words.append(token)
+    return words
+
+
+def _executable(words: list[str]) -> tuple[str, list[str]]:
+    """剥掉前置环境变量赋值与 command/exec 等前缀，返回（可执行名, 参数）。"""
+    i = 0
+    while i < len(words) and (_ENV_ASSIGN_RE.match(words[i])
+                              or PurePosixPath(words[i]).name in _PREFIX_COMMANDS):
+        i += 1
+    if i >= len(words):
+        return "", []
+    name = PurePosixPath(words[i].replace("\\", "/")).name.casefold()
+    args = words[i + 1:]
+    if name.startswith("python") and args[:2] == ["-m", "sopcontrol.cli"]:
+        return "sopctl", args[2:]
+    return name, args
+
+
+def _shell_c_script(args: list[str]) -> str:
+    """``sh -c 'cmd'`` / ``bash -lc "cmd"`` 中被执行的脚本文本。"""
+    for index, arg in enumerate(args):
+        if arg.startswith("-") and not arg.startswith("--") and "c" in arg[1:]:
+            return args[index + 1] if index + 1 < len(args) else ""
+    return ""
+
+
+def _git_subcommand(args: list[str]) -> tuple[str, list[str]]:
+    """跳过 git 全局选项（-C/-c/--git-dir=…）后的子命令与其参数。"""
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg in ("-C", "-c", "--git-dir", "--work-tree", "--namespace"):
+            i += 2
+            continue
+        if arg.startswith("-"):
+            i += 1
+            continue
+        return arg.casefold(), args[i + 1:]
+    return "", []
+
+
+def _git_read_only(args: list[str]) -> bool:
+    sub, rest = _git_subcommand(args)
+    if any(arg.startswith("--output") for arg in rest):
+        return False  # git diff/log --output=<file> 会写文件
+    if sub in _GIT_READ_ONLY:
+        return True
+    if sub == "branch":
+        return all(arg in _GIT_BRANCH_READ_FLAGS for arg in rest)
+    if sub == "remote":
+        return all(arg in ("-v", "--verbose") for arg in rest)
+    if sub == "stash":
+        return rest[:1] in (["list"], ["show"])
+    if sub == "config":
+        return (any(arg in _GIT_CONFIG_READ_FLAGS for arg in rest)
+                and not any(arg in _GIT_CONFIG_WRITE_FLAGS for arg in rest))
+    return False
+
+
+def _sopctl_read_only(args: list[str]) -> bool:
+    words = [arg for arg in args if not arg.startswith("-")]
+    sub = words[0] if words else ""
+    if sub in _SOPCTL_READ_ONLY:
+        return len(words) > 1 and words[1] in _SOPCTL_READ_ONLY[sub]
+    return sub in _SOPCTL_READ_ONLY_TOP
+
+
+def _read_only_invocation(name: str, args: list[str]) -> bool:
+    if name in _READ_ONLY_TOOLS:
+        return True
+    if name == "find":
+        return not any(arg in _FIND_WRITE_FLAGS for arg in args)
+    if name == "sort":
+        return not any(arg == "-o" or arg.startswith("--output")
+                       or (arg.startswith("-o") and len(arg) > 2) for arg in args)
+    if name == "git":
+        return _git_read_only(args)
+    if name == "sopctl":
+        return _sopctl_read_only(args)
+    return False
+
+
+def is_read_only_command(command: str) -> bool:
+    """命令是否可证明只读：每个简单命令都在只读白名单内，且没有写出重定向。
+
+    允许的重定向只有丢弃输出（``> /dev/null``）与描述符复制（``2>&1``）；
+    输入重定向与 heredoc 只读，放行。
+    """
+    segments = _shell_segments(command)
+    if not segments:
+        return False
+    for segment in segments:
+        for index, token in enumerate(segment):
+            if not _is_redirect(token) or ">" not in token:
+                continue
+            target = segment[index + 1] if index + 1 < len(segment) else ""
+            if token in (">&", "<&") and (target.isdigit() or target == "-"):
+                continue
+            if token in (">", ">>", "&>", "&>>") and target == "/dev/null":
+                continue
+            return False
+        words = _words(segment)
+        if not words or _ENV_ASSIGN_RE.match(words[0]):
+            return False
+        name, args = _executable(words)
+        if not _read_only_invocation(name, args):
+            return False
+    return True
+
+
+def is_git_push(command: str, _depth: int = 0) -> bool:
+    """命令里是否有 git push，不论写成 ``git -C . push``、``/usr/bin/git push`` 还是 ``sh -c '…'``。
+
+    只看字面 ``git push`` 的正则会让换一种写法的推送跳过终点门。无法分析的命令按
+    「可能是推送」处理，让门来判定（fail-closed）。
+    """
+    segments = _shell_segments(command)
+    if segments is None:
+        return bool(_PUSH_FALLBACK_RE.search(command))
+    for segment in segments:
+        name, args = _executable(_words(segment))
+        if name == "git" and _git_subcommand(args)[0] == "push":
+            return True
+        if name in _SHELL_WRAPPERS and _depth < 3:
+            script = _shell_c_script(args)
+            if script and is_git_push(script, _depth + 1):
+                return True
+    return False
+
+
+def mutates_session_intent(command: str, _depth: int = 0) -> bool:
+    """命令是否由 agent 设置或解除会话意图（``sopctl intent clear`` / ``intake --conversation``）。
+
+    会话意图代表用户的原话：agent 自己解锁讨论锁，或把「可以改了」写进对话摘录再喂给
+    intake，都等于冒充用户。
+    """
+    segments = _shell_segments(command)
+    if segments is None:
+        norm = command.casefold()
+        return bool(re.search(r"\bintent\s+clear\b", norm)
+                    or ("intake" in norm and "--conversation" in norm))
+    for segment in segments:
+        name, args = _executable(_words(segment))
+        if name in _SHELL_WRAPPERS and _depth < 3:
+            script = _shell_c_script(args)
+            if script and mutates_session_intent(script, _depth + 1):
+                return True
+            continue
+        if name != "sopctl":
+            continue
+        words = [arg for arg in args if not arg.startswith("-")]
+        if words[:2] == ["intent", "clear"]:
+            return True
+        if words[:1] == ["intake"] and any(
+                arg == "--conversation" or arg.startswith("--conversation=") for arg in args):
+            return True
+    return False
+
+
+def touches_git_hooks(file_path: str) -> bool:
+    """写入路径是否落在 ``.git/hooks/`` 下（推送前终点门所在处，大小写不敏感）。"""
+    parts = [p.casefold() for p in file_path.replace("\\", "/").split("/") if p]
+    return any(parts[i] == ".git" and parts[i + 1] == "hooks" for i in range(len(parts) - 1))
+
+
+def disables_push_gate(command: str) -> bool:
+    """命令是否会停用或绕过推送前的终点门：改动 ``.git/hooks``，或设置 ``core.hooksPath``。
+
+    只读查看（``cat .git/hooks/pre-push``、``git config --get core.hooksPath``）不算。
+    """
+    norm = command.replace("\\", "/").casefold()
+    if "core.hookspath" not in norm and ".git/hooks" not in norm:
+        return False
+    return not is_read_only_command(command)
+
+
 # 内置 guard 的稳定 ID（手册 6.5 条件1）。稳定 ID 不是装饰：trace 事件靠它指认
 # 「本轮是哪条拦截规则做了决策」，registry 里的规则也靠它声明自己由哪个 guard 执行。
 # 改名等于换了一条规则，会让引用它的 registry 规则失去 trace——所以这些字面量只增不改。

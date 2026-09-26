@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Security
+
+- **Discuss-only lock covers the shell**: while the session intent is `discuss_only`, Bash only runs a read-only allow-list (`ls`, `cat`, `grep`, `git status/diff/log`, read-only `sopctl` queries, …). Command chains, substitution, subshells and embedded newlines are parsed rather than trusted; anything unprovable is refused.
+- **Agents cannot lift or forge the user's intent**: `sopctl intent clear` and `sopctl intake --conversation` issued through an agent tool call are refused (`GUARD-INTENT-DISCUSS-ONLY`); a human runs them in a terminal.
+- **The pre-push gate cannot be removed or skipped from the shell**: Bash that changes `.git/hooks`, any command that sets `core.hooksPath`, and Write/Edit on files under `.git/hooks/` are refused (`GUARD-SELF-UNINSTALL`).
+- **Every spelling of push reaches the gate**: push detection parses the command (`git -C . push`, `/usr/bin/git push`, `command git push`, `sh -c 'git push'`) instead of matching the literal `git push`.
+
+### Added
+
+- `scripts/demo.sh`: a 60-second, model-free demo that feeds `sopctl` real Claude Code PreToolUse payloads and exits non-zero on any unexpected decision; run in CI. `scripts/demo.tape` records it with vhs.
+- README five-minute start (Chinese and English) and launch drafts under `docs/launch/`.
+
 ## 0.4.0 — 2026-09-14 (Beta / early public)
 
 ### Added / Fixed

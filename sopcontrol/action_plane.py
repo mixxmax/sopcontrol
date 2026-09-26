@@ -32,9 +32,13 @@ from .harness import (
     GUARD_NO_VERIFY,
     GUARD_PUSH_GATE,
     GUARD_SELF_UNINSTALL,
-    PUSH_RE,
     command_touches_controller,
+    disables_push_gate,
     extract_claimed_model,
+    is_git_push,
+    is_read_only_command,
+    mutates_session_intent,
+    touches_git_hooks,
     touches_protected_install,
     touches_protected_path,
 )
@@ -160,8 +164,8 @@ def evaluate_action(
                 decision="deny",
                 reason=(
                     "当前会话意图为 discuss_only（用户明确只讨论不修改）：拒绝写文件。"
-                    "讨论不是实施授权（14.1 场景1）；若要改代码请先解除讨论锁定"
-                    "（说出实施意图或 sopctl intent clear）"
+                    "讨论不是实施授权（14.1 场景1）；若要改代码请先由用户解除讨论锁定"
+                    "（用户说出实施意图，或由用户在终端执行 sopctl intent clear）"
                 ),
                 rule_ids=[GUARD_INTENT],
                 surface=surface,
@@ -193,6 +197,18 @@ def evaluate_action(
                 operation=envelope.operation,
                 envelope=envelope,
             )
+        if file_path and touches_git_hooks(file_path):
+            return ActionDecision(
+                decision="deny",
+                reason=(
+                    f"{file_path} 位于 .git/hooks/：推送前终点门装在这里，改写或替换它等于卸掉自身项圈，"
+                    f"需要人工执行（手册 12.2）"
+                ),
+                rule_ids=[GUARD_SELF_UNINSTALL],
+                surface=surface,
+                operation=envelope.operation,
+                envelope=envelope,
+            )
         consulted = [GUARD_INTENT, GUARD_CONTROLLER_WRITE, GUARD_SELF_UNINSTALL]
         if bound and claimed:
             consulted.append(GUARD_EXECUTOR_IDENTITY)
@@ -216,6 +232,18 @@ def evaluate_action(
                 operation=envelope.operation,
                 envelope=envelope,
             )
+        if mutates_session_intent(command):
+            return ActionDecision(
+                decision="deny",
+                reason=(
+                    "会话意图（讨论锁）代表用户的原话，只能由人设置或解除：agent 不得替用户执行 "
+                    "sopctl intent clear 或 sopctl intake --conversation；请由用户本人在终端执行"
+                ),
+                rule_ids=[GUARD_INTENT],
+                surface=surface,
+                operation=envelope.operation,
+                envelope=envelope,
+            )
         if command_touches_controller(command):
             return ActionDecision(
                 decision="deny",
@@ -224,6 +252,31 @@ def evaluate_action(
                     f"但不是单一 sopctl 调用：一切经单一 sopctl 子命令；移除拦截组件需人工执行"
                 ),
                 rule_ids=[GUARD_CONTROLLER_BASH],
+                surface=surface,
+                operation=envelope.operation,
+                envelope=envelope,
+            )
+        if disables_push_gate(command):
+            return ActionDecision(
+                decision="deny",
+                reason=(
+                    "命令会停用或绕过推送前的终点门（改动 .git/hooks 或设置 core.hooksPath）："
+                    "卸掉自身项圈属于提权动作，需要人工执行（手册 12.2）"
+                ),
+                rule_ids=[GUARD_SELF_UNINSTALL],
+                surface=surface,
+                operation=envelope.operation,
+                envelope=envelope,
+            )
+        if intent == "discuss_only" and not is_read_only_command(command):
+            return ActionDecision(
+                decision="deny",
+                reason=(
+                    "当前会话意图为 discuss_only（用户明确只讨论不修改）：只允许只读命令"
+                    "（ls、cat、grep、git status/diff/log 等），该命令可能修改文件或执行任意程序。"
+                    "讨论不是实施授权（14.1 场景1）；若要改代码请先由用户解除讨论锁定"
+                ),
+                rule_ids=[GUARD_INTENT],
                 surface=surface,
                 operation=envelope.operation,
                 envelope=envelope,
@@ -241,7 +294,7 @@ def evaluate_action(
                 operation=envelope.operation,
                 envelope=envelope,
             )
-        if PUSH_RE.search(command):
+        if is_git_push(command):
             if gate_status is None:
                 return ActionDecision(
                     decision="deny",
@@ -290,7 +343,7 @@ def evaluate_action(
         return ActionDecision(
             decision="allow",
             reason="不在受控动作清单（观察模式）",
-            rule_ids=[GUARD_NO_VERIFY, GUARD_CONTROLLER_BASH],
+            rule_ids=[GUARD_NO_VERIFY, GUARD_INTENT, GUARD_CONTROLLER_BASH, GUARD_SELF_UNINSTALL],
             surface=surface,
             operation=envelope.operation,
             envelope=envelope,

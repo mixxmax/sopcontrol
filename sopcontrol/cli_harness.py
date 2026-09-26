@@ -208,7 +208,7 @@ def cmd_harness_check(args) -> int:
     写盘只能由调用方做。未知工具也必须留下事件，不得静默消失（Phase B）。
     """
     from .action_plane import commit_action_result
-    from .harness import decide_harness_action, extract_claimed_model, gate_status_for_push
+    from .harness import decide_harness_action, extract_claimed_model, gate_status_for_push, is_git_push
     from .intent import load_session_intent
     from .trace import append_event
 
@@ -228,7 +228,7 @@ def cmd_harness_check(args) -> int:
         tool = str(payload.get("tool_name") or "?")
         gate_status = None
         command = str((payload.get("tool_input") or {}).get("command") or "")
-        if PUSH_RE.search(command):
+        if is_git_push(command):
             gate_status = gate_status_for_push(root)
         session = load_session_intent(root)
         bound_executor = ""

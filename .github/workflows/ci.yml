@@ -44,6 +44,10 @@ jobs:
         # 传播给子进程覆盖，否则子进程写 statement-only 数据导致 combine DataError。
         run: pytest -q --cov --cov-branch --cov-report=term-missing
       - run: sopctl self-test
+      - name: 60-second demo decisions (README quick start)
+        # The demo exits non-zero if any decision differs from the expected one,
+        # so the README's quick start cannot silently drift from real behavior.
+        run: DEMO_PAUSE=0 bash scripts/demo.sh --en
       - name: project check
         run: |
           sopctl identity init .
