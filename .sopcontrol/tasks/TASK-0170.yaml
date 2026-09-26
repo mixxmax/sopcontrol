@@ -29,13 +29,21 @@ contract:
   effective_plan_digest: ''
   goal_digest: ''
   execution_plan_digest: ''
-status: executing
+status: delivered
 repair_count: 0
-changed_paths: []
-submit_input_digest: ''
-revision: 2
+changed_paths:
+- pyproject.toml
+- sopcontrol/__init__.py
+- CHANGELOG.md
+- README.md
+- README_ZH-CN.md
+- LIMITATIONS.md
+- PUBLISH.md
+- docs/launch/prelaunch-checklist.md
+submit_input_digest: in-46047fb346c9536a05e6bfb2261d7496
+revision: 5
 created_at: '2026-09-26T07:12:04.249834Z'
-updated_at: '2026-09-26T07:12:09.035019Z'
+updated_at: '2026-09-26T07:22:26.903265Z'
 history:
 - at: '2026-09-26T07:12:09.032699Z'
   action: accept
@@ -45,6 +53,31 @@ history:
   reason: 契约完整：目标、写入范围与可验证完成定义齐备
   detail:
     next_action: 执行变更后 task submit 提交改动路径
+- at: '2026-09-26T07:15:31.137255Z'
+  action: submit
+  from_status: executing
+  to_status: verification_pending
+  allowed: true
+  reason: 改动 8 个路径，全部在写入范围内；MUST 字段齐备 [release_checks]
+  detail:
+    next_action: 运行 task verify 由控制器独立审计
+- at: '2026-09-26T07:21:59.787370Z'
+  action: verify
+  from_status: verification_pending
+  to_status: verified
+  allowed: true
+  reason: 完成门通过：全部必需规则 [CTRL-001, SELF-001, SELF-002] 判定 pass（E4 实测：本轮执行 .venv/bin/python
+    -m pytest -q 通过（384.87s）+ E3 独立审计）
+  detail:
+    next_action: task deliver 交付
+- at: '2026-09-26T07:22:26.899333Z'
+  action: deliver
+  from_status: verified
+  to_status: delivered
+  allowed: true
+  reason: 完成门已独立验证，允许交付
+  detail:
+    next_action: 无
 resolution_of: []
 superseded_by_task: ''
 blocked_reason_code: ''

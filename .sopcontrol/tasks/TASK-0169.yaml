@@ -33,7 +33,7 @@ contract:
   effective_plan_digest: ''
   goal_digest: ''
   execution_plan_digest: ''
-status: verification_pending
+status: delivered
 repair_count: 0
 changed_paths:
 - sopcontrol/harness.py
@@ -50,9 +50,9 @@ changed_paths:
 - .github/workflows/ci.yml
 - CHANGELOG.md
 submit_input_digest: in-32882c7c840364f57f6c910f29062846
-revision: 3
+revision: 5
 created_at: '2026-09-26T06:36:03.284970Z'
-updated_at: '2026-09-26T07:00:41.915930Z'
+updated_at: '2026-09-26T07:11:47.414140Z'
 history:
 - at: '2026-09-26T06:36:13.914371Z'
   action: accept
@@ -70,6 +70,23 @@ history:
   reason: 改动 13 个路径，全部在写入范围内；MUST 字段齐备 [bypass_report]
   detail:
     next_action: 运行 task verify 由控制器独立审计
+- at: '2026-09-26T07:11:38.427983Z'
+  action: verify
+  from_status: verification_pending
+  to_status: verified
+  allowed: true
+  reason: 完成门通过：全部必需规则 [CTRL-001, SELF-001, SELF-002] 判定 pass（E4 实测：本轮执行 .venv/bin/python
+    -m pytest -q 通过（386.953s）+ E3 独立审计）
+  detail:
+    next_action: task deliver 交付
+- at: '2026-09-26T07:11:47.409817Z'
+  action: deliver
+  from_status: verified
+  to_status: delivered
+  allowed: true
+  reason: 完成门已独立验证，允许交付
+  detail:
+    next_action: 无
 resolution_of: []
 superseded_by_task: ''
 blocked_reason_code: ''
